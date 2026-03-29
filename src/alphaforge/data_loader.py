@@ -11,7 +11,7 @@ from .schemas import DataSpec
 def load_market_data(data_spec: DataSpec) -> pd.DataFrame:
     """Load and standardize OHLCV data from CSV."""
     frame = pd.read_csv(data_spec.path)
-    frame = _standardize_columns(frame)
+    frame = _standardize_columns(frame, data_spec.datetime_column)
     frame["datetime"] = pd.to_datetime(frame["datetime"], utc=False, errors="coerce")
     frame = frame.sort_values("datetime").drop_duplicates(subset=["datetime"], keep="last")
     frame = _apply_missing_data_policy(frame)
@@ -19,8 +19,11 @@ def load_market_data(data_spec: DataSpec) -> pd.DataFrame:
     return frame.reset_index(drop=True)
 
 
-def _standardize_columns(frame: pd.DataFrame) -> pd.DataFrame:
+def _standardize_columns(frame: pd.DataFrame, datetime_column: str) -> pd.DataFrame:
     renamed = frame.rename(columns={name: name.strip().lower() for name in frame.columns})
+    declared_datetime = datetime_column.strip().lower()
+    if declared_datetime in renamed.columns and declared_datetime != "datetime":
+        renamed = renamed.rename(columns={declared_datetime: "datetime"})
     renamed = renamed.rename(columns=CSV_COLUMN_ALIASES)
     missing = [column for column in REQUIRED_COLUMNS if column not in renamed.columns]
     if missing:

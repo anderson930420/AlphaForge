@@ -36,3 +36,21 @@ def test_load_market_data_requires_ohlcv_columns(tmp_path) -> None:
 
     with pytest.raises(ValueError, match="Missing required columns"):
         load_market_data(DataSpec(path=path))
+
+
+def test_load_market_data_honors_custom_datetime_column(tmp_path) -> None:
+    path = tmp_path / "custom_datetime.csv"
+    pd.DataFrame(
+        {
+            "trade_date": ["2024-01-02", "2024-01-01"],
+            "open": [2, 1],
+            "high": [2, 1],
+            "low": [2, 1],
+            "close": [2, 1],
+            "volume": [20, 10],
+        }
+    ).to_csv(path, index=False)
+
+    loaded = load_market_data(DataSpec(path=path, datetime_column="trade_date"))
+
+    assert loaded["datetime"].dt.strftime("%Y-%m-%d").tolist() == ["2024-01-01", "2024-01-02"]

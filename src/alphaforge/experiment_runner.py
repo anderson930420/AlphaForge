@@ -7,7 +7,7 @@ from .backtest import run_backtest
 from .data_loader import load_market_data
 from .metrics import compute_metrics
 from .scoring import rank_results, score_metrics
-from .schemas import BacktestConfig, DataSpec, ExperimentResult, StrategySpec
+from .schemas import BacktestConfig, DataSpec, EquityCurveFrame, ExperimentResult, StrategySpec
 from .search import build_strategy_specs
 from .storage import save_ranked_results_with_columns, save_single_experiment
 from .strategy.ma_crossover import MovingAverageCrossoverStrategy
@@ -19,7 +19,7 @@ def run_experiment(
     backtest_config: BacktestConfig | None = None,
     output_dir: Path | None = None,
     experiment_name: str = "single_experiment",
-) -> tuple[ExperimentResult, object, object]:
+) -> tuple[ExperimentResult, EquityCurveFrame, object]:
     backtest_config = backtest_config or BacktestConfig(
         initial_capital=config.INITIAL_CAPITAL,
         fee_rate=config.DEFAULT_FEE_RATE,

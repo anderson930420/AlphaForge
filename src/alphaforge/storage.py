@@ -6,7 +6,7 @@ from typing import Any
 
 import pandas as pd
 
-from .schemas import RANKED_RESULTS_BASE_COLUMNS, TRADE_LOG_COLUMNS, ExperimentResult
+from .schemas import EquityCurveFrame, RANKED_RESULTS_BASE_COLUMNS, TRADE_LOG_COLUMNS, ExperimentResult
 
 
 def ensure_output_dir(path: Path) -> Path:
@@ -18,7 +18,7 @@ def save_single_experiment(
     output_dir: Path,
     experiment_name: str,
     result: ExperimentResult,
-    equity_curve: pd.DataFrame,
+    equity_curve: EquityCurveFrame,
     trades: pd.DataFrame,
 ) -> ExperimentResult:
     target_dir = ensure_output_dir(output_dir / experiment_name)

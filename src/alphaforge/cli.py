@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import argparse
+import importlib
 import json
 from pathlib import Path
 
 from . import config
 from .experiment_runner import run_experiment, run_search
 from .schemas import BacktestConfig, DataSpec, StrategySpec
-from .twse_client import TwseFetchRequest, fetch_stock_day_history, save_stock_day_history
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -66,6 +66,7 @@ def main() -> None:
 
     try:
         if args.command == "fetch-twse":
+            TwseFetchRequest, fetch_stock_day_history, save_stock_day_history = _load_twse_client()
             frame = fetch_stock_day_history(
                 TwseFetchRequest(
                     stock_no=args.stock_no,
@@ -78,6 +79,7 @@ def main() -> None:
             return
 
         if args.command == "twse-search":
+            TwseFetchRequest, fetch_stock_day_history, save_stock_day_history = _load_twse_client()
             frame = fetch_stock_day_history(
                 TwseFetchRequest(
                     stock_no=args.stock_no,
@@ -146,6 +148,11 @@ def main() -> None:
         print(json.dumps(_build_search_summary(ranked, args.output_dir, args.experiment_name), indent=2, default=str))
     except ValueError as exc:
         raise SystemExit(str(exc)) from exc
+
+
+def _load_twse_client():
+    module = importlib.import_module("alphaforge.twse_client")
+    return module.TwseFetchRequest, module.fetch_stock_day_history, module.save_stock_day_history
 
 
 def _build_search_summary(ranked, output_dir: Path, experiment_name: str, data_output: Path | None = None) -> dict:

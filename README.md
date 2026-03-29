@@ -119,7 +119,7 @@ Run the repo-local verification script:
 powershell -ExecutionPolicy Bypass -File .\scripts\run_verification.ps1
 ```
 
-This runs `pytest` and one CLI smoke test using [sample_ohlcv.csv](C:/Users/Anderson Liu/Desktop/AlphaForge/sample_data/sample_ohlcv.csv).
+This runs `pytest` and one CLI smoke test using `sample_data/sample_ohlcv.csv`.
 
 Focused examples:
 

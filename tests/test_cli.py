@@ -88,7 +88,13 @@ def test_cli_fetch_twse_does_not_require_run_arguments(
         ],
     )
 
-    with patch("alphaforge.cli.fetch_stock_day_history", return_value=pd.DataFrame(columns=["datetime", "open", "high", "low", "close", "volume"])):
+    request_factory = lambda **kwargs: kwargs
+    loader = (
+        request_factory,
+        lambda request: pd.DataFrame(columns=["datetime", "open", "high", "low", "close", "volume"]),
+        lambda frame, path: frame.to_csv(path, index=False) or path,
+    )
+    with patch("alphaforge.cli._load_twse_client", return_value=loader):
         main()
 
     assert output_path.exists()
@@ -126,6 +132,54 @@ def test_cli_search_prints_summary_payload(
     assert payload["best_result"] is not None
     assert payload["ranked_results_path"].endswith("summary_case\\ranked_results.csv")
     assert len(payload["top_results"]) == 1
+
+
+def test_cli_run_path_does_not_load_twse_client(
+    sample_market_csv: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "alphaforge",
+            "run",
+            "--data",
+            str(sample_market_csv),
+            "--output-dir",
+            str(tmp_path),
+            "--short-window",
+            "2",
+            "--long-window",
+            "3",
+        ],
+    )
+
+    sample_result = ExperimentResult(
+        data_spec=DataSpec(path=sample_market_csv, symbol="TEST"),
+        strategy_spec=StrategySpec(name="ma_crossover", parameters={"short_window": 2, "long_window": 3}),
+        backtest_config=BacktestConfig(initial_capital=1000.0, fee_rate=0.0, slippage_rate=0.0, annualization_factor=252),
+        metrics=MetricReport(
+            total_return=0.1,
+            annualized_return=0.1,
+            sharpe_ratio=1.0,
+            max_drawdown=-0.1,
+            win_rate=1.0,
+            turnover=1.0,
+            trade_count=1,
+        ),
+        score=0.5,
+    )
+
+    with patch("alphaforge.cli._load_twse_client", side_effect=AssertionError("TWSE loader should not be used")), patch(
+        "alphaforge.cli.run_experiment", return_value=(sample_result, pd.DataFrame(), pd.DataFrame())
+    ):
+        main()
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["strategy_spec"]["parameters"] == {"short_window": 2, "long_window": 3}
 
 
 def test_cli_twse_search_fetches_saves_and_runs_search(
@@ -178,9 +232,13 @@ def test_cli_twse_search_fetches_saves_and_runs_search(
         score=0.5,
     )
 
-    with patch("alphaforge.cli.fetch_stock_day_history", return_value=sample_frame), patch(
-        "alphaforge.cli.run_search", return_value=[sample_result]
-    ):
+    request_factory = lambda **kwargs: kwargs
+    loader = (
+        request_factory,
+        lambda request: sample_frame,
+        lambda frame, path: frame.to_csv(path, index=False) or path,
+    )
+    with patch("alphaforge.cli._load_twse_client", return_value=loader), patch("alphaforge.cli.run_search", return_value=[sample_result]):
         main()
 
     payload = json.loads(capsys.readouterr().out)

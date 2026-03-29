@@ -2,14 +2,14 @@ from __future__ import annotations
 
 import pandas as pd
 
-from .schemas import TRADE_LOG_COLUMNS, BacktestConfig, TradeRecord
+from .schemas import EquityCurveFrame, TRADE_LOG_COLUMNS, BacktestConfig, TradeRecord
 
 
 def run_backtest(
     market_data: pd.DataFrame,
     target_positions: pd.Series,
     config: BacktestConfig,
-) -> tuple[pd.DataFrame, pd.DataFrame]:
+) -> tuple[EquityCurveFrame, pd.DataFrame]:
     """Run a simple long-flat backtest on close-to-close returns."""
     frame = market_data.copy()
     frame["target_position"] = target_positions.astype(float).fillna(0.0).clip(lower=0.0, upper=1.0)

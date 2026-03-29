@@ -4,6 +4,8 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
+import pandas as pd
+
 TRADE_LOG_COLUMNS = [
     "entry_time",
     "exit_time",
@@ -26,6 +28,11 @@ RANKED_RESULTS_BASE_COLUMNS = [
     "trade_count",
     "score",
 ]
+
+# AlphaForge intentionally uses pandas.DataFrame as the equity-curve interface.
+# The frame is expected to contain at least datetime, position, turnover,
+# strategy_return, and equity columns after backtest execution.
+EquityCurveFrame = pd.DataFrame
 
 
 @dataclass(frozen=True)

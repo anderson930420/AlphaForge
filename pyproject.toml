@@ -9,15 +9,16 @@ description = "Minimum viable strategy research engine for reproducible backtest
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "certifi>=2024.0.0",
     "numpy>=1.26",
     "pandas>=2.1",
+    "requests>=2.31",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0",
     "python-dotenv>=1.0",
-    "requests>=2.31",
 ]
 
 [project.scripts]
