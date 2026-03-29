@@ -1,0 +1,45 @@
+Metadata-Version: 2.4
+Name: alphaforge
+Version: 0.1.0
+Summary: Minimum viable strategy research engine for reproducible backtests.
+Requires-Python: >=3.11
+Description-Content-Type: text/markdown
+Requires-Dist: numpy>=1.26
+Requires-Dist: pandas>=2.1
+Provides-Extra: dev
+Requires-Dist: pytest>=8.0; extra == "dev"
+Requires-Dist: python-dotenv>=1.0; extra == "dev"
+Requires-Dist: requests>=2.31; extra == "dev"
+
+# AlphaForge
+
+AlphaForge is a minimal strategy research engine that proves a reproducible MVP pipeline:
+
+`strategy spec -> backtest -> metrics -> ranking -> save result`
+
+The current MVP supports:
+
+- CSV OHLCV loading and validation
+- Moving average crossover strategy research
+- A simple single-asset backtest
+- Metrics, scoring, and ranking
+- Local JSON/CSV experiment outputs
+- CLI execution
+
+Deferred capabilities such as paper parsing, multi-agent orchestration, live trading, and genetic algorithms are intentionally out of scope.
+
+## Verification
+
+For a repo-local smoke test with the bundled sample data:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\run_verification.ps1
+```
+
+This runs `pytest` and one CLI experiment using [sample_ohlcv.csv](C:/Users/Anderson Liu/Desktop/AlphaForge/sample_data/sample_ohlcv.csv).
+
+If `.venv` is broken because its base interpreter path no longer exists, rebuild it with a known-good Python installation:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\rebuild_venv.ps1 -PythonExe "C:\path\to\python.exe"
+```
