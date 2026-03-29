@@ -7,7 +7,9 @@ from pathlib import Path
 
 from . import config
 from .experiment_runner import run_experiment, run_search
+from .report import render_experiment_report, save_experiment_report
 from .schemas import BacktestConfig, DataSpec, StrategySpec
+from .storage import ensure_output_dir
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -18,6 +20,7 @@ def build_parser() -> argparse.ArgumentParser:
     _add_common_arguments(single)
     single.add_argument("--short-window", type=int, required=True)
     single.add_argument("--long-window", type=int, required=True)
+    single.add_argument("--generate-report", action="store_true")
 
     search = subparsers.add_parser("search", help="Run grid search over MA windows")
     _add_common_arguments(search)
@@ -25,6 +28,7 @@ def build_parser() -> argparse.ArgumentParser:
     search.add_argument("--long-windows", type=int, nargs="+", default=config.LONG_WINDOW_RANGE)
     search.add_argument("--max-drawdown-cap", type=float, default=None)
     search.add_argument("--min-trade-count", type=int, default=None)
+    search.add_argument("--generate-report", action="store_true")
 
     fetch_twse = subparsers.add_parser("fetch-twse", help="Fetch TWSE stock-day data and save standardized CSV")
     fetch_twse.add_argument("--stock-no", type=str, required=True)
@@ -43,6 +47,7 @@ def build_parser() -> argparse.ArgumentParser:
     twse_search.add_argument("--long-windows", type=int, nargs="+", default=config.LONG_WINDOW_RANGE)
     twse_search.add_argument("--max-drawdown-cap", type=float, default=None)
     twse_search.add_argument("--min-trade-count", type=int, default=None)
+    twse_search.add_argument("--generate-report", action="store_true")
     twse_search.add_argument("--initial-capital", type=float, default=config.INITIAL_CAPITAL)
     twse_search.add_argument("--fee-rate", type=float, default=config.DEFAULT_FEE_RATE)
     twse_search.add_argument("--slippage-rate", type=float, default=config.DEFAULT_SLIPPAGE_RATE)
@@ -106,8 +111,16 @@ def main() -> None:
                 experiment_name=args.experiment_name,
                 max_drawdown_cap=args.max_drawdown_cap,
                 min_trade_count=args.min_trade_count,
+                generate_best_report=args.generate_report,
             )
-            print(json.dumps(_build_search_summary(ranked, args.output_dir, args.experiment_name, data_output), indent=2, default=str))
+            report_path = _build_search_report_path(args.output_dir, args.experiment_name) if args.generate_report and ranked else None
+            print(
+                json.dumps(
+                    _build_search_summary(ranked, args.output_dir, args.experiment_name, data_output, report_path),
+                    indent=2,
+                    default=str,
+                )
+            )
             return
 
         data_spec = DataSpec(path=args.data, symbol=args.symbol)
@@ -123,14 +136,20 @@ def main() -> None:
                 name="ma_crossover",
                 parameters={"short_window": args.short_window, "long_window": args.long_window},
             )
-            result, _, _ = run_experiment(
+            result, equity_curve, trades = run_experiment(
                 data_spec=data_spec,
                 strategy_spec=strategy_spec,
                 backtest_config=backtest_config,
                 output_dir=args.output_dir,
                 experiment_name=args.experiment_name,
             )
-            print(json.dumps(result.to_dict(), indent=2, default=str))
+            payload = result.to_dict()
+            if args.generate_report:
+                experiment_dir = ensure_output_dir(args.output_dir / args.experiment_name)
+                report_content = render_experiment_report(result, equity_curve, trades)
+                report_path = save_experiment_report(report_content, experiment_dir / "report.html")
+                payload["report_path"] = str(report_path)
+            print(json.dumps(payload, indent=2, default=str))
             return
 
         ranked = run_search(
@@ -144,8 +163,10 @@ def main() -> None:
             experiment_name=args.experiment_name,
             max_drawdown_cap=args.max_drawdown_cap,
             min_trade_count=args.min_trade_count,
+            generate_best_report=args.generate_report,
         )
-        print(json.dumps(_build_search_summary(ranked, args.output_dir, args.experiment_name), indent=2, default=str))
+        report_path = _build_search_report_path(args.output_dir, args.experiment_name) if args.generate_report and ranked else None
+        print(json.dumps(_build_search_summary(ranked, args.output_dir, args.experiment_name, report_path=report_path), indent=2, default=str))
     except ValueError as exc:
         raise SystemExit(str(exc)) from exc
 
@@ -155,7 +176,13 @@ def _load_twse_client():
     return module.TwseFetchRequest, module.fetch_stock_day_history, module.save_stock_day_history
 
 
-def _build_search_summary(ranked, output_dir: Path, experiment_name: str, data_output: Path | None = None) -> dict:
+def _build_search_summary(
+    ranked,
+    output_dir: Path,
+    experiment_name: str,
+    data_output: Path | None = None,
+    report_path: Path | None = None,
+) -> dict:
     search_root = output_dir / experiment_name
     payload = {
         "result_count": len(ranked),
@@ -168,7 +195,13 @@ def _build_search_summary(ranked, output_dir: Path, experiment_name: str, data_o
         payload["best_result"] = None
     if data_output is not None:
         payload["data_output"] = str(data_output)
+    if report_path is not None:
+        payload["report_path"] = str(report_path)
     return payload
+
+
+def _build_search_report_path(output_dir: Path, experiment_name: str) -> Path:
+    return output_dir / experiment_name / "best_report.html"
 
 
 if __name__ == "__main__":

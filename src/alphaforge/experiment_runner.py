@@ -2,10 +2,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pandas as pd
+
 from . import config
 from .backtest import run_backtest
 from .data_loader import load_market_data
 from .metrics import compute_metrics
+from .report import render_experiment_report, save_experiment_report
 from .scoring import rank_results, score_metrics
 from .schemas import BacktestConfig, DataSpec, EquityCurveFrame, ExperimentResult, StrategySpec
 from .search import build_strategy_specs
@@ -52,6 +55,7 @@ def run_search(
     experiment_name: str = "search_experiment",
     max_drawdown_cap: float | None = None,
     min_trade_count: int | None = None,
+    generate_best_report: bool = False,
 ) -> list[ExperimentResult]:
     results: list[ExperimentResult] = []
     strategy_specs = build_strategy_specs("ma_crossover", parameter_grid)
@@ -75,6 +79,8 @@ def run_search(
     if output_dir is not None:
         parameter_columns = list(parameter_grid)
         save_ranked_results_with_columns(search_root, ranked, parameter_columns=parameter_columns)
+        if generate_best_report and ranked:
+            _save_best_search_report(search_root=search_root, best_result=ranked[0])
     return ranked
 
 
@@ -82,3 +88,13 @@ def build_strategy(strategy_spec: StrategySpec) -> MovingAverageCrossoverStrateg
     if strategy_spec.name != "ma_crossover":
         raise ValueError(f"Unsupported strategy: {strategy_spec.name}")
     return MovingAverageCrossoverStrategy(strategy_spec)
+
+
+def _save_best_search_report(search_root: Path, best_result: ExperimentResult) -> Path:
+    if best_result.equity_curve_path is None or best_result.trade_log_path is None:
+        raise ValueError("Best search result is missing saved artifacts required for report generation")
+
+    equity_curve = pd.read_csv(best_result.equity_curve_path)
+    trades = pd.read_csv(best_result.trade_log_path)
+    report_content = render_experiment_report(best_result, equity_curve, trades)
+    return save_experiment_report(report_content, search_root / "best_report.html")

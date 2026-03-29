@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from unittest.mock import patch
 
 import pandas as pd
 
@@ -146,3 +147,29 @@ def test_run_search_saves_empty_ranked_results_with_headers(sample_market_csv: P
         "trade_count",
         "score",
     ]
+
+
+def test_run_search_generates_exactly_one_best_report(sample_market_csv: Path, tmp_path: Path) -> None:
+    report_path = tmp_path / "best_report_output.html"
+
+    with patch("alphaforge.experiment_runner.render_experiment_report", return_value="<html>best report</html>") as render_report, patch(
+        "alphaforge.experiment_runner.save_experiment_report", return_value=report_path
+    ) as save_report:
+        ranked = run_search(
+            data_spec=DataSpec(path=sample_market_csv, symbol="TEST"),
+            parameter_grid={"short_window": [2, 3], "long_window": [4, 5]},
+            backtest_config=BacktestConfig(
+                initial_capital=1000,
+                fee_rate=0.0,
+                slippage_rate=0.0,
+                annualization_factor=252,
+            ),
+            output_dir=tmp_path,
+            experiment_name="search_report_case",
+            generate_best_report=True,
+        )
+
+    assert len(ranked) == 4
+    assert render_report.call_count == 1
+    assert save_report.call_count == 1
+    assert save_report.call_args.args[1] == tmp_path / "search_report_case" / "best_report.html"

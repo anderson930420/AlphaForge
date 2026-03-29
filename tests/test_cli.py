@@ -133,6 +133,7 @@ def test_cli_search_prints_summary_payload(
     assert Path(payload["ranked_results_path"]).name == "ranked_results.csv"
     assert Path(payload["ranked_results_path"]).parent.name == "summary_case"
     assert len(payload["top_results"]) == 1
+    assert "report_path" not in payload
 
 
 def test_cli_run_path_does_not_load_twse_client(
@@ -181,6 +182,67 @@ def test_cli_run_path_does_not_load_twse_client(
 
     payload = json.loads(capsys.readouterr().out)
     assert payload["strategy_spec"]["parameters"] == {"short_window": 2, "long_window": 3}
+    assert "report_path" not in payload
+
+
+def test_cli_run_generates_report_only_when_requested(
+    sample_market_csv: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "alphaforge",
+            "run",
+            "--data",
+            str(sample_market_csv),
+            "--output-dir",
+            str(tmp_path),
+            "--experiment-name",
+            "report_case",
+            "--short-window",
+            "2",
+            "--long-window",
+            "3",
+            "--generate-report",
+        ],
+    )
+
+    sample_result = ExperimentResult(
+        data_spec=DataSpec(path=sample_market_csv, symbol="TEST"),
+        strategy_spec=StrategySpec(name="ma_crossover", parameters={"short_window": 2, "long_window": 3}),
+        backtest_config=BacktestConfig(initial_capital=1000.0, fee_rate=0.0, slippage_rate=0.0, annualization_factor=252),
+        metrics=MetricReport(
+            total_return=0.1,
+            annualized_return=0.1,
+            sharpe_ratio=1.0,
+            max_drawdown=-0.1,
+            win_rate=1.0,
+            turnover=1.0,
+            trade_count=1,
+        ),
+        score=0.5,
+    )
+    sample_equity_curve = pd.DataFrame(
+        {
+            "datetime": pd.date_range("2024-01-01", periods=3, freq="D"),
+            "equity": [1000.0, 1010.0, 990.0],
+        }
+    )
+    sample_trades = pd.DataFrame()
+
+    with patch("alphaforge.cli.run_experiment", return_value=(sample_result, sample_equity_curve, sample_trades)), patch(
+        "alphaforge.cli.render_experiment_report", return_value="<html>report</html>"
+    ), patch("alphaforge.cli.save_experiment_report", side_effect=lambda content, path: path):
+        main()
+
+    payload = json.loads(capsys.readouterr().out)
+    report_path = Path(payload["report_path"])
+    assert report_path.name == "report.html"
+    assert report_path.parent.name == "report_case"
 
 
 def test_cli_twse_search_fetches_saves_and_runs_search(
@@ -247,3 +309,54 @@ def test_cli_twse_search_fetches_saves_and_runs_search(
     assert payload["result_count"] == 1
     assert Path(payload["data_output"]).name == "twse_2330.csv"
     assert payload["best_result"]["strategy_spec"]["parameters"] == {"short_window": 2, "long_window": 4}
+
+
+def test_cli_search_generates_only_best_report_when_requested(
+    sample_market_csv: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "alphaforge",
+            "search",
+            "--data",
+            str(sample_market_csv),
+            "--output-dir",
+            str(tmp_path),
+            "--experiment-name",
+            "search_report_case",
+            "--short-windows",
+            "2",
+            "--long-windows",
+            "4",
+            "--generate-report",
+        ],
+    )
+
+    sample_result = ExperimentResult(
+        data_spec=DataSpec(path=sample_market_csv, symbol="TEST"),
+        strategy_spec=StrategySpec(name="ma_crossover", parameters={"short_window": 2, "long_window": 4}),
+        backtest_config=BacktestConfig(initial_capital=1000.0, fee_rate=0.0, slippage_rate=0.0, annualization_factor=252),
+        metrics=MetricReport(
+            total_return=0.1,
+            annualized_return=0.1,
+            sharpe_ratio=1.0,
+            max_drawdown=-0.1,
+            win_rate=1.0,
+            turnover=1.0,
+            trade_count=1,
+        ),
+        score=0.5,
+    )
+
+    with patch("alphaforge.cli.run_search", return_value=[sample_result]) as run_search_mock:
+        main()
+
+    payload = json.loads(capsys.readouterr().out)
+    assert run_search_mock.call_args.kwargs["generate_best_report"] is True
+    assert Path(payload["report_path"]).name == "best_report.html"
+    assert Path(payload["report_path"]).parent.name == "search_report_case"
