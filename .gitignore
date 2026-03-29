@@ -4,3 +4,4 @@ outputs/
 .pytest_cache/
 __pycache__/
 temp_log.txt
+src/alphaforge.egg-info/
