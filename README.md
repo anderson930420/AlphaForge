@@ -43,13 +43,14 @@ scripts/
 
 ## Setup
 
-Install the project in editable mode with dev dependencies:
+Create a virtual environment and install the project in editable mode with dev dependencies:
 
 ```powershell
-.venv\Scripts\python.exe -m pip install -e ".[dev]"
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -e ".[dev]"
 ```
 
-If `.venv` is broken because its base interpreter path no longer exists, rebuild it with a known-good Python installation:
+If `.venv` already exists but is broken because its base interpreter path no longer exists, rebuild it with a known-good Python installation:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\rebuild_venv.ps1 -PythonExe "C:\path\to\python.exe"

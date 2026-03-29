@@ -130,7 +130,8 @@ def test_cli_search_prints_summary_payload(
 
     assert payload["result_count"] == 1
     assert payload["best_result"] is not None
-    assert payload["ranked_results_path"].endswith("summary_case\\ranked_results.csv")
+    assert Path(payload["ranked_results_path"]).name == "ranked_results.csv"
+    assert Path(payload["ranked_results_path"]).parent.name == "summary_case"
     assert len(payload["top_results"]) == 1
 
 
@@ -244,5 +245,5 @@ def test_cli_twse_search_fetches_saves_and_runs_search(
     payload = json.loads(capsys.readouterr().out)
     assert data_output.exists()
     assert payload["result_count"] == 1
-    assert payload["data_output"].endswith("twse_2330.csv")
+    assert Path(payload["data_output"]).name == "twse_2330.csv"
     assert payload["best_result"]["strategy_spec"]["parameters"] == {"short_window": 2, "long_window": 4}
