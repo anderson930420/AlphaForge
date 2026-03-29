@@ -29,9 +29,25 @@ RANKED_RESULTS_BASE_COLUMNS = [
     "score",
 ]
 
+BACKTEST_EQUITY_CURVE_REQUIRED_COLUMNS = (
+    "datetime",
+    "position",
+    "turnover",
+    "strategy_return",
+    "equity",
+)
+
+REPORT_EQUITY_CURVE_REQUIRED_COLUMNS = (
+    "datetime",
+    "equity",
+    "close",
+)
+
 # AlphaForge intentionally uses pandas.DataFrame as the equity-curve interface.
-# The frame is expected to contain at least datetime, position, turnover,
-# strategy_return, and equity columns after backtest execution.
+# The standard backtest artifact is expected to contain at least the columns in
+# BACKTEST_EQUITY_CURVE_REQUIRED_COLUMNS after backtest execution.
+# Report and visualization paths rely on a stronger shape that also includes
+# close-price data, represented by REPORT_EQUITY_CURVE_REQUIRED_COLUMNS.
 EquityCurveFrame = pd.DataFrame
 
 

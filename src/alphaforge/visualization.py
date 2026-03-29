@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Any
 
 import pandas as pd
 
-from .schemas import EquityCurveFrame
+from .schemas import EquityCurveFrame, REPORT_EQUITY_CURVE_REQUIRED_COLUMNS
 
 if TYPE_CHECKING:
     import plotly.graph_objects as go
@@ -20,7 +20,10 @@ if TYPE_CHECKING:
 def build_equity_curve_figure(equity_curve: EquityCurveFrame) -> go.Figure:
     """Build an equity-curve figure from computed backtest results."""
     # Figure construction belongs here so backtest.py remains computation-only.
-    _validate_equity_curve_columns(equity_curve, required_columns=("datetime", "equity"))
+    _validate_equity_curve_columns(
+        equity_curve,
+        required_columns=REPORT_EQUITY_CURVE_REQUIRED_COLUMNS[:2],
+    )
     go = _load_plotly_graph_objects()
 
     time_values = pd.to_datetime(equity_curve["datetime"])
@@ -49,7 +52,10 @@ def build_equity_curve_figure(equity_curve: EquityCurveFrame) -> go.Figure:
 def build_drawdown_figure(equity_curve: EquityCurveFrame) -> go.Figure:
     """Build a drawdown figure from the backtest equity curve."""
     # Drawdown presentation belongs here even if drawdown metrics are computed elsewhere.
-    _validate_equity_curve_columns(equity_curve, required_columns=("datetime", "equity"))
+    _validate_equity_curve_columns(
+        equity_curve,
+        required_columns=REPORT_EQUITY_CURVE_REQUIRED_COLUMNS[:2],
+    )
     go = _load_plotly_graph_objects()
 
     time_values = pd.to_datetime(equity_curve["datetime"])
@@ -82,7 +88,10 @@ def build_price_trade_figure(
 ) -> go.Figure:
     """Build a price-and-trade figure from the equity curve frame and trade log."""
     # Trade overlays belong here so storage.py does not become a plotting module.
-    _validate_equity_curve_columns(equity_curve, required_columns=("datetime", "close"))
+    _validate_equity_curve_columns(
+        equity_curve,
+        required_columns=(REPORT_EQUITY_CURVE_REQUIRED_COLUMNS[0], REPORT_EQUITY_CURVE_REQUIRED_COLUMNS[2]),
+    )
     go = _load_plotly_graph_objects()
 
     time_values = pd.to_datetime(equity_curve["datetime"])

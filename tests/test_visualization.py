@@ -3,6 +3,7 @@ from __future__ import annotations
 import pandas as pd
 import pytest
 
+from alphaforge.schemas import REPORT_EQUITY_CURVE_REQUIRED_COLUMNS
 from alphaforge.visualization import build_drawdown_figure, build_equity_curve_figure, build_price_trade_figure
 
 go = pytest.importorskip("plotly.graph_objects")
@@ -84,3 +85,7 @@ def test_build_price_trade_figure_requires_close_column() -> None:
 
     with pytest.raises(ValueError, match="close"):
         build_price_trade_figure(equity_curve, pd.DataFrame())
+
+
+def test_report_relevant_equity_curve_contract_matches_visualization_requirements() -> None:
+    assert REPORT_EQUITY_CURVE_REQUIRED_COLUMNS == ("datetime", "equity", "close")
