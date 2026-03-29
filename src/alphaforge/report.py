@@ -13,7 +13,7 @@ from pathlib import Path
 import pandas as pd
 
 from .schemas import EquityCurveFrame, ExperimentResult
-from .visualization import build_drawdown_figure, build_equity_curve_figure
+from .visualization import build_drawdown_figure, build_equity_curve_figure, build_price_trade_figure
 
 
 def render_experiment_report(
@@ -26,8 +26,10 @@ def render_experiment_report(
     metrics_rows = _build_metrics_rows(result)
     equity_figure = build_equity_curve_figure(equity_curve)
     drawdown_figure = build_drawdown_figure(equity_curve)
-    equity_figure_html = to_html(equity_figure, full_html=False, include_plotlyjs="cdn")
-    drawdown_figure_html = to_html(drawdown_figure, full_html=False, include_plotlyjs=False)
+    price_trade_figure = build_price_trade_figure(equity_curve, trades)
+    equity_figure_html = _render_figure_html(to_html, equity_figure, include_plotlyjs=True)
+    drawdown_figure_html = _render_figure_html(to_html, drawdown_figure, include_plotlyjs=False)
+    price_trade_figure_html = _render_figure_html(to_html, price_trade_figure, include_plotlyjs=False)
     experiment_title = _build_experiment_title(result)
 
     # The report module assembles content; figure creation stays in visualization.py.
@@ -103,6 +105,10 @@ def render_experiment_report(
       <h2>Drawdown</h2>
       {drawdown_figure_html}
     </section>
+    <section class="section">
+      <h2>Price with Trade Markers</h2>
+      {price_trade_figure_html}
+    </section>
   </main>
 </body>
 </html>
@@ -144,6 +150,10 @@ def _build_metrics_rows(result: ExperimentResult) -> str:
 
 def _format_percent(value: float) -> str:
     return f"{value:.2%}"
+
+
+def _render_figure_html(to_html, figure, include_plotlyjs: bool) -> str:
+    return to_html(figure, full_html=False, include_plotlyjs=include_plotlyjs)
 
 
 def _load_plotly_to_html():
