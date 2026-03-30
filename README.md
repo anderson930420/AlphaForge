@@ -18,6 +18,7 @@ The current MVP supports:
 - Running everything from a CLI
 - Running a simple train/test validation workflow for parameter search
 - Running a first-pass walk-forward validation workflow for parameter search
+- Comparing strategy results against a buy-and-hold baseline in reports and validation summaries
 
 Deferred capabilities such as paper parsing, formula extraction, genetic algorithms, broker integration, live trading, and web UI remain intentionally out of scope.
 
@@ -27,6 +28,7 @@ Deferred capabilities such as paper parsing, formula extraction, genetic algorit
 src/alphaforge/
   config.py
   schemas.py
+  benchmark.py
   data_loader.py
   backtest.py
   metrics.py
@@ -117,6 +119,8 @@ outputs/<experiment_name>/
   equity_curve.csv
 ```
 
+Single-experiment HTML reports include strategy-versus-buy-and-hold comparison alongside the existing strategy equity, drawdown, and price/trade views.
+
 Search outputs:
 
 ```text
@@ -148,6 +152,8 @@ outputs/<validation_name>/
     equity_curve.csv
 ```
 
+`validation_summary.json` includes the selected strategy test result plus a test-side `test_benchmark_summary` for buy-and-hold comparison.
+
 Walk-forward outputs:
 
 ```text
@@ -163,6 +169,8 @@ outputs/<walk_forward_name>/
       test_selected/
     ...
 ```
+
+`walk_forward_summary.json` and `fold_results.csv` include buy-and-hold benchmark summaries for each test fold.
 
 ## Verification
 

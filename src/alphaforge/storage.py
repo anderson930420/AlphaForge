@@ -115,6 +115,7 @@ def save_validation_result(output_dir: Path, validation_result: ValidationResult
         selected_strategy_spec=validation_result.selected_strategy_spec,
         train_best_result=validation_result.train_best_result,
         test_result=validation_result.test_result,
+        test_benchmark_summary=validation_result.test_benchmark_summary,
         validation_summary_path=summary_path,
         train_ranked_results_path=validation_result.train_ranked_results_path,
         metadata=validation_result.metadata,
@@ -132,6 +133,7 @@ def save_walk_forward_result(output_dir: Path, walk_forward_result: WalkForwardR
         walk_forward_config=walk_forward_result.walk_forward_config,
         folds=walk_forward_result.folds,
         aggregate_test_metrics=walk_forward_result.aggregate_test_metrics,
+        aggregate_benchmark_metrics=walk_forward_result.aggregate_benchmark_metrics,
         walk_forward_summary_path=summary_path,
         fold_results_path=fold_results_path,
         metadata=walk_forward_result.metadata,
@@ -167,6 +169,8 @@ def _write_walk_forward_fold_results_csv(path: Path, walk_forward_result: WalkFo
                 "test_win_rate": fold.test_result.metrics.win_rate,
                 "test_turnover": fold.test_result.metrics.turnover,
                 "test_trade_count": fold.test_result.metrics.trade_count,
+                "benchmark_total_return": fold.test_benchmark_summary.get("total_return"),
+                "benchmark_max_drawdown": fold.test_benchmark_summary.get("max_drawdown"),
                 "fold_path": str(fold.fold_path) if fold.fold_path else None,
             }
         )

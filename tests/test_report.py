@@ -62,13 +62,18 @@ def test_render_and_save_experiment_report_creates_html(tmp_path: Path) -> None:
     assert "Turnover" in saved_content
     assert "Trade Count" in saved_content
     assert "Equity Curve" in saved_content
+    assert "Strategy vs Buy-and-Hold" in saved_content
     assert "Drawdown" in saved_content
     assert "Price with Trade Markers" in saved_content
+    assert "Benchmark Return" in saved_content
+    assert "Benchmark Max Drawdown" in saved_content
+    assert "Excess Return" in saved_content
+    assert "Buy and Hold" in saved_content
     assert "Close Price" in saved_content
     assert "Buy" in saved_content
     assert "Sell" in saved_content
     assert "https://cdn.plot.ly" not in saved_content
-    assert saved_content.count("Plotly.newPlot") == 3
+    assert saved_content.count("Plotly.newPlot") == 4
 
 
 def test_render_experiment_report_handles_empty_trades_with_price_section() -> None:
@@ -102,7 +107,10 @@ def test_render_experiment_report_handles_empty_trades_with_price_section() -> N
 
     report_content = render_experiment_report(result, equity_curve, pd.DataFrame())
 
+    assert "Strategy vs Buy-and-Hold" in report_content
+    assert "Benchmark Return" in report_content
     assert "Price with Trade Markers" in report_content
+    assert "Buy and Hold" in report_content
     assert "Close Price" in report_content
     assert "https://cdn.plot.ly" not in report_content
 

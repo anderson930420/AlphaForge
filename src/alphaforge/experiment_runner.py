@@ -6,6 +6,7 @@ import pandas as pd
 
 from . import config
 from .backtest import run_backtest
+from .benchmark import summarize_buy_and_hold
 from .data_loader import load_market_data
 from .metrics import compute_metrics
 from .report import render_experiment_report, render_search_comparison_report, save_experiment_report
@@ -69,13 +70,17 @@ def _run_experiment_on_market_data(
     target_positions = strategy.generate_signals(market_data)
     equity_curve, trades = run_backtest(market_data, target_positions, backtest_config)
     metrics = compute_metrics(equity_curve, trades, backtest_config.annualization_factor)
+    benchmark_summary = summarize_buy_and_hold(market_data, backtest_config.initial_capital)
     result = ExperimentResult(
         data_spec=data_spec,
         strategy_spec=strategy_spec,
         backtest_config=backtest_config,
         metrics=metrics,
         score=score_metrics(metrics),
-        metadata={"missing_data_policy": market_data.attrs.get("missing_data_policy", "")},
+        metadata={
+            "missing_data_policy": market_data.attrs.get("missing_data_policy", ""),
+            "benchmark_summary": benchmark_summary,
+        },
     )
     if output_dir is not None:
         result = save_single_experiment(output_dir, experiment_name, result, equity_curve, trades)
@@ -220,6 +225,7 @@ def run_validate_search(
         selected_strategy_spec=selected_strategy_spec,
         train_best_result=train_best_result,
         test_result=test_result,
+        test_benchmark_summary=_extract_benchmark_summary(test_result),
         train_ranked_results_path=train_ranked_results_path,
         metadata=_build_validation_metadata(train_data, test_data),
     )
@@ -293,6 +299,7 @@ def run_walk_forward_search(
                 selected_strategy_spec=selected_strategy_spec,
                 train_best_result=ranked[0],
                 test_result=test_result,
+                test_benchmark_summary=_extract_benchmark_summary(test_result),
                 fold_path=fold_root,
             )
         )
@@ -306,6 +313,7 @@ def run_walk_forward_search(
         ),
         folds=fold_results,
         aggregate_test_metrics=_aggregate_walk_forward_test_metrics(fold_results),
+        aggregate_benchmark_metrics=_aggregate_walk_forward_benchmark_metrics(fold_results),
         metadata={"fold_count": len(fold_results)},
     )
     if walk_forward_root is not None:
@@ -446,4 +454,40 @@ def _aggregate_walk_forward_test_metrics(folds: list[WalkForwardFoldResult]) -> 
         "mean_test_win_rate": float(sum(metric.win_rate for metric in test_metrics) / len(test_metrics)),
         "mean_test_turnover": float(sum(metric.turnover for metric in test_metrics) / len(test_metrics)),
         "total_test_trade_count": int(sum(metric.trade_count for metric in test_metrics)),
+    }
+
+
+def _aggregate_walk_forward_benchmark_metrics(folds: list[WalkForwardFoldResult]) -> dict[str, float | int]:
+    if not folds:
+        return {
+            "fold_count": 0,
+            "mean_benchmark_total_return": 0.0,
+            "mean_benchmark_max_drawdown": 0.0,
+            "mean_excess_return": 0.0,
+        }
+
+    benchmark_summaries = [fold.test_benchmark_summary for fold in folds]
+    return {
+        "fold_count": len(folds),
+        "mean_benchmark_total_return": float(
+            sum(summary.get("total_return", 0.0) for summary in benchmark_summaries) / len(benchmark_summaries)
+        ),
+        "mean_benchmark_max_drawdown": float(
+            sum(summary.get("max_drawdown", 0.0) for summary in benchmark_summaries) / len(benchmark_summaries)
+        ),
+        "mean_excess_return": float(
+            sum(
+                fold.test_result.metrics.total_return - fold.test_benchmark_summary.get("total_return", 0.0)
+                for fold in folds
+            )
+            / len(folds)
+        ),
+    }
+
+
+def _extract_benchmark_summary(result: ExperimentResult) -> dict[str, float]:
+    benchmark_summary = result.metadata.get("benchmark_summary", {})
+    return {
+        "total_return": float(benchmark_summary.get("total_return", 0.0)),
+        "max_drawdown": float(benchmark_summary.get("max_drawdown", 0.0)),
     }

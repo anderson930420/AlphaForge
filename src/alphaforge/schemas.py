@@ -128,6 +128,7 @@ class ValidationResult:
     selected_strategy_spec: StrategySpec
     train_best_result: ExperimentResult
     test_result: ExperimentResult
+    test_benchmark_summary: dict[str, float] = field(default_factory=dict)
     validation_summary_path: Path | None = None
     train_ranked_results_path: Path | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
@@ -158,6 +159,7 @@ class WalkForwardFoldResult:
     selected_strategy_spec: StrategySpec
     train_best_result: ExperimentResult
     test_result: ExperimentResult
+    test_benchmark_summary: dict[str, float] = field(default_factory=dict)
     fold_path: Path | None = None
 
     def to_dict(self) -> dict[str, Any]:
@@ -172,6 +174,7 @@ class WalkForwardResult:
     walk_forward_config: WalkForwardConfig
     folds: list[WalkForwardFoldResult]
     aggregate_test_metrics: dict[str, float | int]
+    aggregate_benchmark_metrics: dict[str, float | int] = field(default_factory=dict)
     walk_forward_summary_path: Path | None = None
     fold_results_path: Path | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
@@ -186,6 +189,7 @@ class WalkForwardResult:
             "walk_forward_config": asdict(self.walk_forward_config),
             "folds": [fold.to_dict() for fold in self.folds],
             "aggregate_test_metrics": self.aggregate_test_metrics,
+            "aggregate_benchmark_metrics": self.aggregate_benchmark_metrics,
             "walk_forward_summary_path": str(self.walk_forward_summary_path) if self.walk_forward_summary_path else None,
             "fold_results_path": str(self.fold_results_path) if self.fold_results_path else None,
             "metadata": self.metadata,

@@ -12,6 +12,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from .benchmark import build_buy_and_hold_equity_curve, summarize_buy_and_hold
 from .schemas import EquityCurveFrame, ExperimentResult
 from .visualization import (
     build_drawdown_comparison_figure,
@@ -19,6 +20,7 @@ from .visualization import (
     build_equity_comparison_figure,
     build_equity_curve_figure,
     build_price_trade_figure,
+    build_strategy_benchmark_figure,
 )
 
 
@@ -29,11 +31,15 @@ def render_experiment_report(
 ) -> str:
     """Assemble a single-experiment HTML report from existing artifacts."""
     to_html = _load_plotly_to_html()
-    metrics_rows = _build_metrics_rows(result)
+    benchmark_summary = summarize_buy_and_hold(equity_curve, result.backtest_config.initial_capital)
+    benchmark_curve = build_buy_and_hold_equity_curve(equity_curve, result.backtest_config.initial_capital)
+    metrics_rows = _build_metrics_rows(result, benchmark_summary)
     equity_figure = build_equity_curve_figure(equity_curve)
+    strategy_benchmark_figure = build_strategy_benchmark_figure(equity_curve, benchmark_curve)
     drawdown_figure = build_drawdown_figure(equity_curve)
     price_trade_figure = build_price_trade_figure(equity_curve, trades)
     equity_figure_html = _render_figure_html(to_html, equity_figure, include_plotlyjs=True)
+    strategy_benchmark_figure_html = _render_figure_html(to_html, strategy_benchmark_figure, include_plotlyjs=False)
     drawdown_figure_html = _render_figure_html(to_html, drawdown_figure, include_plotlyjs=False)
     price_trade_figure_html = _render_figure_html(to_html, price_trade_figure, include_plotlyjs=False)
     experiment_title = _build_experiment_title(result)
@@ -106,6 +112,10 @@ def render_experiment_report(
     <section class="section">
       <h2>Equity Curve</h2>
       {equity_figure_html}
+    </section>
+    <section class="section">
+      <h2>Strategy vs Buy-and-Hold</h2>
+      {strategy_benchmark_figure_html}
     </section>
     <section class="section">
       <h2>Drawdown</h2>
@@ -308,12 +318,15 @@ def _build_best_report_link(search_root: Path, best_report_path: Path | None, ra
     return f'<a href="{href}">{label}</a>'
 
 
-def _build_metrics_rows(result: ExperimentResult) -> str:
+def _build_metrics_rows(result: ExperimentResult, benchmark_summary: dict[str, float]) -> str:
     metrics = [
         ("Total Return", _format_percent(result.metrics.total_return)),
         ("Annualized Return", _format_percent(result.metrics.annualized_return)),
         ("Sharpe Ratio", f"{result.metrics.sharpe_ratio:.2f}"),
         ("Max Drawdown", _format_percent(result.metrics.max_drawdown)),
+        ("Benchmark Return", _format_percent(benchmark_summary["total_return"])),
+        ("Benchmark Max Drawdown", _format_percent(benchmark_summary["max_drawdown"])),
+        ("Excess Return", _format_percent(result.metrics.total_return - benchmark_summary["total_return"])),
         ("Win Rate", _format_percent(result.metrics.win_rate)),
         ("Turnover", f"{result.metrics.turnover:.2f}"),
         ("Trade Count", str(result.metrics.trade_count)),

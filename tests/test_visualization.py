@@ -4,7 +4,12 @@ import pandas as pd
 import pytest
 
 from alphaforge.schemas import REPORT_EQUITY_CURVE_REQUIRED_COLUMNS
-from alphaforge.visualization import build_drawdown_figure, build_equity_curve_figure, build_price_trade_figure
+from alphaforge.visualization import (
+    build_drawdown_figure,
+    build_equity_curve_figure,
+    build_price_trade_figure,
+    build_strategy_benchmark_figure,
+)
 
 go = pytest.importorskip("plotly.graph_objects")
 
@@ -52,6 +57,26 @@ def test_build_drawdown_figure_requires_datetime_and_equity_columns() -> None:
 
     with pytest.raises(ValueError, match="equity"):
         build_drawdown_figure(equity_curve)
+
+
+def test_build_strategy_benchmark_figure_returns_two_series() -> None:
+    strategy_curve = pd.DataFrame(
+        {
+            "datetime": pd.date_range("2024-01-01", periods=3, freq="D"),
+            "equity": [1000.0, 1010.0, 1025.0],
+        }
+    )
+    benchmark_curve = pd.DataFrame(
+        {
+            "datetime": pd.date_range("2024-01-01", periods=3, freq="D"),
+            "equity": [1000.0, 1005.0, 1015.0],
+        }
+    )
+
+    figure = build_strategy_benchmark_figure(strategy_curve, benchmark_curve)
+
+    assert isinstance(figure, go.Figure)
+    assert [trace.name for trace in figure.data] == ["Strategy Equity", "Buy and Hold"]
 
 
 def test_build_price_trade_figure_returns_close_line_with_trade_markers() -> None:

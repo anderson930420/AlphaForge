@@ -41,6 +41,9 @@ def test_run_validate_search_splits_data_chronologically_and_saves_outputs(sampl
     summary_payload = json.loads(summary_path.read_text(encoding="utf-8"))
     assert Path(summary_payload["validation_summary_path"]).name == "validation_summary.json"
     assert Path(summary_payload["train_ranked_results_path"]).name == "train_ranked_results.csv"
+    assert "test_benchmark_summary" in summary_payload
+    assert "total_return" in summary_payload["test_benchmark_summary"]
+    assert "max_drawdown" in summary_payload["test_benchmark_summary"]
     assert result.metadata["train_rows"] == 4
     assert result.metadata["test_rows"] == 4
     assert result.metadata["train_end"] < result.metadata["test_start"]
@@ -100,6 +103,7 @@ def test_run_validate_search_uses_train_only_for_search_and_selected_params_for_
     assert searched_train["datetime"].max() < tested_market["datetime"].min()
     assert tested_strategy.parameters == {"short_window": 2, "long_window": 4}
     assert result.selected_strategy_spec.parameters == {"short_window": 2, "long_window": 4}
+    assert result.test_benchmark_summary == {"total_return": 0.0, "max_drawdown": 0.0}
 
 
 def test_run_validate_search_rejects_invalid_split_ratio(sample_market_csv: Path) -> None:
@@ -192,6 +196,8 @@ def test_run_walk_forward_search_creates_chronological_fold_outputs(sample_marke
     assert fold_results_path.exists()
     assert len(result.folds) == 2
     assert result.folds[0].train_end < result.folds[0].test_start
+    assert "total_return" in result.folds[0].test_benchmark_summary
+    assert "mean_benchmark_total_return" in result.aggregate_benchmark_metrics
     assert (fold_root / "train_search" / "ranked_results.csv").exists()
     assert (fold_root / "test_selected" / "metrics_summary.json").exists()
 
@@ -251,6 +257,7 @@ def test_run_walk_forward_search_uses_train_fold_for_search_and_next_window_for_
     assert first_train["datetime"].max() < first_test["datetime"].min()
     assert second_selected_strategy.parameters == {"short_window": 3, "long_window": 4}
     assert len(result.folds) == 3
+    assert result.folds[0].test_benchmark_summary == {"total_return": 0.0, "max_drawdown": 0.0}
 
 
 def test_run_walk_forward_search_rejects_dataset_too_short(sample_market_csv: Path) -> None:
@@ -309,6 +316,7 @@ def test_cli_walk_forward_prints_summary_payload(
     walk_forward_payload = {
         "walk_forward_config": {"train_size": 4, "test_size": 2, "step_size": 2},
         "aggregate_test_metrics": {"fold_count": 2},
+        "aggregate_benchmark_metrics": {"fold_count": 2, "mean_benchmark_total_return": 0.03},
         "walk_forward_summary_path": str(tmp_path / "walk_forward_case" / "walk_forward_summary.json"),
     }
 
@@ -319,4 +327,5 @@ def test_cli_walk_forward_prints_summary_payload(
     payload = json.loads(capsys.readouterr().out)
     assert run_walk_forward_mock.call_args.kwargs["train_size"] == 4
     assert payload["walk_forward_config"]["step_size"] == 2
+    assert payload["aggregate_benchmark_metrics"]["mean_benchmark_total_return"] == 0.03
     assert Path(payload["walk_forward_summary_path"]).name == "walk_forward_summary.json"

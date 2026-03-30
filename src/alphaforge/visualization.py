@@ -49,6 +49,50 @@ def build_equity_curve_figure(equity_curve: EquityCurveFrame) -> go.Figure:
     return figure
 
 
+def build_strategy_benchmark_figure(
+    strategy_equity_curve: EquityCurveFrame,
+    benchmark_equity_curve: EquityCurveFrame,
+) -> go.Figure:
+    """Build a comparison figure for strategy equity versus buy-and-hold."""
+    _validate_equity_curve_columns(
+        strategy_equity_curve,
+        required_columns=REPORT_EQUITY_CURVE_REQUIRED_COLUMNS[:2],
+    )
+    _validate_equity_curve_columns(
+        benchmark_equity_curve,
+        required_columns=REPORT_EQUITY_CURVE_REQUIRED_COLUMNS[:2],
+    )
+    go = _load_plotly_graph_objects()
+
+    figure = go.Figure()
+    figure.add_trace(
+        go.Scatter(
+            x=pd.to_datetime(strategy_equity_curve["datetime"]),
+            y=strategy_equity_curve["equity"].astype(float),
+            mode="lines",
+            name="Strategy Equity",
+            hovertemplate="Time=%{x}<br>Equity=%{y:,.2f}<extra></extra>",
+        )
+    )
+    figure.add_trace(
+        go.Scatter(
+            x=pd.to_datetime(benchmark_equity_curve["datetime"]),
+            y=benchmark_equity_curve["equity"].astype(float),
+            mode="lines",
+            name="Buy and Hold",
+            hovertemplate="Time=%{x}<br>Equity=%{y:,.2f}<extra></extra>",
+        )
+    )
+    figure.update_layout(
+        title="Strategy vs Buy-and-Hold",
+        xaxis_title="Time",
+        yaxis_title="Portfolio Value",
+        template="plotly_white",
+        hovermode="x unified",
+    )
+    return figure
+
+
 def build_drawdown_figure(equity_curve: EquityCurveFrame) -> go.Figure:
     """Build a drawdown figure from the backtest equity curve."""
     # Drawdown presentation belongs here even if drawdown metrics are computed elsewhere.
