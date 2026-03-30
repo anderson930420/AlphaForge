@@ -5,7 +5,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from alphaforge.report import render_experiment_report, save_experiment_report
+from alphaforge.report import render_experiment_report, render_search_comparison_report, save_experiment_report
 from alphaforge.schemas import BacktestConfig, DataSpec, ExperimentResult, MetricReport, StrategySpec
 
 pytest.importorskip("plotly")
@@ -105,3 +105,65 @@ def test_render_experiment_report_handles_empty_trades_with_price_section() -> N
     assert "Price with Trade Markers" in report_content
     assert "Close Price" in report_content
     assert "https://cdn.plot.ly" not in report_content
+
+
+def test_render_search_comparison_report_includes_ranked_table_and_overlay_sections(tmp_path: Path) -> None:
+    search_root = tmp_path / "search_case"
+    search_root.mkdir()
+    ranked_results = [
+        ExperimentResult(
+            data_spec=DataSpec(path=Path("sample_data/a.csv"), symbol="2330"),
+            strategy_spec=StrategySpec(name="ma_crossover", parameters={"short_window": 2, "long_window": 4}),
+            backtest_config=BacktestConfig(100000.0, 0.001, 0.0005, 252),
+            metrics=MetricReport(0.2, 0.3, 1.4, -0.08, 0.6, 1.2, 4),
+            score=0.9,
+            equity_curve_path=search_root / "runs" / "run_001" / "equity_curve.csv",
+        ),
+        ExperimentResult(
+            data_spec=DataSpec(path=Path("sample_data/b.csv"), symbol="2330"),
+            strategy_spec=StrategySpec(name="ma_crossover", parameters={"short_window": 3, "long_window": 5}),
+            backtest_config=BacktestConfig(100000.0, 0.001, 0.0005, 252),
+            metrics=MetricReport(0.18, 0.28, 1.2, -0.1, 0.55, 1.1, 3),
+            score=0.8,
+            equity_curve_path=search_root / "runs" / "run_002" / "equity_curve.csv",
+        ),
+    ]
+    top_equity_curves = {
+        "Rank 1 | SW 2 | LW 4": pd.DataFrame(
+            {"datetime": pd.date_range("2024-01-01", periods=3, freq="D"), "equity": [100.0, 105.0, 110.0]}
+        ),
+        "Rank 2 | SW 3 | LW 5": pd.DataFrame(
+            {"datetime": pd.date_range("2024-01-01", periods=3, freq="D"), "equity": [100.0, 103.0, 107.0]}
+        ),
+    }
+
+    report_content = render_search_comparison_report(
+        search_root=search_root,
+        ranked_results=ranked_results,
+        top_equity_curves=top_equity_curves,
+        best_report_path=search_root / "best_report.html",
+    )
+
+    assert "Ranked Comparison" in report_content
+    assert "Short Window" in report_content
+    assert "Long Window" in report_content
+    assert "Top Equity Curves" in report_content
+    assert "Top Drawdowns" in report_content
+    assert "runs/run_001" in report_content
+    assert "best_report.html" in report_content
+    assert "https://cdn.plot.ly" not in report_content
+
+
+def test_render_search_comparison_report_handles_empty_ranked_results(tmp_path: Path) -> None:
+    search_root = tmp_path / "empty_search"
+    search_root.mkdir()
+
+    report_content = render_search_comparison_report(
+        search_root=search_root,
+        ranked_results=[],
+        top_equity_curves={},
+    )
+
+    assert "Ranked Comparison" in report_content
+    assert "No ranked results available." in report_content
+    assert "Top Equity Curves" not in report_content

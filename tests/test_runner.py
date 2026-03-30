@@ -150,10 +150,11 @@ def test_run_search_saves_empty_ranked_results_with_headers(sample_market_csv: P
 
 
 def test_run_search_generates_exactly_one_best_report(sample_market_csv: Path, tmp_path: Path) -> None:
-    report_path = tmp_path / "best_report_output.html"
-
     with patch("alphaforge.experiment_runner.render_experiment_report", return_value="<html>best report</html>") as render_report, patch(
-        "alphaforge.experiment_runner.save_experiment_report", return_value=report_path
+        "alphaforge.experiment_runner.render_search_comparison_report", return_value="<html>search report</html>"
+    ) as render_search_report, patch(
+        "alphaforge.experiment_runner.save_experiment_report",
+        side_effect=lambda content, path: path,
     ) as save_report:
         ranked = run_search(
             data_spec=DataSpec(path=sample_market_csv, symbol="TEST"),
@@ -171,5 +172,37 @@ def test_run_search_generates_exactly_one_best_report(sample_market_csv: Path, t
 
     assert len(ranked) == 4
     assert render_report.call_count == 1
+    assert render_search_report.call_count == 1
+    assert save_report.call_count == 2
+    saved_paths = [call.args[1] for call in save_report.call_args_list]
+    assert tmp_path / "search_report_case" / "best_report.html" in saved_paths
+    assert tmp_path / "search_report_case" / "search_report.html" in saved_paths
+
+
+def test_run_search_generates_empty_search_report_without_best_report(sample_market_csv: Path, tmp_path: Path) -> None:
+    with patch("alphaforge.experiment_runner.render_experiment_report") as render_report, patch(
+        "alphaforge.experiment_runner.render_search_comparison_report", return_value="<html>empty search report</html>"
+    ) as render_search_report, patch(
+        "alphaforge.experiment_runner.save_experiment_report",
+        side_effect=lambda content, path: path,
+    ) as save_report:
+        ranked = run_search(
+            data_spec=DataSpec(path=sample_market_csv, symbol="TEST"),
+            parameter_grid={"short_window": [2], "long_window": [4]},
+            backtest_config=BacktestConfig(
+                initial_capital=1000,
+                fee_rate=0.0,
+                slippage_rate=0.0,
+                annualization_factor=252,
+            ),
+            output_dir=tmp_path,
+            experiment_name="empty_search_report_case",
+            min_trade_count=10,
+            generate_best_report=True,
+        )
+
+    assert ranked == []
+    assert render_report.call_count == 0
+    assert render_search_report.call_count == 1
     assert save_report.call_count == 1
-    assert save_report.call_args.args[1] == tmp_path / "search_report_case" / "best_report.html"
+    assert save_report.call_args.args[1] == tmp_path / "empty_search_report_case" / "search_report.html"

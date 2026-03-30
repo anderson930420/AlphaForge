@@ -114,9 +114,17 @@ def main() -> None:
                 generate_best_report=args.generate_report,
             )
             report_path = _build_search_report_path(args.output_dir, args.experiment_name) if args.generate_report and ranked else None
+            search_report_path = _build_search_comparison_report_path(args.output_dir, args.experiment_name) if args.generate_report else None
             print(
                 json.dumps(
-                    _build_search_summary(ranked, args.output_dir, args.experiment_name, data_output, report_path),
+                    _build_search_summary(
+                        ranked,
+                        args.output_dir,
+                        args.experiment_name,
+                        data_output=data_output,
+                        report_path=report_path,
+                        search_report_path=search_report_path,
+                    ),
                     indent=2,
                     default=str,
                 )
@@ -166,7 +174,20 @@ def main() -> None:
             generate_best_report=args.generate_report,
         )
         report_path = _build_search_report_path(args.output_dir, args.experiment_name) if args.generate_report and ranked else None
-        print(json.dumps(_build_search_summary(ranked, args.output_dir, args.experiment_name, report_path=report_path), indent=2, default=str))
+        search_report_path = _build_search_comparison_report_path(args.output_dir, args.experiment_name) if args.generate_report else None
+        print(
+            json.dumps(
+                _build_search_summary(
+                    ranked,
+                    args.output_dir,
+                    args.experiment_name,
+                    report_path=report_path,
+                    search_report_path=search_report_path,
+                ),
+                indent=2,
+                default=str,
+            )
+        )
     except ValueError as exc:
         raise SystemExit(str(exc)) from exc
 
@@ -182,6 +203,7 @@ def _build_search_summary(
     experiment_name: str,
     data_output: Path | None = None,
     report_path: Path | None = None,
+    search_report_path: Path | None = None,
 ) -> dict:
     search_root = output_dir / experiment_name
     payload = {
@@ -197,11 +219,17 @@ def _build_search_summary(
         payload["data_output"] = str(data_output)
     if report_path is not None:
         payload["report_path"] = str(report_path)
+    if search_report_path is not None:
+        payload["search_report_path"] = str(search_report_path)
     return payload
 
 
 def _build_search_report_path(output_dir: Path, experiment_name: str) -> Path:
     return output_dir / experiment_name / "best_report.html"
+
+
+def _build_search_comparison_report_path(output_dir: Path, experiment_name: str) -> Path:
+    return output_dir / experiment_name / "search_report.html"
 
 
 if __name__ == "__main__":

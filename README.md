@@ -76,6 +76,8 @@ Search output now returns a compact summary payload with:
 - `best_result`
 - `top_results`
 - `ranked_results_path`
+- `report_path` when `--generate-report` creates `best_report.html`
+- `search_report_path` when `--generate-report` creates `search_report.html`
 
 Fetch TWSE daily data to a standardized CSV:
 
@@ -106,6 +108,8 @@ Search outputs:
 ```text
 outputs/<search_name>/
   ranked_results.csv
+  best_report.html          # when --generate-report is used and ranked results exist
+  search_report.html        # when --generate-report is used
   runs/
     run_001/
     run_002/

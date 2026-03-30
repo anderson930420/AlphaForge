@@ -8,7 +8,7 @@ from . import config
 from .backtest import run_backtest
 from .data_loader import load_market_data
 from .metrics import compute_metrics
-from .report import render_experiment_report, save_experiment_report
+from .report import render_experiment_report, render_search_comparison_report, save_experiment_report
 from .scoring import rank_results, score_metrics
 from .schemas import BacktestConfig, DataSpec, EquityCurveFrame, ExperimentResult, StrategySpec
 from .search import build_strategy_specs
@@ -79,8 +79,9 @@ def run_search(
     if output_dir is not None:
         parameter_columns = list(parameter_grid)
         save_ranked_results_with_columns(search_root, ranked, parameter_columns=parameter_columns)
-        if generate_best_report and ranked:
-            _save_best_search_report(search_root=search_root, best_result=ranked[0])
+        if generate_best_report:
+            best_report_path = _save_best_search_report(search_root=search_root, best_result=ranked[0]) if ranked else None
+            _save_search_comparison_report(search_root=search_root, ranked_results=ranked, best_report_path=best_report_path)
     return ranked
 
 
@@ -98,3 +99,39 @@ def _save_best_search_report(search_root: Path, best_result: ExperimentResult) -
     trades = pd.read_csv(best_result.trade_log_path)
     report_content = render_experiment_report(best_result, equity_curve, trades)
     return save_experiment_report(report_content, search_root / "best_report.html")
+
+
+def _save_search_comparison_report(
+    search_root: Path,
+    ranked_results: list[ExperimentResult],
+    best_report_path: Path | None,
+    top_n: int = 5,
+) -> Path:
+    top_equity_curves = _load_top_search_equity_curves(ranked_results, top_n=top_n)
+    report_content = render_search_comparison_report(
+        search_root=search_root,
+        ranked_results=ranked_results,
+        top_equity_curves=top_equity_curves,
+        best_report_path=best_report_path,
+    )
+    return save_experiment_report(report_content, search_root / "search_report.html")
+
+
+def _load_top_search_equity_curves(
+    ranked_results: list[ExperimentResult],
+    top_n: int,
+) -> dict[str, EquityCurveFrame]:
+    top_equity_curves: dict[str, EquityCurveFrame] = {}
+    for rank, result in enumerate(ranked_results[:top_n], start=1):
+        if result.equity_curve_path is None:
+            raise ValueError("Ranked search result is missing saved equity curve required for comparison report generation")
+        label = _build_search_curve_label(rank, result)
+        top_equity_curves[label] = pd.read_csv(result.equity_curve_path)
+    return top_equity_curves
+
+
+def _build_search_curve_label(rank: int, result: ExperimentResult) -> str:
+    parameters = result.strategy_spec.parameters
+    short_window = parameters.get("short_window", "")
+    long_window = parameters.get("long_window", "")
+    return f"Rank {rank} | SW {short_window} | LW {long_window}"

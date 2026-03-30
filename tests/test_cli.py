@@ -134,6 +134,7 @@ def test_cli_search_prints_summary_payload(
     assert Path(payload["ranked_results_path"]).parent.name == "summary_case"
     assert len(payload["top_results"]) == 1
     assert "report_path" not in payload
+    assert "search_report_path" not in payload
 
 
 def test_cli_run_path_does_not_load_twse_client(
@@ -360,3 +361,39 @@ def test_cli_search_generates_only_best_report_when_requested(
     assert run_search_mock.call_args.kwargs["generate_best_report"] is True
     assert Path(payload["report_path"]).name == "best_report.html"
     assert Path(payload["report_path"]).parent.name == "search_report_case"
+    assert Path(payload["search_report_path"]).name == "search_report.html"
+    assert Path(payload["search_report_path"]).parent.name == "search_report_case"
+
+
+def test_cli_search_with_empty_ranked_results_still_returns_search_report_path(
+    sample_market_csv: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "alphaforge",
+            "search",
+            "--data",
+            str(sample_market_csv),
+            "--output-dir",
+            str(tmp_path),
+            "--experiment-name",
+            "empty_search_case",
+            "--short-windows",
+            "2",
+            "--long-windows",
+            "4",
+            "--generate-report",
+        ],
+    )
+
+    with patch("alphaforge.cli.run_search", return_value=[]):
+        main()
+
+    payload = json.loads(capsys.readouterr().out)
+    assert "report_path" not in payload
+    assert Path(payload["search_report_path"]).name == "search_report.html"

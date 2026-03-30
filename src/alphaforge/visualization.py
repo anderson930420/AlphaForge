@@ -141,6 +141,66 @@ def build_price_trade_figure(
     return figure
 
 
+def build_equity_comparison_figure(equity_curves: dict[str, EquityCurveFrame]) -> go.Figure:
+    """Build an overlay figure comparing multiple ranked equity curves."""
+    _validate_comparison_input(equity_curves)
+    go = _load_plotly_graph_objects()
+
+    figure = go.Figure()
+    for label, equity_curve in equity_curves.items():
+        _validate_equity_curve_columns(
+            equity_curve,
+            required_columns=REPORT_EQUITY_CURVE_REQUIRED_COLUMNS[:2],
+        )
+        figure.add_trace(
+            go.Scatter(
+                x=pd.to_datetime(equity_curve["datetime"]),
+                y=equity_curve["equity"].astype(float),
+                mode="lines",
+                name=label,
+                hovertemplate="Time=%{x}<br>Equity=%{y:,.2f}<extra>%{fullData.name}</extra>",
+            )
+        )
+    figure.update_layout(
+        title="Top Ranked Equity Curves",
+        xaxis_title="Time",
+        yaxis_title="Portfolio Value",
+        template="plotly_white",
+        hovermode="x unified",
+    )
+    return figure
+
+
+def build_drawdown_comparison_figure(equity_curves: dict[str, EquityCurveFrame]) -> go.Figure:
+    """Build an overlay figure comparing drawdown across ranked equity curves."""
+    _validate_comparison_input(equity_curves)
+    go = _load_plotly_graph_objects()
+
+    figure = go.Figure()
+    for label, equity_curve in equity_curves.items():
+        _validate_equity_curve_columns(
+            equity_curve,
+            required_columns=REPORT_EQUITY_CURVE_REQUIRED_COLUMNS[:2],
+        )
+        figure.add_trace(
+            go.Scatter(
+                x=pd.to_datetime(equity_curve["datetime"]),
+                y=_compute_drawdown_series(equity_curve["equity"]),
+                mode="lines",
+                name=label,
+                hovertemplate="Time=%{x}<br>Drawdown=%{y:.2%}<extra>%{fullData.name}</extra>",
+            )
+        )
+    figure.update_layout(
+        title="Top Ranked Drawdowns",
+        xaxis_title="Time",
+        yaxis_title="Drawdown",
+        template="plotly_white",
+        hovermode="x unified",
+    )
+    return figure
+
+
 def _validate_equity_curve_columns(
     equity_curve: EquityCurveFrame,
     required_columns: tuple[str, ...],
@@ -155,6 +215,11 @@ def _compute_drawdown_series(equity: pd.Series) -> pd.Series:
     equity_values = equity.astype(float)
     running_peak = equity_values.cummax()
     return (equity_values / running_peak) - 1.0
+
+
+def _validate_comparison_input(equity_curves: dict[str, EquityCurveFrame]) -> None:
+    if not equity_curves:
+        raise ValueError("At least one equity curve is required for comparison visualization")
 
 
 def _build_trade_markers(trades: pd.DataFrame, time_column: str, price_column: str) -> pd.DataFrame:
