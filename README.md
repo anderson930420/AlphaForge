@@ -16,6 +16,7 @@ The current MVP supports:
 - Saving experiment outputs as JSON and CSV
 - Fetching TWSE stock-day data into the same standardized CSV format
 - Running everything from a CLI
+- Running a simple train/test validation workflow for parameter search
 
 Deferred capabilities such as paper parsing, formula extraction, genetic algorithms, broker integration, live trading, and web UI remain intentionally out of scope.
 
@@ -70,6 +71,12 @@ Run a parameter search from a CSV:
 .venv\Scripts\python.exe -m alphaforge.cli search --data .\sample_data\sample_ohlcv.csv --symbol SAMPLE --short-windows 2 5 10 --long-windows 20 40 60 --experiment-name sample_search
 ```
 
+Run a train/test validation search from a CSV:
+
+```powershell
+.venv\Scripts\python.exe -m alphaforge.cli validate-search --data .\sample_data\sample_ohlcv.csv --symbol SAMPLE --short-windows 2 5 10 --long-windows 20 40 60 --split-ratio 0.7 --experiment-name sample_validation
+```
+
 Search output now returns a compact summary payload with:
 
 - `result_count`
@@ -114,6 +121,24 @@ outputs/<search_name>/
     run_001/
     run_002/
     ...
+```
+
+Validation outputs:
+
+```text
+outputs/<validation_name>/
+  validation_summary.json
+  train_search/
+    ranked_results.csv
+    runs/
+      run_001/
+      run_002/
+      ...
+  test_selected/
+    experiment_config.json
+    metrics_summary.json
+    trade_log.csv
+    equity_curve.csv
 ```
 
 ## Verification

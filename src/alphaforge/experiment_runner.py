@@ -10,9 +10,17 @@ from .data_loader import load_market_data
 from .metrics import compute_metrics
 from .report import render_experiment_report, render_search_comparison_report, save_experiment_report
 from .scoring import rank_results, score_metrics
-from .schemas import BacktestConfig, DataSpec, EquityCurveFrame, ExperimentResult, StrategySpec
+from .schemas import (
+    BacktestConfig,
+    DataSpec,
+    EquityCurveFrame,
+    ExperimentResult,
+    StrategySpec,
+    ValidationResult,
+    ValidationSplitConfig,
+)
 from .search import build_strategy_specs
-from .storage import save_ranked_results_with_columns, save_single_experiment
+from .storage import save_ranked_results_with_columns, save_single_experiment, save_validation_result
 from .strategy.ma_crossover import MovingAverageCrossoverStrategy
 
 
@@ -30,6 +38,24 @@ def run_experiment(
         annualization_factor=config.DEFAULT_ANNUALIZATION,
     )
     market_data = load_market_data(data_spec)
+    return _run_experiment_on_market_data(
+        market_data=market_data,
+        data_spec=data_spec,
+        strategy_spec=strategy_spec,
+        backtest_config=backtest_config,
+        output_dir=output_dir,
+        experiment_name=experiment_name,
+    )
+
+
+def _run_experiment_on_market_data(
+    market_data: pd.DataFrame,
+    data_spec: DataSpec,
+    strategy_spec: StrategySpec,
+    backtest_config: BacktestConfig,
+    output_dir: Path | None = None,
+    experiment_name: str = "single_experiment",
+) -> tuple[ExperimentResult, EquityCurveFrame, pd.DataFrame]:
     strategy = build_strategy(strategy_spec)
     target_positions = strategy.generate_signals(market_data)
     equity_curve, trades = run_backtest(market_data, target_positions, backtest_config)
@@ -57,12 +83,44 @@ def run_search(
     min_trade_count: int | None = None,
     generate_best_report: bool = False,
 ) -> list[ExperimentResult]:
+    backtest_config = backtest_config or BacktestConfig(
+        initial_capital=config.INITIAL_CAPITAL,
+        fee_rate=config.DEFAULT_FEE_RATE,
+        slippage_rate=config.DEFAULT_SLIPPAGE_RATE,
+        annualization_factor=config.DEFAULT_ANNUALIZATION,
+    )
+    market_data = load_market_data(data_spec)
+    return _run_search_on_market_data(
+        market_data=market_data,
+        data_spec=data_spec,
+        parameter_grid=parameter_grid,
+        backtest_config=backtest_config,
+        output_dir=output_dir,
+        experiment_name=experiment_name,
+        max_drawdown_cap=max_drawdown_cap,
+        min_trade_count=min_trade_count,
+        generate_best_report=generate_best_report,
+    )
+
+
+def _run_search_on_market_data(
+    market_data: pd.DataFrame,
+    data_spec: DataSpec,
+    parameter_grid: dict[str, list[int]],
+    backtest_config: BacktestConfig,
+    output_dir: Path | None = None,
+    experiment_name: str = "search_experiment",
+    max_drawdown_cap: float | None = None,
+    min_trade_count: int | None = None,
+    generate_best_report: bool = False,
+) -> list[ExperimentResult]:
     results: list[ExperimentResult] = []
     strategy_specs = build_strategy_specs("ma_crossover", parameter_grid)
     search_root = (output_dir / experiment_name) if output_dir is not None else None
     runs_output_dir = (search_root / "runs") if search_root is not None else None
     for index, strategy_spec in enumerate(strategy_specs, start=1):
-        result, _, _ = run_experiment(
+        result, _, _ = _run_experiment_on_market_data(
+            market_data=market_data,
             data_spec=data_spec,
             strategy_spec=strategy_spec,
             backtest_config=backtest_config,
@@ -83,6 +141,70 @@ def run_search(
             best_report_path = _save_best_search_report(search_root=search_root, best_result=ranked[0]) if ranked else None
             _save_search_comparison_report(search_root=search_root, ranked_results=ranked, best_report_path=best_report_path)
     return ranked
+
+
+def run_validate_search(
+    data_spec: DataSpec,
+    parameter_grid: dict[str, list[int]],
+    split_ratio: float,
+    backtest_config: BacktestConfig | None = None,
+    output_dir: Path | None = None,
+    experiment_name: str = "validation_experiment",
+    max_drawdown_cap: float | None = None,
+    min_trade_count: int | None = None,
+) -> ValidationResult:
+    backtest_config = backtest_config or BacktestConfig(
+        initial_capital=config.INITIAL_CAPITAL,
+        fee_rate=config.DEFAULT_FEE_RATE,
+        slippage_rate=config.DEFAULT_SLIPPAGE_RATE,
+        annualization_factor=config.DEFAULT_ANNUALIZATION,
+    )
+    market_data = load_market_data(data_spec)
+    train_data, test_data = _split_market_data_by_ratio(market_data, split_ratio)
+    _validate_train_windows(train_data, parameter_grid)
+
+    validation_root = (output_dir / experiment_name) if output_dir is not None else None
+    train_output_dir = validation_root
+    test_output_dir = validation_root if validation_root is not None else None
+
+    ranked = _run_search_on_market_data(
+        market_data=train_data,
+        data_spec=data_spec,
+        parameter_grid=parameter_grid,
+        backtest_config=backtest_config,
+        output_dir=train_output_dir,
+        experiment_name="train_search",
+        max_drawdown_cap=max_drawdown_cap,
+        min_trade_count=min_trade_count,
+        generate_best_report=False,
+    )
+    if not ranked:
+        raise ValueError("No train-segment results remain after ranking and threshold filters")
+
+    selected_strategy_spec = ranked[0].strategy_spec
+    _validate_test_segment(test_data, selected_strategy_spec)
+    test_result, _, _ = _run_experiment_on_market_data(
+        market_data=test_data,
+        data_spec=data_spec,
+        strategy_spec=selected_strategy_spec,
+        backtest_config=backtest_config,
+        output_dir=test_output_dir,
+        experiment_name="test_selected",
+    )
+
+    train_ranked_results_path = (validation_root / "train_search" / "ranked_results.csv") if validation_root is not None else None
+    validation_result = ValidationResult(
+        data_spec=data_spec,
+        split_config=ValidationSplitConfig(split_ratio=split_ratio),
+        selected_strategy_spec=selected_strategy_spec,
+        train_best_result=ranked[0],
+        test_result=test_result,
+        train_ranked_results_path=train_ranked_results_path,
+        metadata=_build_validation_metadata(train_data, test_data),
+    )
+    if validation_root is not None:
+        validation_result = save_validation_result(validation_root, validation_result)
+    return validation_result
 
 
 def build_strategy(strategy_spec: StrategySpec) -> MovingAverageCrossoverStrategy:
@@ -135,3 +257,44 @@ def _build_search_curve_label(rank: int, result: ExperimentResult) -> str:
     short_window = parameters.get("short_window", "")
     long_window = parameters.get("long_window", "")
     return f"Rank {rank} | SW {short_window} | LW {long_window}"
+
+
+def _split_market_data_by_ratio(market_data: pd.DataFrame, split_ratio: float) -> tuple[pd.DataFrame, pd.DataFrame]:
+    if split_ratio <= 0.0 or split_ratio >= 1.0:
+        raise ValueError("split_ratio must be between 0 and 1")
+
+    split_index = int(len(market_data) * split_ratio)
+    if split_index <= 0 or split_index >= len(market_data):
+        raise ValueError("split_ratio creates an empty train or test segment")
+
+    train_data = market_data.iloc[:split_index].reset_index(drop=True)
+    test_data = market_data.iloc[split_index:].reset_index(drop=True)
+    if train_data.empty or test_data.empty:
+        raise ValueError("split_ratio creates an empty train or test segment")
+    return train_data, test_data
+
+
+def _validate_train_windows(train_data: pd.DataFrame, parameter_grid: dict[str, list[int]]) -> None:
+    long_windows = parameter_grid.get("long_window", [])
+    if not long_windows:
+        return
+    largest_long_window = max(int(window) for window in long_windows)
+    if len(train_data) < largest_long_window:
+        raise ValueError("Train segment is too short for the requested long_window values")
+
+
+def _validate_test_segment(test_data: pd.DataFrame, strategy_spec: StrategySpec) -> None:
+    long_window = int(strategy_spec.parameters.get("long_window", 0))
+    if long_window and len(test_data) < long_window:
+        raise ValueError("Test segment is too short for the selected long_window")
+
+
+def _build_validation_metadata(train_data: pd.DataFrame, test_data: pd.DataFrame) -> dict[str, object]:
+    return {
+        "train_rows": int(len(train_data)),
+        "test_rows": int(len(test_data)),
+        "train_start": str(train_data["datetime"].iloc[0]),
+        "train_end": str(train_data["datetime"].iloc[-1]),
+        "test_start": str(test_data["datetime"].iloc[0]),
+        "test_end": str(test_data["datetime"].iloc[-1]),
+    }

@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 
 from . import config
-from .experiment_runner import run_experiment, run_search
+from .experiment_runner import run_experiment, run_search, run_validate_search
 from .report import render_experiment_report, save_experiment_report
 from .schemas import BacktestConfig, DataSpec, StrategySpec
 from .storage import ensure_output_dir
@@ -29,6 +29,14 @@ def build_parser() -> argparse.ArgumentParser:
     search.add_argument("--max-drawdown-cap", type=float, default=None)
     search.add_argument("--min-trade-count", type=int, default=None)
     search.add_argument("--generate-report", action="store_true")
+
+    validate_search = subparsers.add_parser("validate-search", help="Run train/test validation for MA parameter search")
+    _add_common_arguments(validate_search)
+    validate_search.add_argument("--short-windows", type=int, nargs="+", default=config.SHORT_WINDOW_RANGE)
+    validate_search.add_argument("--long-windows", type=int, nargs="+", default=config.LONG_WINDOW_RANGE)
+    validate_search.add_argument("--split-ratio", type=float, required=True)
+    validate_search.add_argument("--max-drawdown-cap", type=float, default=None)
+    validate_search.add_argument("--min-trade-count", type=int, default=None)
 
     fetch_twse = subparsers.add_parser("fetch-twse", help="Fetch TWSE stock-day data and save standardized CSV")
     fetch_twse.add_argument("--stock-no", type=str, required=True)
@@ -158,6 +166,23 @@ def main() -> None:
                 report_path = save_experiment_report(report_content, experiment_dir / "report.html")
                 payload["report_path"] = str(report_path)
             print(json.dumps(payload, indent=2, default=str))
+            return
+
+        if args.command == "validate-search":
+            validation_result = run_validate_search(
+                data_spec=data_spec,
+                parameter_grid={
+                    "short_window": args.short_windows,
+                    "long_window": args.long_windows,
+                },
+                split_ratio=args.split_ratio,
+                backtest_config=backtest_config,
+                output_dir=args.output_dir,
+                experiment_name=args.experiment_name,
+                max_drawdown_cap=args.max_drawdown_cap,
+                min_trade_count=args.min_trade_count,
+            )
+            print(json.dumps(validation_result.to_dict(), indent=2, default=str))
             return
 
         ranked = run_search(

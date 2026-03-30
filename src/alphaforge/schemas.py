@@ -114,3 +114,28 @@ class ExperimentResult:
             payload[key] = str(value) if value else None
         payload["data_spec"]["path"] = str(self.data_spec.path)
         return payload
+
+
+@dataclass(frozen=True)
+class ValidationSplitConfig:
+    split_ratio: float
+
+
+@dataclass(frozen=True)
+class ValidationResult:
+    data_spec: DataSpec
+    split_config: ValidationSplitConfig
+    selected_strategy_spec: StrategySpec
+    train_best_result: ExperimentResult
+    test_result: ExperimentResult
+    validation_summary_path: Path | None = None
+    train_ranked_results_path: Path | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        payload = asdict(self)
+        for key in ("validation_summary_path", "train_ranked_results_path"):
+            value = payload.get(key)
+            payload[key] = str(value) if value else None
+        payload["data_spec"]["path"] = str(self.data_spec.path)
+        return payload

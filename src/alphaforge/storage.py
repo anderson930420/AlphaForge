@@ -6,7 +6,7 @@ from typing import Any
 
 import pandas as pd
 
-from .schemas import EquityCurveFrame, RANKED_RESULTS_BASE_COLUMNS, TRADE_LOG_COLUMNS, ExperimentResult
+from .schemas import EquityCurveFrame, RANKED_RESULTS_BASE_COLUMNS, TRADE_LOG_COLUMNS, ExperimentResult, ValidationResult
 
 
 def ensure_output_dir(path: Path) -> Path:
@@ -72,6 +72,23 @@ def save_ranked_results_with_columns(
     ranked_columns = ["strategy", *discovered_parameter_columns, *RANKED_RESULTS_BASE_COLUMNS[1:]]
     pd.DataFrame(rows, columns=ranked_columns).to_csv(ranked_path, index=False)
     return ranked_path
+
+
+def save_validation_result(output_dir: Path, validation_result: ValidationResult) -> ValidationResult:
+    ensure_output_dir(output_dir)
+    summary_path = output_dir / "validation_summary.json"
+    persisted_result = ValidationResult(
+        data_spec=validation_result.data_spec,
+        split_config=validation_result.split_config,
+        selected_strategy_spec=validation_result.selected_strategy_spec,
+        train_best_result=validation_result.train_best_result,
+        test_result=validation_result.test_result,
+        validation_summary_path=summary_path,
+        train_ranked_results_path=validation_result.train_ranked_results_path,
+        metadata=validation_result.metadata,
+    )
+    _write_json(summary_path, persisted_result.to_dict())
+    return persisted_result
 
 
 def _write_json(path: Path, payload: dict[str, Any]) -> None:
