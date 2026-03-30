@@ -29,15 +29,18 @@ def test_run_validate_search_splits_data_chronologically_and_saves_outputs(sampl
     )
 
     summary_path = tmp_path / "validation_case" / "validation_summary.json"
-    train_ranked_path = tmp_path / "validation_case" / "train_search" / "ranked_results.csv"
+    train_ranked_path = tmp_path / "validation_case" / "train_ranked_results.csv"
+    train_best_metrics_path = tmp_path / "validation_case" / "train_best" / "metrics_summary.json"
     test_metrics_path = tmp_path / "validation_case" / "test_selected" / "metrics_summary.json"
 
     assert result.validation_summary_path == summary_path
     assert summary_path.exists()
     assert train_ranked_path.exists()
+    assert train_best_metrics_path.exists()
     assert test_metrics_path.exists()
     summary_payload = json.loads(summary_path.read_text(encoding="utf-8"))
     assert Path(summary_payload["validation_summary_path"]).name == "validation_summary.json"
+    assert Path(summary_payload["train_ranked_results_path"]).name == "train_ranked_results.csv"
     assert result.metadata["train_rows"] == 4
     assert result.metadata["test_rows"] == 4
     assert result.metadata["train_end"] < result.metadata["test_start"]

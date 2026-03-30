@@ -23,7 +23,13 @@ from .schemas import (
     WalkForwardResult,
 )
 from .search import build_strategy_specs
-from .storage import save_ranked_results_with_columns, save_single_experiment, save_validation_result, save_walk_forward_result
+from .storage import (
+    save_ranked_results_artifact,
+    save_ranked_results_with_columns,
+    save_single_experiment,
+    save_validation_result,
+    save_walk_forward_result,
+)
 from .strategy.ma_crossover import MovingAverageCrossoverStrategy
 
 
@@ -167,15 +173,12 @@ def run_validate_search(
     _validate_train_windows(train_data, parameter_grid)
 
     validation_root = (output_dir / experiment_name) if output_dir is not None else None
-    train_output_dir = validation_root
-    test_output_dir = validation_root if validation_root is not None else None
-
     ranked = _run_search_on_market_data(
         market_data=train_data,
         data_spec=data_spec,
         parameter_grid=parameter_grid,
         backtest_config=backtest_config,
-        output_dir=train_output_dir,
+        output_dir=None,
         experiment_name="train_search",
         max_drawdown_cap=max_drawdown_cap,
         min_trade_count=min_trade_count,
@@ -185,21 +188,37 @@ def run_validate_search(
         raise ValueError("No train-segment results remain after ranking and threshold filters")
 
     selected_strategy_spec = ranked[0].strategy_spec
+    train_best_result = ranked[0]
+    train_ranked_results_path = None
+    if validation_root is not None:
+        train_ranked_results_path = save_ranked_results_artifact(
+            output_dir=validation_root,
+            results=ranked,
+            parameter_columns=list(parameter_grid),
+            filename="train_ranked_results.csv",
+        )
+        train_best_result, _, _ = _run_experiment_on_market_data(
+            market_data=train_data,
+            data_spec=data_spec,
+            strategy_spec=selected_strategy_spec,
+            backtest_config=backtest_config,
+            output_dir=validation_root,
+            experiment_name="train_best",
+        )
     test_result, _, _ = _run_experiment_on_market_data(
         market_data=test_data,
         data_spec=data_spec,
         strategy_spec=selected_strategy_spec,
         backtest_config=backtest_config,
-        output_dir=test_output_dir,
+        output_dir=validation_root,
         experiment_name="test_selected",
     )
 
-    train_ranked_results_path = (validation_root / "train_search" / "ranked_results.csv") if validation_root is not None else None
     validation_result = ValidationResult(
         data_spec=data_spec,
         split_config=ValidationSplitConfig(split_ratio=split_ratio),
         selected_strategy_spec=selected_strategy_spec,
-        train_best_result=ranked[0],
+        train_best_result=train_best_result,
         test_result=test_result,
         train_ranked_results_path=train_ranked_results_path,
         metadata=_build_validation_metadata(train_data, test_data),

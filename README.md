@@ -135,12 +135,12 @@ Validation outputs:
 ```text
 outputs/<validation_name>/
   validation_summary.json
-  train_search/
-    ranked_results.csv
-    runs/
-      run_001/
-      run_002/
-      ...
+  train_ranked_results.csv
+  train_best/
+    experiment_config.json
+    metrics_summary.json
+    trade_log.csv
+    equity_curve.csv
   test_selected/
     experiment_config.json
     metrics_summary.json

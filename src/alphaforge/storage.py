@@ -62,7 +62,32 @@ def save_ranked_results_with_columns(
     parameter_columns: list[str] | None,
 ) -> Path:
     ensure_output_dir(output_dir)
-    ranked_path = output_dir / "ranked_results.csv"
+    return _save_ranked_results_frame(
+        ranked_path=output_dir / "ranked_results.csv",
+        results=results,
+        parameter_columns=parameter_columns,
+    )
+
+
+def save_ranked_results_artifact(
+    output_dir: Path,
+    results: list[ExperimentResult],
+    parameter_columns: list[str] | None,
+    filename: str,
+) -> Path:
+    ensure_output_dir(output_dir)
+    return _save_ranked_results_frame(
+        ranked_path=output_dir / filename,
+        results=results,
+        parameter_columns=parameter_columns,
+    )
+
+
+def _save_ranked_results_frame(
+    ranked_path: Path,
+    results: list[ExperimentResult],
+    parameter_columns: list[str] | None,
+) -> Path:
     rows = []
     discovered_parameter_columns: list[str] = list(parameter_columns or [])
     for result in results:
