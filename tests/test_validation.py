@@ -9,7 +9,7 @@ import pandas as pd
 import pytest
 
 from alphaforge.cli import main
-from alphaforge.experiment_runner import run_validate_search
+from alphaforge.experiment_runner import run_validate_search, run_walk_forward_search
 from alphaforge.schemas import BacktestConfig, DataSpec, ExperimentResult, MetricReport, StrategySpec
 
 
@@ -160,3 +160,160 @@ def test_cli_validate_search_prints_validation_summary_payload(
     assert run_validate_mock.call_args.kwargs["split_ratio"] == 0.5
     assert payload["selected_strategy_spec"]["parameters"] == {"short_window": 2, "long_window": 3}
     assert Path(payload["validation_summary_path"]).name == "validation_summary.json"
+
+
+def test_run_walk_forward_search_creates_chronological_fold_outputs(sample_market_csv: Path, tmp_path: Path) -> None:
+    result = run_walk_forward_search(
+        data_spec=DataSpec(path=sample_market_csv, symbol="TEST"),
+        parameter_grid={"short_window": [2], "long_window": [3]},
+        train_size=4,
+        test_size=2,
+        step_size=2,
+        backtest_config=BacktestConfig(
+            initial_capital=1000,
+            fee_rate=0.0,
+            slippage_rate=0.0,
+            annualization_factor=252,
+        ),
+        output_dir=tmp_path,
+        experiment_name="walk_forward_case",
+    )
+
+    summary_path = tmp_path / "walk_forward_case" / "walk_forward_summary.json"
+    fold_results_path = tmp_path / "walk_forward_case" / "fold_results.csv"
+    fold_root = tmp_path / "walk_forward_case" / "folds" / "fold_001"
+
+    assert result.walk_forward_summary_path == summary_path
+    assert result.fold_results_path == fold_results_path
+    assert summary_path.exists()
+    assert fold_results_path.exists()
+    assert len(result.folds) == 2
+    assert result.folds[0].train_end < result.folds[0].test_start
+    assert (fold_root / "train_search" / "ranked_results.csv").exists()
+    assert (fold_root / "test_selected" / "metrics_summary.json").exists()
+
+
+def test_run_walk_forward_search_uses_train_fold_for_search_and_next_window_for_test(sample_market_csv: Path) -> None:
+    train_best_fold_1 = ExperimentResult(
+        data_spec=DataSpec(path=sample_market_csv, symbol="TEST"),
+        strategy_spec=StrategySpec(name="ma_crossover", parameters={"short_window": 2, "long_window": 4}),
+        backtest_config=BacktestConfig(1000.0, 0.0, 0.0, 252),
+        metrics=MetricReport(0.1, 0.1, 1.0, -0.1, 1.0, 1.0, 1),
+        score=0.9,
+    )
+    train_best_fold_2 = ExperimentResult(
+        data_spec=DataSpec(path=sample_market_csv, symbol="TEST"),
+        strategy_spec=StrategySpec(name="ma_crossover", parameters={"short_window": 3, "long_window": 4}),
+        backtest_config=BacktestConfig(1000.0, 0.0, 0.0, 252),
+        metrics=MetricReport(0.08, 0.08, 0.8, -0.09, 0.5, 0.8, 1),
+        score=0.7,
+    )
+    test_result = ExperimentResult(
+        data_spec=DataSpec(path=sample_market_csv, symbol="TEST"),
+        strategy_spec=train_best_fold_1.strategy_spec,
+        backtest_config=train_best_fold_1.backtest_config,
+        metrics=MetricReport(0.03, 0.03, 0.5, -0.05, 0.5, 0.6, 1),
+        score=0.2,
+    )
+    market_data = pd.DataFrame(
+        {
+            "datetime": pd.date_range("2024-01-01", periods=10, freq="D"),
+            "open": range(10),
+            "high": range(10),
+            "low": range(10),
+            "close": range(10),
+            "volume": [1.0] * 10,
+        }
+    )
+
+    with patch("alphaforge.experiment_runner.load_market_data", return_value=market_data), patch(
+        "alphaforge.experiment_runner._run_search_on_market_data",
+        side_effect=[[train_best_fold_1], [train_best_fold_2], [train_best_fold_2]],
+    ) as run_search_mock, patch(
+        "alphaforge.experiment_runner._run_experiment_on_market_data",
+        return_value=(test_result, pd.DataFrame(), pd.DataFrame()),
+    ) as run_experiment_mock:
+        result = run_walk_forward_search(
+            data_spec=DataSpec(path=sample_market_csv, symbol="TEST"),
+            parameter_grid={"short_window": [2, 3], "long_window": [4]},
+            train_size=4,
+            test_size=2,
+            step_size=2,
+        )
+
+    first_train = run_search_mock.call_args_list[0].kwargs["market_data"]
+    first_test = run_experiment_mock.call_args_list[0].kwargs["market_data"]
+    second_selected_strategy = run_experiment_mock.call_args_list[1].kwargs["strategy_spec"]
+
+    assert first_train["datetime"].max() < first_test["datetime"].min()
+    assert second_selected_strategy.parameters == {"short_window": 3, "long_window": 4}
+    assert len(result.folds) == 3
+
+
+def test_run_walk_forward_search_rejects_dataset_too_short(sample_market_csv: Path) -> None:
+    with pytest.raises(ValueError, match="Dataset is too short"):
+        run_walk_forward_search(
+            data_spec=DataSpec(path=sample_market_csv, symbol="TEST"),
+            parameter_grid={"short_window": [2], "long_window": [3]},
+            train_size=7,
+            test_size=3,
+            step_size=1,
+        )
+
+
+def test_run_walk_forward_search_rejects_non_positive_window_sizes(sample_market_csv: Path) -> None:
+    with pytest.raises(ValueError, match="must be positive integers"):
+        run_walk_forward_search(
+            data_spec=DataSpec(path=sample_market_csv, symbol="TEST"),
+            parameter_grid={"short_window": [2], "long_window": [3]},
+            train_size=4,
+            test_size=2,
+            step_size=0,
+        )
+
+
+def test_cli_walk_forward_prints_summary_payload(
+    sample_market_csv: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "alphaforge",
+            "walk-forward",
+            "--data",
+            str(sample_market_csv),
+            "--output-dir",
+            str(tmp_path),
+            "--experiment-name",
+            "walk_forward_case",
+            "--short-windows",
+            "2",
+            "--long-windows",
+            "3",
+            "--train-size",
+            "4",
+            "--test-size",
+            "2",
+            "--step-size",
+            "2",
+        ],
+    )
+
+    walk_forward_payload = {
+        "walk_forward_config": {"train_size": 4, "test_size": 2, "step_size": 2},
+        "aggregate_test_metrics": {"fold_count": 2},
+        "walk_forward_summary_path": str(tmp_path / "walk_forward_case" / "walk_forward_summary.json"),
+    }
+
+    with patch("alphaforge.cli.run_walk_forward_search") as run_walk_forward_mock:
+        run_walk_forward_mock.return_value.to_dict.return_value = walk_forward_payload
+        main()
+
+    payload = json.loads(capsys.readouterr().out)
+    assert run_walk_forward_mock.call_args.kwargs["train_size"] == 4
+    assert payload["walk_forward_config"]["step_size"] == 2
+    assert Path(payload["walk_forward_summary_path"]).name == "walk_forward_summary.json"

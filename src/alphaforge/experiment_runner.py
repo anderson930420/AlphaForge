@@ -18,9 +18,12 @@ from .schemas import (
     StrategySpec,
     ValidationResult,
     ValidationSplitConfig,
+    WalkForwardConfig,
+    WalkForwardFoldResult,
+    WalkForwardResult,
 )
 from .search import build_strategy_specs
-from .storage import save_ranked_results_with_columns, save_single_experiment, save_validation_result
+from .storage import save_ranked_results_with_columns, save_single_experiment, save_validation_result, save_walk_forward_result
 from .strategy.ma_crossover import MovingAverageCrossoverStrategy
 
 
@@ -182,7 +185,6 @@ def run_validate_search(
         raise ValueError("No train-segment results remain after ranking and threshold filters")
 
     selected_strategy_spec = ranked[0].strategy_spec
-    _validate_test_segment(test_data, selected_strategy_spec)
     test_result, _, _ = _run_experiment_on_market_data(
         market_data=test_data,
         data_spec=data_spec,
@@ -205,6 +207,91 @@ def run_validate_search(
     if validation_root is not None:
         validation_result = save_validation_result(validation_root, validation_result)
     return validation_result
+
+
+def run_walk_forward_search(
+    data_spec: DataSpec,
+    parameter_grid: dict[str, list[int]],
+    train_size: int,
+    test_size: int,
+    step_size: int,
+    backtest_config: BacktestConfig | None = None,
+    output_dir: Path | None = None,
+    experiment_name: str = "walk_forward_experiment",
+    max_drawdown_cap: float | None = None,
+    min_trade_count: int | None = None,
+) -> WalkForwardResult:
+    backtest_config = backtest_config or BacktestConfig(
+        initial_capital=config.INITIAL_CAPITAL,
+        fee_rate=config.DEFAULT_FEE_RATE,
+        slippage_rate=config.DEFAULT_SLIPPAGE_RATE,
+        annualization_factor=config.DEFAULT_ANNUALIZATION,
+    )
+    market_data = load_market_data(data_spec)
+    folds = _generate_walk_forward_folds(market_data, train_size=train_size, test_size=test_size, step_size=step_size)
+    _validate_train_windows(market_data.iloc[:train_size].reset_index(drop=True), parameter_grid)
+
+    walk_forward_root = (output_dir / experiment_name) if output_dir is not None else None
+    fold_results: list[WalkForwardFoldResult] = []
+    for fold_index, (train_start_idx, train_end_idx, test_end_idx) in enumerate(folds, start=1):
+        train_data = market_data.iloc[train_start_idx:train_end_idx].reset_index(drop=True)
+        test_data = market_data.iloc[train_end_idx:test_end_idx].reset_index(drop=True)
+        _validate_train_windows(train_data, parameter_grid)
+        fold_root = (walk_forward_root / "folds" / f"fold_{fold_index:03d}") if walk_forward_root is not None else None
+        train_output_dir = fold_root
+        test_output_dir = fold_root
+
+        ranked = _run_search_on_market_data(
+            market_data=train_data,
+            data_spec=data_spec,
+            parameter_grid=parameter_grid,
+            backtest_config=backtest_config,
+            output_dir=train_output_dir,
+            experiment_name="train_search",
+            max_drawdown_cap=max_drawdown_cap,
+            min_trade_count=min_trade_count,
+            generate_best_report=False,
+        )
+        if not ranked:
+            raise ValueError(f"No train-fold results remain after ranking and threshold filters for fold {fold_index}")
+
+        selected_strategy_spec = ranked[0].strategy_spec
+        test_result, _, _ = _run_experiment_on_market_data(
+            market_data=test_data,
+            data_spec=data_spec,
+            strategy_spec=selected_strategy_spec,
+            backtest_config=backtest_config,
+            output_dir=test_output_dir,
+            experiment_name="test_selected",
+        )
+        fold_results.append(
+            WalkForwardFoldResult(
+                fold_index=fold_index,
+                train_start=str(train_data["datetime"].iloc[0]),
+                train_end=str(train_data["datetime"].iloc[-1]),
+                test_start=str(test_data["datetime"].iloc[0]),
+                test_end=str(test_data["datetime"].iloc[-1]),
+                selected_strategy_spec=selected_strategy_spec,
+                train_best_result=ranked[0],
+                test_result=test_result,
+                fold_path=fold_root,
+            )
+        )
+
+    result = WalkForwardResult(
+        data_spec=data_spec,
+        walk_forward_config=WalkForwardConfig(
+            train_size=train_size,
+            test_size=test_size,
+            step_size=step_size,
+        ),
+        folds=fold_results,
+        aggregate_test_metrics=_aggregate_walk_forward_test_metrics(fold_results),
+        metadata={"fold_count": len(fold_results)},
+    )
+    if walk_forward_root is not None:
+        result = save_walk_forward_result(walk_forward_root, result)
+    return result
 
 
 def build_strategy(strategy_spec: StrategySpec) -> MovingAverageCrossoverStrategy:
@@ -283,12 +370,6 @@ def _validate_train_windows(train_data: pd.DataFrame, parameter_grid: dict[str, 
         raise ValueError("Train segment is too short for the requested long_window values")
 
 
-def _validate_test_segment(test_data: pd.DataFrame, strategy_spec: StrategySpec) -> None:
-    long_window = int(strategy_spec.parameters.get("long_window", 0))
-    if long_window and len(test_data) < long_window:
-        raise ValueError("Test segment is too short for the selected long_window")
-
-
 def _build_validation_metadata(train_data: pd.DataFrame, test_data: pd.DataFrame) -> dict[str, object]:
     return {
         "train_rows": int(len(train_data)),
@@ -297,4 +378,53 @@ def _build_validation_metadata(train_data: pd.DataFrame, test_data: pd.DataFrame
         "train_end": str(train_data["datetime"].iloc[-1]),
         "test_start": str(test_data["datetime"].iloc[0]),
         "test_end": str(test_data["datetime"].iloc[-1]),
+    }
+
+
+def _generate_walk_forward_folds(
+    market_data: pd.DataFrame,
+    train_size: int,
+    test_size: int,
+    step_size: int,
+) -> list[tuple[int, int, int]]:
+    if train_size <= 0 or test_size <= 0 or step_size <= 0:
+        raise ValueError("train_size, test_size, and step_size must be positive integers")
+    if len(market_data) < train_size + test_size:
+        raise ValueError("Dataset is too short for the requested train/test walk-forward windows")
+
+    folds: list[tuple[int, int, int]] = []
+    start_index = 0
+    while start_index + train_size + test_size <= len(market_data):
+        train_end_idx = start_index + train_size
+        test_end_idx = train_end_idx + test_size
+        folds.append((start_index, train_end_idx, test_end_idx))
+        start_index += step_size
+    if not folds:
+        raise ValueError("Dataset is too short for the requested train/test walk-forward windows")
+    return folds
+
+
+def _aggregate_walk_forward_test_metrics(folds: list[WalkForwardFoldResult]) -> dict[str, float | int]:
+    if not folds:
+        return {
+            "fold_count": 0,
+            "mean_test_total_return": 0.0,
+            "mean_test_sharpe_ratio": 0.0,
+            "mean_test_max_drawdown": 0.0,
+            "worst_test_max_drawdown": 0.0,
+            "mean_test_win_rate": 0.0,
+            "mean_test_turnover": 0.0,
+            "total_test_trade_count": 0,
+        }
+
+    test_metrics = [fold.test_result.metrics for fold in folds]
+    return {
+        "fold_count": len(folds),
+        "mean_test_total_return": float(sum(metric.total_return for metric in test_metrics) / len(test_metrics)),
+        "mean_test_sharpe_ratio": float(sum(metric.sharpe_ratio for metric in test_metrics) / len(test_metrics)),
+        "mean_test_max_drawdown": float(sum(metric.max_drawdown for metric in test_metrics) / len(test_metrics)),
+        "worst_test_max_drawdown": float(min(metric.max_drawdown for metric in test_metrics)),
+        "mean_test_win_rate": float(sum(metric.win_rate for metric in test_metrics) / len(test_metrics)),
+        "mean_test_turnover": float(sum(metric.turnover for metric in test_metrics) / len(test_metrics)),
+        "total_test_trade_count": int(sum(metric.trade_count for metric in test_metrics)),
     }

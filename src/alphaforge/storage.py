@@ -6,7 +6,14 @@ from typing import Any
 
 import pandas as pd
 
-from .schemas import EquityCurveFrame, RANKED_RESULTS_BASE_COLUMNS, TRADE_LOG_COLUMNS, ExperimentResult, ValidationResult
+from .schemas import (
+    EquityCurveFrame,
+    RANKED_RESULTS_BASE_COLUMNS,
+    TRADE_LOG_COLUMNS,
+    ExperimentResult,
+    ValidationResult,
+    WalkForwardResult,
+)
 
 
 def ensure_output_dir(path: Path) -> Path:
@@ -91,8 +98,54 @@ def save_validation_result(output_dir: Path, validation_result: ValidationResult
     return persisted_result
 
 
+def save_walk_forward_result(output_dir: Path, walk_forward_result: WalkForwardResult) -> WalkForwardResult:
+    ensure_output_dir(output_dir)
+    summary_path = output_dir / "walk_forward_summary.json"
+    fold_results_path = output_dir / "fold_results.csv"
+    persisted_result = WalkForwardResult(
+        data_spec=walk_forward_result.data_spec,
+        walk_forward_config=walk_forward_result.walk_forward_config,
+        folds=walk_forward_result.folds,
+        aggregate_test_metrics=walk_forward_result.aggregate_test_metrics,
+        walk_forward_summary_path=summary_path,
+        fold_results_path=fold_results_path,
+        metadata=walk_forward_result.metadata,
+    )
+    _write_json(summary_path, persisted_result.to_dict())
+    _write_walk_forward_fold_results_csv(fold_results_path, persisted_result)
+    return persisted_result
+
+
 def _write_json(path: Path, payload: dict[str, Any]) -> None:
     path.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
+
+
+def _write_walk_forward_fold_results_csv(path: Path, walk_forward_result: WalkForwardResult) -> None:
+    rows = []
+    for fold in walk_forward_result.folds:
+        rows.append(
+            {
+                "fold_index": fold.fold_index,
+                "train_start": fold.train_start,
+                "train_end": fold.train_end,
+                "test_start": fold.test_start,
+                "test_end": fold.test_end,
+                "short_window": fold.selected_strategy_spec.parameters.get("short_window"),
+                "long_window": fold.selected_strategy_spec.parameters.get("long_window"),
+                "train_score": fold.train_best_result.score,
+                "train_total_return": fold.train_best_result.metrics.total_return,
+                "train_sharpe_ratio": fold.train_best_result.metrics.sharpe_ratio,
+                "test_total_return": fold.test_result.metrics.total_return,
+                "test_annualized_return": fold.test_result.metrics.annualized_return,
+                "test_sharpe_ratio": fold.test_result.metrics.sharpe_ratio,
+                "test_max_drawdown": fold.test_result.metrics.max_drawdown,
+                "test_win_rate": fold.test_result.metrics.win_rate,
+                "test_turnover": fold.test_result.metrics.turnover,
+                "test_trade_count": fold.test_result.metrics.trade_count,
+                "fold_path": str(fold.fold_path) if fold.fold_path else None,
+            }
+        )
+    pd.DataFrame(rows).to_csv(path, index=False)
 
 
 def _serialize_config(result: ExperimentResult) -> dict[str, Any]:

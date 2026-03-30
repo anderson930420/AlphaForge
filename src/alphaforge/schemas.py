@@ -139,3 +139,54 @@ class ValidationResult:
             payload[key] = str(value) if value else None
         payload["data_spec"]["path"] = str(self.data_spec.path)
         return payload
+
+
+@dataclass(frozen=True)
+class WalkForwardConfig:
+    train_size: int
+    test_size: int
+    step_size: int
+
+
+@dataclass(frozen=True)
+class WalkForwardFoldResult:
+    fold_index: int
+    train_start: str
+    train_end: str
+    test_start: str
+    test_end: str
+    selected_strategy_spec: StrategySpec
+    train_best_result: ExperimentResult
+    test_result: ExperimentResult
+    fold_path: Path | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        payload = asdict(self)
+        payload["fold_path"] = str(self.fold_path) if self.fold_path else None
+        return payload
+
+
+@dataclass(frozen=True)
+class WalkForwardResult:
+    data_spec: DataSpec
+    walk_forward_config: WalkForwardConfig
+    folds: list[WalkForwardFoldResult]
+    aggregate_test_metrics: dict[str, float | int]
+    walk_forward_summary_path: Path | None = None
+    fold_results_path: Path | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "data_spec": {
+                "path": str(self.data_spec.path),
+                "symbol": self.data_spec.symbol,
+                "datetime_column": self.data_spec.datetime_column,
+            },
+            "walk_forward_config": asdict(self.walk_forward_config),
+            "folds": [fold.to_dict() for fold in self.folds],
+            "aggregate_test_metrics": self.aggregate_test_metrics,
+            "walk_forward_summary_path": str(self.walk_forward_summary_path) if self.walk_forward_summary_path else None,
+            "fold_results_path": str(self.fold_results_path) if self.fold_results_path else None,
+            "metadata": self.metadata,
+        }

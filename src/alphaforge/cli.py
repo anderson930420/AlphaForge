@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 
 from . import config
-from .experiment_runner import run_experiment, run_search, run_validate_search
+from .experiment_runner import run_experiment, run_search, run_validate_search, run_walk_forward_search
 from .report import render_experiment_report, save_experiment_report
 from .schemas import BacktestConfig, DataSpec, StrategySpec
 from .storage import ensure_output_dir
@@ -37,6 +37,16 @@ def build_parser() -> argparse.ArgumentParser:
     validate_search.add_argument("--split-ratio", type=float, required=True)
     validate_search.add_argument("--max-drawdown-cap", type=float, default=None)
     validate_search.add_argument("--min-trade-count", type=int, default=None)
+
+    walk_forward = subparsers.add_parser("walk-forward", help="Run walk-forward validation for MA parameter search")
+    _add_common_arguments(walk_forward)
+    walk_forward.add_argument("--short-windows", type=int, nargs="+", default=config.SHORT_WINDOW_RANGE)
+    walk_forward.add_argument("--long-windows", type=int, nargs="+", default=config.LONG_WINDOW_RANGE)
+    walk_forward.add_argument("--train-size", type=int, required=True)
+    walk_forward.add_argument("--test-size", type=int, required=True)
+    walk_forward.add_argument("--step-size", type=int, required=True)
+    walk_forward.add_argument("--max-drawdown-cap", type=float, default=None)
+    walk_forward.add_argument("--min-trade-count", type=int, default=None)
 
     fetch_twse = subparsers.add_parser("fetch-twse", help="Fetch TWSE stock-day data and save standardized CSV")
     fetch_twse.add_argument("--stock-no", type=str, required=True)
@@ -183,6 +193,25 @@ def main() -> None:
                 min_trade_count=args.min_trade_count,
             )
             print(json.dumps(validation_result.to_dict(), indent=2, default=str))
+            return
+
+        if args.command == "walk-forward":
+            walk_forward_result = run_walk_forward_search(
+                data_spec=data_spec,
+                parameter_grid={
+                    "short_window": args.short_windows,
+                    "long_window": args.long_windows,
+                },
+                train_size=args.train_size,
+                test_size=args.test_size,
+                step_size=args.step_size,
+                backtest_config=backtest_config,
+                output_dir=args.output_dir,
+                experiment_name=args.experiment_name,
+                max_drawdown_cap=args.max_drawdown_cap,
+                min_trade_count=args.min_trade_count,
+            )
+            print(json.dumps(walk_forward_result.to_dict(), indent=2, default=str))
             return
 
         ranked = run_search(

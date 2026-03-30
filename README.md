@@ -17,6 +17,7 @@ The current MVP supports:
 - Fetching TWSE stock-day data into the same standardized CSV format
 - Running everything from a CLI
 - Running a simple train/test validation workflow for parameter search
+- Running a first-pass walk-forward validation workflow for parameter search
 
 Deferred capabilities such as paper parsing, formula extraction, genetic algorithms, broker integration, live trading, and web UI remain intentionally out of scope.
 
@@ -75,6 +76,12 @@ Run a train/test validation search from a CSV:
 
 ```powershell
 .venv\Scripts\python.exe -m alphaforge.cli validate-search --data .\sample_data\sample_ohlcv.csv --symbol SAMPLE --short-windows 2 5 10 --long-windows 20 40 60 --split-ratio 0.7 --experiment-name sample_validation
+```
+
+Run a walk-forward validation search from a CSV:
+
+```powershell
+.venv\Scripts\python.exe -m alphaforge.cli walk-forward --data .\sample_data\sample_ohlcv.csv --symbol SAMPLE --short-windows 2 5 10 --long-windows 20 40 60 --train-size 120 --test-size 20 --step-size 20 --experiment-name sample_walk_forward
 ```
 
 Search output now returns a compact summary payload with:
@@ -139,6 +146,22 @@ outputs/<validation_name>/
     metrics_summary.json
     trade_log.csv
     equity_curve.csv
+```
+
+Walk-forward outputs:
+
+```text
+outputs/<walk_forward_name>/
+  walk_forward_summary.json
+  fold_results.csv
+  folds/
+    fold_001/
+      train_search/
+      test_selected/
+    fold_002/
+      train_search/
+      test_selected/
+    ...
 ```
 
 ## Verification
