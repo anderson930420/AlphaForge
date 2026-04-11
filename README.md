@@ -60,6 +60,38 @@ If `.venv` already exists but is broken because its base interpreter path no lon
 powershell -ExecutionPolicy Bypass -File .\scripts\rebuild_venv.ps1 -PythonExe "C:\path\to\python.exe"
 ```
 
+### Moving To Another Machine
+
+Keep secrets and machine-local state out of GitHub. This repo already ignores:
+
+- `.env`
+- `.venv/`
+- `outputs/`
+
+Use this workflow when moving the project to another machine such as a MacBook:
+
+1. Push the repo to GitHub without `.env`, `.venv`, or generated outputs.
+2. Clone the repo on the new machine.
+3. Create a fresh virtual environment on that machine.
+4. Copy `.env.example` to `.env`.
+5. Fill the required local secrets back into `.env`.
+
+Current required `.env` values:
+
+- `API_KEY`: used by `src/obsidian_logger.py` and `scripts/read_memory.py` for the local Obsidian REST bridge.
+
+Example on macOS:
+
+```bash
+cd /path/to/AlphaForge
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -e ".[dev]"
+cp .env.example .env
+```
+
+Then edit `.env` and replace the placeholder value with your real local key before running any logger or memory scripts.
+
 ## CLI Usage
 
 Run a single MA crossover experiment from a CSV:
