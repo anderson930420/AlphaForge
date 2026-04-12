@@ -1,0 +1,62 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+import pandas as pd
+
+from .report import render_experiment_report, render_search_comparison_report, save_experiment_report
+from .schemas import EquityCurveFrame, ExperimentResult
+from .storage import ArtifactReceipt
+
+
+def save_best_search_report(
+    search_root: Path,
+    best_result: ExperimentResult,
+    artifact_receipt: ArtifactReceipt | None,
+) -> Path:
+    if artifact_receipt is None:
+        raise ValueError("Best search result is missing saved artifacts required for report generation")
+
+    equity_curve = pd.read_csv(artifact_receipt.equity_curve_path)
+    trades = pd.read_csv(artifact_receipt.trade_log_path)
+    report_content = render_experiment_report(best_result, equity_curve, trades)
+    return save_experiment_report(report_content, search_root / "best_report.html")
+
+
+def save_search_comparison_report(
+    search_root: Path,
+    ranked_results: list[ExperimentResult],
+    artifact_receipts: list[ArtifactReceipt | None],
+    best_report_path: Path | None,
+    top_n: int = 5,
+) -> Path:
+    top_equity_curves = load_top_search_equity_curves(artifact_receipts, ranked_results, top_n=top_n)
+    report_content = render_search_comparison_report(
+        search_root=search_root,
+        ranked_results=ranked_results,
+        artifact_receipts=artifact_receipts,
+        top_equity_curves=top_equity_curves,
+        best_report_path=best_report_path,
+    )
+    return save_experiment_report(report_content, search_root / "search_report.html")
+
+
+def load_top_search_equity_curves(
+    artifact_receipts: list[ArtifactReceipt | None],
+    ranked_results: list[ExperimentResult],
+    top_n: int,
+) -> dict[str, EquityCurveFrame]:
+    top_equity_curves: dict[str, EquityCurveFrame] = {}
+    for rank, (result, artifact_receipt) in enumerate(zip(ranked_results[:top_n], artifact_receipts[:top_n], strict=False), start=1):
+        if artifact_receipt is None:
+            raise ValueError("Ranked search result is missing saved equity curve required for comparison report generation")
+        label = build_search_curve_label(rank, result)
+        top_equity_curves[label] = pd.read_csv(artifact_receipt.equity_curve_path)
+    return top_equity_curves
+
+
+def build_search_curve_label(rank: int, result: ExperimentResult) -> str:
+    parameters = result.strategy_spec.parameters
+    short_window = parameters.get("short_window", "")
+    long_window = parameters.get("long_window", "")
+    return f"Rank {rank} | SW {short_window} | LW {long_window}"

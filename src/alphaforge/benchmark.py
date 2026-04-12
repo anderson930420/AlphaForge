@@ -6,6 +6,7 @@ This module owns simple benchmark construction for already-loaded market data.
 It does not run strategies, compute strategy metrics, or assemble reports.
 """
 
+from collections.abc import Mapping
 from typing import TypedDict
 
 import pandas as pd
@@ -50,6 +51,15 @@ def summarize_buy_and_hold(
     return {
         "total_return": total_return,
         "max_drawdown": max_drawdown,
+    }
+
+
+def normalize_benchmark_summary(summary: Mapping[str, object] | None) -> BenchmarkSummary:
+    """Normalize benchmark summary payloads into the canonical summary shape."""
+    summary = summary or {}
+    return {
+        "total_return": float(summary.get("total_return", 0.0)),
+        "max_drawdown": float(summary.get("max_drawdown", 0.0)),
     }
 
 

@@ -3,8 +3,8 @@ from __future__ import annotations
 import pandas as pd
 import pytest
 
-from alphaforge.schemas import REPORT_EQUITY_CURVE_REQUIRED_COLUMNS
 from alphaforge.visualization import (
+    REPORT_EQUITY_CURVE_REQUIRED_COLUMNS,
     build_drawdown_figure,
     build_equity_curve_figure,
     build_price_trade_figure,

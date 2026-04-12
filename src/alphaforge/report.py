@@ -14,6 +14,7 @@ import pandas as pd
 
 from .benchmark import build_buy_and_hold_equity_curve, summarize_buy_and_hold
 from .schemas import EquityCurveFrame, ExperimentResult
+from .storage import ArtifactReceipt
 from .visualization import (
     build_drawdown_comparison_figure,
     build_drawdown_figure,
@@ -142,6 +143,7 @@ def save_experiment_report(report_content: str, output_path: Path) -> Path:
 def render_search_comparison_report(
     search_root: Path,
     ranked_results: list[ExperimentResult],
+    artifact_receipts: list[ArtifactReceipt | None],
     top_equity_curves: dict[str, EquityCurveFrame],
     best_report_path: Path | None = None,
 ) -> str:
@@ -150,6 +152,7 @@ def render_search_comparison_report(
     comparison_table = _build_search_comparison_table(
         search_root=search_root,
         ranked_results=ranked_results,
+        artifact_receipts=artifact_receipts,
         best_report_path=best_report_path,
     )
     chart_sections = _build_search_chart_sections(top_equity_curves)
@@ -228,15 +231,18 @@ def _build_experiment_title(result: ExperimentResult) -> str:
 def _build_search_comparison_table(
     search_root: Path,
     ranked_results: list[ExperimentResult],
+    artifact_receipts: list[ArtifactReceipt | None],
     best_report_path: Path | None,
 ) -> str:
     if not ranked_results:
         return "<p>No ranked results available.</p>"
+    if len(artifact_receipts) != len(ranked_results):
+        raise ValueError("artifact_receipts must align one-to-one with ranked_results")
 
     rows = []
-    for rank, result in enumerate(ranked_results, start=1):
+    for rank, (result, receipt) in enumerate(zip(ranked_results, artifact_receipts, strict=False), start=1):
         parameters = result.strategy_spec.parameters
-        artifact_path = _build_relative_artifact_path(search_root, result)
+        artifact_path = _build_relative_artifact_path(search_root, receipt)
         best_report_link = _build_best_report_link(search_root, best_report_path, rank)
         rows.append(
             f"""<tr>
@@ -303,10 +309,10 @@ def _build_search_chart_sections(top_equity_curves: dict[str, EquityCurveFrame])
     </section>"""
 
 
-def _build_relative_artifact_path(search_root: Path, result: ExperimentResult) -> str:
-    if result.equity_curve_path is None:
+def _build_relative_artifact_path(search_root: Path, artifact_receipt: ArtifactReceipt | None) -> str:
+    if artifact_receipt is None:
         return ""
-    return str(result.equity_curve_path.parent.relative_to(search_root))
+    return str(artifact_receipt.run_dir.relative_to(search_root))
 
 
 def _build_best_report_link(search_root: Path, best_report_path: Path | None, rank: int) -> str:

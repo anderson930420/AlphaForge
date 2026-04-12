@@ -1,16 +1,17 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 
 import pandas as pd
 
 from . import config
 from .backtest import run_backtest
-from .benchmark import summarize_buy_and_hold
+from .benchmark import normalize_benchmark_summary, summarize_buy_and_hold
 from .data_loader import load_market_data
 from .metrics import compute_metrics
-from .report import render_experiment_report, render_search_comparison_report, save_experiment_report
 from .scoring import rank_results, score_metrics
+from .search_reporting import save_best_search_report, save_search_comparison_report
 from .schemas import (
     BacktestConfig,
     DataSpec,
@@ -25,6 +26,7 @@ from .schemas import (
 )
 from .search import build_strategy_specs
 from .storage import (
+    ArtifactReceipt,
     save_ranked_results_artifact,
     save_ranked_results_with_columns,
     save_single_experiment,
@@ -32,6 +34,20 @@ from .storage import (
     save_walk_forward_result,
 )
 from .strategy.ma_crossover import MovingAverageCrossoverStrategy
+from .walk_forward_aggregation import (
+    aggregate_walk_forward_benchmark_metrics,
+    aggregate_walk_forward_test_metrics,
+)
+
+
+@dataclass(frozen=True)
+class ExperimentExecutionOutput:
+    """Runner-local orchestration bundle for one executed strategy run."""
+
+    result: ExperimentResult
+    equity_curve: EquityCurveFrame
+    trade_log: pd.DataFrame
+    artifact_receipt: ArtifactReceipt | None = None
 
 
 def run_experiment(
@@ -41,6 +57,23 @@ def run_experiment(
     output_dir: Path | None = None,
     experiment_name: str = "single_experiment",
 ) -> tuple[ExperimentResult, EquityCurveFrame, object]:
+    execution = run_experiment_with_artifacts(
+        data_spec=data_spec,
+        strategy_spec=strategy_spec,
+        backtest_config=backtest_config,
+        output_dir=output_dir,
+        experiment_name=experiment_name,
+    )
+    return execution.result, execution.equity_curve, execution.trade_log
+
+
+def run_experiment_with_artifacts(
+    data_spec: DataSpec,
+    strategy_spec: StrategySpec,
+    backtest_config: BacktestConfig | None = None,
+    output_dir: Path | None = None,
+    experiment_name: str = "single_experiment",
+) -> ExperimentExecutionOutput:
     backtest_config = backtest_config or BacktestConfig(
         initial_capital=config.INITIAL_CAPITAL,
         fee_rate=config.DEFAULT_FEE_RATE,
@@ -65,7 +98,8 @@ def _run_experiment_on_market_data(
     backtest_config: BacktestConfig,
     output_dir: Path | None = None,
     experiment_name: str = "single_experiment",
-) -> tuple[ExperimentResult, EquityCurveFrame, pd.DataFrame]:
+) -> ExperimentExecutionOutput:
+    receipt: ArtifactReceipt | None = None
     strategy = build_strategy(strategy_spec)
     target_positions = strategy.generate_signals(market_data)
     equity_curve, trades = run_backtest(market_data, target_positions, backtest_config)
@@ -83,8 +117,13 @@ def _run_experiment_on_market_data(
         },
     )
     if output_dir is not None:
-        result = save_single_experiment(output_dir, experiment_name, result, equity_curve, trades)
-    return result, equity_curve, trades
+        result, receipt = save_single_experiment(output_dir, experiment_name, result, equity_curve, trades)
+    return ExperimentExecutionOutput(
+        result=result,
+        equity_curve=equity_curve,
+        trade_log=trades,
+        artifact_receipt=receipt,
+    )
 
 
 def run_search(
@@ -129,11 +168,12 @@ def _run_search_on_market_data(
     generate_best_report: bool = False,
 ) -> list[ExperimentResult]:
     results: list[ExperimentResult] = []
+    artifact_receipts_by_result_id: dict[int, ArtifactReceipt] = {}
     strategy_specs = build_strategy_specs("ma_crossover", parameter_grid)
     search_root = (output_dir / experiment_name) if output_dir is not None else None
     runs_output_dir = (search_root / "runs") if search_root is not None else None
     for index, strategy_spec in enumerate(strategy_specs, start=1):
-        result, _, _ = _run_experiment_on_market_data(
+        execution = _run_experiment_on_market_data(
             market_data=market_data,
             data_spec=data_spec,
             strategy_spec=strategy_spec,
@@ -141,7 +181,9 @@ def _run_search_on_market_data(
             output_dir=runs_output_dir,
             experiment_name=f"run_{index:03d}",
         )
-        results.append(result)
+        results.append(execution.result)
+        if execution.artifact_receipt is not None:
+            artifact_receipts_by_result_id[id(execution.result)] = execution.artifact_receipt
 
     ranked = rank_results(
         results,
@@ -151,9 +193,20 @@ def _run_search_on_market_data(
     if output_dir is not None:
         parameter_columns = list(parameter_grid)
         save_ranked_results_with_columns(search_root, ranked, parameter_columns=parameter_columns)
+        ranked_receipts = [artifact_receipts_by_result_id.get(id(result)) for result in ranked]
         if generate_best_report:
-            best_report_path = _save_best_search_report(search_root=search_root, best_result=ranked[0]) if ranked else None
-            _save_search_comparison_report(search_root=search_root, ranked_results=ranked, best_report_path=best_report_path)
+            best_receipt = ranked_receipts[0] if ranked_receipts else None
+            best_report_path = (
+                save_best_search_report(search_root=search_root, best_result=ranked[0], artifact_receipt=best_receipt)
+                if ranked
+                else None
+            )
+            save_search_comparison_report(
+                search_root=search_root,
+                ranked_results=ranked,
+                artifact_receipts=ranked_receipts,
+                best_report_path=best_report_path,
+            )
     return ranked
 
 
@@ -202,7 +255,7 @@ def run_validate_search(
             parameter_columns=list(parameter_grid),
             filename="train_ranked_results.csv",
         )
-        train_best_result, _, _ = _run_experiment_on_market_data(
+        train_best_execution = _run_experiment_on_market_data(
             market_data=train_data,
             data_spec=data_spec,
             strategy_spec=selected_strategy_spec,
@@ -210,7 +263,8 @@ def run_validate_search(
             output_dir=validation_root,
             experiment_name="train_best",
         )
-    test_result, _, _ = _run_experiment_on_market_data(
+        train_best_result = train_best_execution.result
+    test_execution = _run_experiment_on_market_data(
         market_data=test_data,
         data_spec=data_spec,
         strategy_spec=selected_strategy_spec,
@@ -218,6 +272,7 @@ def run_validate_search(
         output_dir=validation_root,
         experiment_name="test_selected",
     )
+    test_result = test_execution.result
 
     validation_result = ValidationResult(
         data_spec=data_spec,
@@ -225,7 +280,7 @@ def run_validate_search(
         selected_strategy_spec=selected_strategy_spec,
         train_best_result=train_best_result,
         test_result=test_result,
-        test_benchmark_summary=_extract_benchmark_summary(test_result),
+        test_benchmark_summary=normalize_benchmark_summary(test_result.metadata.get("benchmark_summary")),
         train_ranked_results_path=train_ranked_results_path,
         metadata=_build_validation_metadata(train_data, test_data),
     )
@@ -281,7 +336,7 @@ def run_walk_forward_search(
             raise ValueError(f"No train-fold results remain after ranking and threshold filters for fold {fold_index}")
 
         selected_strategy_spec = ranked[0].strategy_spec
-        test_result, _, _ = _run_experiment_on_market_data(
+        test_execution = _run_experiment_on_market_data(
             market_data=test_data,
             data_spec=data_spec,
             strategy_spec=selected_strategy_spec,
@@ -289,6 +344,7 @@ def run_walk_forward_search(
             output_dir=test_output_dir,
             experiment_name="test_selected",
         )
+        test_result = test_execution.result
         fold_results.append(
             WalkForwardFoldResult(
                 fold_index=fold_index,
@@ -299,8 +355,7 @@ def run_walk_forward_search(
                 selected_strategy_spec=selected_strategy_spec,
                 train_best_result=ranked[0],
                 test_result=test_result,
-                test_benchmark_summary=_extract_benchmark_summary(test_result),
-                fold_path=fold_root,
+                test_benchmark_summary=normalize_benchmark_summary(test_result.metadata.get("benchmark_summary")),
             )
         )
 
@@ -312,8 +367,8 @@ def run_walk_forward_search(
             step_size=step_size,
         ),
         folds=fold_results,
-        aggregate_test_metrics=_aggregate_walk_forward_test_metrics(fold_results),
-        aggregate_benchmark_metrics=_aggregate_walk_forward_benchmark_metrics(fold_results),
+        aggregate_test_metrics=aggregate_walk_forward_test_metrics(fold_results),
+        aggregate_benchmark_metrics=aggregate_walk_forward_benchmark_metrics(fold_results),
         metadata={"fold_count": len(fold_results)},
     )
     if walk_forward_root is not None:
@@ -325,52 +380,6 @@ def build_strategy(strategy_spec: StrategySpec) -> MovingAverageCrossoverStrateg
     if strategy_spec.name != "ma_crossover":
         raise ValueError(f"Unsupported strategy: {strategy_spec.name}")
     return MovingAverageCrossoverStrategy(strategy_spec)
-
-
-def _save_best_search_report(search_root: Path, best_result: ExperimentResult) -> Path:
-    if best_result.equity_curve_path is None or best_result.trade_log_path is None:
-        raise ValueError("Best search result is missing saved artifacts required for report generation")
-
-    equity_curve = pd.read_csv(best_result.equity_curve_path)
-    trades = pd.read_csv(best_result.trade_log_path)
-    report_content = render_experiment_report(best_result, equity_curve, trades)
-    return save_experiment_report(report_content, search_root / "best_report.html")
-
-
-def _save_search_comparison_report(
-    search_root: Path,
-    ranked_results: list[ExperimentResult],
-    best_report_path: Path | None,
-    top_n: int = 5,
-) -> Path:
-    top_equity_curves = _load_top_search_equity_curves(ranked_results, top_n=top_n)
-    report_content = render_search_comparison_report(
-        search_root=search_root,
-        ranked_results=ranked_results,
-        top_equity_curves=top_equity_curves,
-        best_report_path=best_report_path,
-    )
-    return save_experiment_report(report_content, search_root / "search_report.html")
-
-
-def _load_top_search_equity_curves(
-    ranked_results: list[ExperimentResult],
-    top_n: int,
-) -> dict[str, EquityCurveFrame]:
-    top_equity_curves: dict[str, EquityCurveFrame] = {}
-    for rank, result in enumerate(ranked_results[:top_n], start=1):
-        if result.equity_curve_path is None:
-            raise ValueError("Ranked search result is missing saved equity curve required for comparison report generation")
-        label = _build_search_curve_label(rank, result)
-        top_equity_curves[label] = pd.read_csv(result.equity_curve_path)
-    return top_equity_curves
-
-
-def _build_search_curve_label(rank: int, result: ExperimentResult) -> str:
-    parameters = result.strategy_spec.parameters
-    short_window = parameters.get("short_window", "")
-    long_window = parameters.get("long_window", "")
-    return f"Rank {rank} | SW {short_window} | LW {long_window}"
 
 
 def _split_market_data_by_ratio(market_data: pd.DataFrame, split_ratio: float) -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -429,65 +438,3 @@ def _generate_walk_forward_folds(
     if not folds:
         raise ValueError("Dataset is too short for the requested train/test walk-forward windows")
     return folds
-
-
-def _aggregate_walk_forward_test_metrics(folds: list[WalkForwardFoldResult]) -> dict[str, float | int]:
-    if not folds:
-        return {
-            "fold_count": 0,
-            "mean_test_total_return": 0.0,
-            "mean_test_sharpe_ratio": 0.0,
-            "mean_test_max_drawdown": 0.0,
-            "worst_test_max_drawdown": 0.0,
-            "mean_test_win_rate": 0.0,
-            "mean_test_turnover": 0.0,
-            "total_test_trade_count": 0,
-        }
-
-    test_metrics = [fold.test_result.metrics for fold in folds]
-    return {
-        "fold_count": len(folds),
-        "mean_test_total_return": float(sum(metric.total_return for metric in test_metrics) / len(test_metrics)),
-        "mean_test_sharpe_ratio": float(sum(metric.sharpe_ratio for metric in test_metrics) / len(test_metrics)),
-        "mean_test_max_drawdown": float(sum(metric.max_drawdown for metric in test_metrics) / len(test_metrics)),
-        "worst_test_max_drawdown": float(min(metric.max_drawdown for metric in test_metrics)),
-        "mean_test_win_rate": float(sum(metric.win_rate for metric in test_metrics) / len(test_metrics)),
-        "mean_test_turnover": float(sum(metric.turnover for metric in test_metrics) / len(test_metrics)),
-        "total_test_trade_count": int(sum(metric.trade_count for metric in test_metrics)),
-    }
-
-
-def _aggregate_walk_forward_benchmark_metrics(folds: list[WalkForwardFoldResult]) -> dict[str, float | int]:
-    if not folds:
-        return {
-            "fold_count": 0,
-            "mean_benchmark_total_return": 0.0,
-            "mean_benchmark_max_drawdown": 0.0,
-            "mean_excess_return": 0.0,
-        }
-
-    benchmark_summaries = [fold.test_benchmark_summary for fold in folds]
-    return {
-        "fold_count": len(folds),
-        "mean_benchmark_total_return": float(
-            sum(summary.get("total_return", 0.0) for summary in benchmark_summaries) / len(benchmark_summaries)
-        ),
-        "mean_benchmark_max_drawdown": float(
-            sum(summary.get("max_drawdown", 0.0) for summary in benchmark_summaries) / len(benchmark_summaries)
-        ),
-        "mean_excess_return": float(
-            sum(
-                fold.test_result.metrics.total_return - fold.test_benchmark_summary.get("total_return", 0.0)
-                for fold in folds
-            )
-            / len(folds)
-        ),
-    }
-
-
-def _extract_benchmark_summary(result: ExperimentResult) -> dict[str, float]:
-    benchmark_summary = result.metadata.get("benchmark_summary", {})
-    return {
-        "total_return": float(benchmark_summary.get("total_return", 0.0)),
-        "max_drawdown": float(benchmark_summary.get("max_drawdown", 0.0)),
-    }

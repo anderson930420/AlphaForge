@@ -7,8 +7,16 @@ import pytest
 
 from alphaforge.report import render_experiment_report, render_search_comparison_report, save_experiment_report
 from alphaforge.schemas import BacktestConfig, DataSpec, ExperimentResult, MetricReport, StrategySpec
+from alphaforge.storage import ArtifactReceipt
 
 pytest.importorskip("plotly")
+
+
+def _assert_no_external_plotly_cdn_script(html: str) -> None:
+    assert 'src="https://cdn.plot.ly' not in html
+    assert "src='https://cdn.plot.ly" not in html
+    assert 'src="http://cdn.plot.ly' not in html
+    assert "src='http://cdn.plot.ly" not in html
 
 
 def test_render_and_save_experiment_report_creates_html(tmp_path: Path) -> None:
@@ -72,8 +80,9 @@ def test_render_and_save_experiment_report_creates_html(tmp_path: Path) -> None:
     assert "Close Price" in saved_content
     assert "Buy" in saved_content
     assert "Sell" in saved_content
-    assert "https://cdn.plot.ly" not in saved_content
-    assert saved_content.count("Plotly.newPlot") == 4
+    _assert_no_external_plotly_cdn_script(saved_content)
+    assert "Plotly.newPlot" in saved_content
+    assert saved_content.count('class="plotly-graph-div"') == 4
 
 
 def test_render_experiment_report_handles_empty_trades_with_price_section() -> None:
@@ -112,7 +121,8 @@ def test_render_experiment_report_handles_empty_trades_with_price_section() -> N
     assert "Price with Trade Markers" in report_content
     assert "Buy and Hold" in report_content
     assert "Close Price" in report_content
-    assert "https://cdn.plot.ly" not in report_content
+    _assert_no_external_plotly_cdn_script(report_content)
+    assert "Plotly.newPlot" in report_content
 
 
 def test_render_search_comparison_report_includes_ranked_table_and_overlay_sections(tmp_path: Path) -> None:
@@ -125,7 +135,6 @@ def test_render_search_comparison_report_includes_ranked_table_and_overlay_secti
             backtest_config=BacktestConfig(100000.0, 0.001, 0.0005, 252),
             metrics=MetricReport(0.2, 0.3, 1.4, -0.08, 0.6, 1.2, 4),
             score=0.9,
-            equity_curve_path=search_root / "runs" / "run_001" / "equity_curve.csv",
         ),
         ExperimentResult(
             data_spec=DataSpec(path=Path("sample_data/b.csv"), symbol="2330"),
@@ -133,7 +142,20 @@ def test_render_search_comparison_report_includes_ranked_table_and_overlay_secti
             backtest_config=BacktestConfig(100000.0, 0.001, 0.0005, 252),
             metrics=MetricReport(0.18, 0.28, 1.2, -0.1, 0.55, 1.1, 3),
             score=0.8,
+        ),
+    ]
+    artifact_receipts = [
+        ArtifactReceipt(
+            run_dir=search_root / "runs" / "run_001",
+            equity_curve_path=search_root / "runs" / "run_001" / "equity_curve.csv",
+            trade_log_path=search_root / "runs" / "run_001" / "trade_log.csv",
+            metrics_summary_path=search_root / "runs" / "run_001" / "metrics_summary.json",
+        ),
+        ArtifactReceipt(
+            run_dir=search_root / "runs" / "run_002",
             equity_curve_path=search_root / "runs" / "run_002" / "equity_curve.csv",
+            trade_log_path=search_root / "runs" / "run_002" / "trade_log.csv",
+            metrics_summary_path=search_root / "runs" / "run_002" / "metrics_summary.json",
         ),
     ]
     top_equity_curves = {
@@ -148,6 +170,7 @@ def test_render_search_comparison_report_includes_ranked_table_and_overlay_secti
     report_content = render_search_comparison_report(
         search_root=search_root,
         ranked_results=ranked_results,
+        artifact_receipts=artifact_receipts,
         top_equity_curves=top_equity_curves,
         best_report_path=search_root / "best_report.html",
     )
@@ -159,7 +182,8 @@ def test_render_search_comparison_report_includes_ranked_table_and_overlay_secti
     assert "Top Drawdowns" in report_content
     assert "runs/run_001" in report_content
     assert "best_report.html" in report_content
-    assert "https://cdn.plot.ly" not in report_content
+    _assert_no_external_plotly_cdn_script(report_content)
+    assert "Plotly.newPlot" in report_content
 
 
 def test_render_search_comparison_report_handles_empty_ranked_results(tmp_path: Path) -> None:
@@ -169,6 +193,7 @@ def test_render_search_comparison_report_handles_empty_ranked_results(tmp_path: 
     report_content = render_search_comparison_report(
         search_root=search_root,
         ranked_results=[],
+        artifact_receipts=[],
         top_equity_curves={},
     )
 

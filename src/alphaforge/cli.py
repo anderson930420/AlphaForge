@@ -6,10 +6,16 @@ import json
 from pathlib import Path
 
 from . import config
-from .experiment_runner import run_experiment, run_search, run_validate_search, run_walk_forward_search
+from .experiment_runner import run_experiment_with_artifacts, run_search, run_validate_search, run_walk_forward_search
 from .report import render_experiment_report, save_experiment_report
 from .schemas import BacktestConfig, DataSpec, StrategySpec
-from .storage import ensure_output_dir
+from .storage import (
+    ensure_output_dir,
+    serialize_artifact_receipt,
+    serialize_experiment_result,
+    serialize_validation_result,
+    serialize_walk_forward_result,
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -162,17 +168,18 @@ def main() -> None:
                 name="ma_crossover",
                 parameters={"short_window": args.short_window, "long_window": args.long_window},
             )
-            result, equity_curve, trades = run_experiment(
+            execution = run_experiment_with_artifacts(
                 data_spec=data_spec,
                 strategy_spec=strategy_spec,
                 backtest_config=backtest_config,
                 output_dir=args.output_dir,
                 experiment_name=args.experiment_name,
             )
-            payload = result.to_dict()
+            payload = serialize_experiment_result(execution.result)
+            payload["artifacts"] = serialize_artifact_receipt(execution.artifact_receipt)
             if args.generate_report:
                 experiment_dir = ensure_output_dir(args.output_dir / args.experiment_name)
-                report_content = render_experiment_report(result, equity_curve, trades)
+                report_content = render_experiment_report(execution.result, execution.equity_curve, execution.trade_log)
                 report_path = save_experiment_report(report_content, experiment_dir / "report.html")
                 payload["report_path"] = str(report_path)
             print(json.dumps(payload, indent=2, default=str))
@@ -192,7 +199,7 @@ def main() -> None:
                 max_drawdown_cap=args.max_drawdown_cap,
                 min_trade_count=args.min_trade_count,
             )
-            print(json.dumps(validation_result.to_dict(), indent=2, default=str))
+            print(json.dumps(serialize_validation_result(validation_result), indent=2, default=str))
             return
 
         if args.command == "walk-forward":
@@ -211,7 +218,7 @@ def main() -> None:
                 max_drawdown_cap=args.max_drawdown_cap,
                 min_trade_count=args.min_trade_count,
             )
-            print(json.dumps(walk_forward_result.to_dict(), indent=2, default=str))
+            print(json.dumps(serialize_walk_forward_result(walk_forward_result), indent=2, default=str))
             return
 
         ranked = run_search(
@@ -263,10 +270,10 @@ def _build_search_summary(
     payload = {
         "result_count": len(ranked),
         "ranked_results_path": str(search_root / "ranked_results.csv"),
-        "top_results": [result.to_dict() for result in ranked[:3]],
+        "top_results": [serialize_experiment_result(result) for result in ranked[:3]],
     }
     if ranked:
-        payload["best_result"] = ranked[0].to_dict()
+        payload["best_result"] = serialize_experiment_result(ranked[0])
     else:
         payload["best_result"] = None
     if data_output is not None:

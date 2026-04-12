@@ -9,8 +9,9 @@ import pandas as pd
 import pytest
 
 from alphaforge.cli import main
-from alphaforge.experiment_runner import run_validate_search, run_walk_forward_search
+from alphaforge.experiment_runner import ExperimentExecutionOutput, run_validate_search, run_walk_forward_search
 from alphaforge.schemas import BacktestConfig, DataSpec, ExperimentResult, MetricReport, StrategySpec
+from alphaforge.storage import serialize_walk_forward_result
 
 
 def test_run_validate_search_splits_data_chronologically_and_saves_outputs(sample_market_csv: Path, tmp_path: Path) -> None:
@@ -33,17 +34,17 @@ def test_run_validate_search_splits_data_chronologically_and_saves_outputs(sampl
     train_best_metrics_path = tmp_path / "validation_case" / "train_best" / "metrics_summary.json"
     test_metrics_path = tmp_path / "validation_case" / "test_selected" / "metrics_summary.json"
 
-    assert result.validation_summary_path == summary_path
     assert summary_path.exists()
     assert train_ranked_path.exists()
     assert train_best_metrics_path.exists()
     assert test_metrics_path.exists()
     summary_payload = json.loads(summary_path.read_text(encoding="utf-8"))
-    assert Path(summary_payload["validation_summary_path"]).name == "validation_summary.json"
+    assert "validation_summary_path" not in summary_payload
     assert Path(summary_payload["train_ranked_results_path"]).name == "train_ranked_results.csv"
     assert "test_benchmark_summary" in summary_payload
     assert "total_return" in summary_payload["test_benchmark_summary"]
     assert "max_drawdown" in summary_payload["test_benchmark_summary"]
+    assert not hasattr(result, "validation_summary_path")
     assert result.metadata["train_rows"] == 4
     assert result.metadata["test_rows"] == 4
     assert result.metadata["train_end"] < result.metadata["test_start"]
@@ -88,7 +89,13 @@ def test_run_validate_search_uses_train_only_for_search_and_selected_params_for_
     with patch("alphaforge.experiment_runner.load_market_data", return_value=pd.concat([train_data, test_data], ignore_index=True)), patch(
         "alphaforge.experiment_runner._run_search_on_market_data", return_value=[train_best]
     ) as run_search_mock, patch(
-        "alphaforge.experiment_runner._run_experiment_on_market_data", return_value=(test_result, pd.DataFrame(), pd.DataFrame())
+        "alphaforge.experiment_runner._run_experiment_on_market_data",
+        return_value=ExperimentExecutionOutput(
+            result=test_result,
+            equity_curve=pd.DataFrame(),
+            trade_log=pd.DataFrame(),
+            artifact_receipt=None,
+        ),
     ) as run_experiment_mock:
         result = run_validate_search(
             data_spec=DataSpec(path=sample_market_csv, symbol="TEST"),
@@ -156,17 +163,18 @@ def test_cli_validate_search_prints_validation_summary_payload(
         "selected_strategy_spec": {"name": "ma_crossover", "parameters": {"short_window": 2, "long_window": 3}},
         "train_best_result": {"score": 0.8},
         "test_result": {"score": 0.4},
-        "validation_summary_path": str(tmp_path / "validation_case" / "validation_summary.json"),
+        "train_ranked_results_path": str(tmp_path / "validation_case" / "train_ranked_results.csv"),
     }
 
-    with patch("alphaforge.cli.run_validate_search") as run_validate_mock:
-        run_validate_mock.return_value.to_dict.return_value = validation_payload
+    with patch("alphaforge.cli.run_validate_search") as run_validate_mock, patch(
+        "alphaforge.cli.serialize_validation_result", return_value=validation_payload
+    ):
         main()
 
     payload = json.loads(capsys.readouterr().out)
     assert run_validate_mock.call_args.kwargs["split_ratio"] == 0.5
     assert payload["selected_strategy_spec"]["parameters"] == {"short_window": 2, "long_window": 3}
-    assert Path(payload["validation_summary_path"]).name == "validation_summary.json"
+    assert Path(payload["train_ranked_results_path"]).name == "train_ranked_results.csv"
 
 
 def test_run_walk_forward_search_creates_chronological_fold_outputs(sample_market_csv: Path, tmp_path: Path) -> None:
@@ -200,6 +208,9 @@ def test_run_walk_forward_search_creates_chronological_fold_outputs(sample_marke
     assert "mean_benchmark_total_return" in result.aggregate_benchmark_metrics
     assert (fold_root / "train_search" / "ranked_results.csv").exists()
     assert (fold_root / "test_selected" / "metrics_summary.json").exists()
+    fold_results_frame = pd.read_csv(fold_results_path)
+    assert fold_results_frame.loc[0, "fold_path"] == str(fold_root)
+    assert not hasattr(result.folds[0], "fold_path")
 
 
 def test_run_walk_forward_search_uses_train_fold_for_search_and_next_window_for_test(sample_market_csv: Path) -> None:
@@ -240,7 +251,12 @@ def test_run_walk_forward_search_uses_train_fold_for_search_and_next_window_for_
         side_effect=[[train_best_fold_1], [train_best_fold_2], [train_best_fold_2]],
     ) as run_search_mock, patch(
         "alphaforge.experiment_runner._run_experiment_on_market_data",
-        return_value=(test_result, pd.DataFrame(), pd.DataFrame()),
+        return_value=ExperimentExecutionOutput(
+            result=test_result,
+            equity_curve=pd.DataFrame(),
+            trade_log=pd.DataFrame(),
+            artifact_receipt=None,
+        ),
     ) as run_experiment_mock:
         result = run_walk_forward_search(
             data_spec=DataSpec(path=sample_market_csv, symbol="TEST"),
@@ -257,7 +273,20 @@ def test_run_walk_forward_search_uses_train_fold_for_search_and_next_window_for_
     assert first_train["datetime"].max() < first_test["datetime"].min()
     assert second_selected_strategy.parameters == {"short_window": 3, "long_window": 4}
     assert len(result.folds) == 3
-    assert result.folds[0].test_benchmark_summary == {"total_return": 0.0, "max_drawdown": 0.0}
+
+
+def test_storage_serializes_walk_forward_runtime_result_without_fold_path_residue(sample_market_csv: Path) -> None:
+    result = run_walk_forward_search(
+        data_spec=DataSpec(path=sample_market_csv, symbol="TEST"),
+        parameter_grid={"short_window": [2], "long_window": [3]},
+        train_size=4,
+        test_size=2,
+        step_size=2,
+    )
+
+    payload = serialize_walk_forward_result(result)
+
+    assert "fold_path" not in payload["folds"][0]
 
 
 def test_run_walk_forward_search_rejects_dataset_too_short(sample_market_csv: Path) -> None:
@@ -320,8 +349,9 @@ def test_cli_walk_forward_prints_summary_payload(
         "walk_forward_summary_path": str(tmp_path / "walk_forward_case" / "walk_forward_summary.json"),
     }
 
-    with patch("alphaforge.cli.run_walk_forward_search") as run_walk_forward_mock:
-        run_walk_forward_mock.return_value.to_dict.return_value = walk_forward_payload
+    with patch("alphaforge.cli.run_walk_forward_search") as run_walk_forward_mock, patch(
+        "alphaforge.cli.serialize_walk_forward_result", return_value=walk_forward_payload
+    ):
         main()
 
     payload = json.loads(capsys.readouterr().out)

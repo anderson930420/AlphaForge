@@ -153,6 +153,12 @@ outputs/<experiment_name>/
 
 Single-experiment HTML reports include strategy-versus-buy-and-hold comparison alongside the existing strategy equity, drawdown, and price/trade views.
 
+Migration note:
+
+- `ExperimentResult` no longer carries persisted artifact paths.
+- Persisted artifact references now live in storage-owned `ArtifactReceipt` payloads.
+- New callers and integrations should be receipt-first and should not treat runtime result objects as artifact locators.
+
 Search outputs:
 
 ```text

@@ -11,7 +11,13 @@ from typing import TYPE_CHECKING, Any
 
 import pandas as pd
 
-from .schemas import EquityCurveFrame, REPORT_EQUITY_CURVE_REQUIRED_COLUMNS
+from .schemas import EquityCurveFrame
+
+REPORT_EQUITY_CURVE_REQUIRED_COLUMNS = (
+    "datetime",
+    "equity",
+    "close",
+)
 
 if TYPE_CHECKING:
     import plotly.graph_objects as go

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from .schemas import EquityCurveFrame, TRADE_LOG_COLUMNS, BacktestConfig, TradeRecord
+from .schemas import EquityCurveFrame, BacktestConfig, TradeRecord
 
 
 def run_backtest(
@@ -21,7 +21,7 @@ def run_backtest(
     frame["equity"] = config.initial_capital * (1.0 + frame["strategy_return"]).cumprod()
 
     trades = _extract_trades(frame)
-    trade_frame = pd.DataFrame([trade.__dict__ for trade in trades], columns=TRADE_LOG_COLUMNS)
+    trade_frame = pd.DataFrame([trade.__dict__ for trade in trades])
     return frame, trade_frame
 
 

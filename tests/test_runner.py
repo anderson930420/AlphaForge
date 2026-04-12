@@ -6,12 +6,14 @@ from unittest.mock import patch
 
 import pandas as pd
 
-from alphaforge.experiment_runner import run_experiment, run_search
-from alphaforge.schemas import BacktestConfig, DataSpec, StrategySpec
+from alphaforge.experiment_runner import run_experiment, run_experiment_with_artifacts, run_search
+from alphaforge.search_reporting import save_best_search_report
+from alphaforge.schemas import BacktestConfig, DataSpec, ExperimentResult, MetricReport, StrategySpec
+from alphaforge.storage import ArtifactReceipt, serialize_experiment_result
 
 
 def test_run_experiment_saves_outputs(sample_market_csv: Path, tmp_path: Path) -> None:
-    result, equity_curve, trades = run_experiment(
+    execution = run_experiment_with_artifacts(
         data_spec=DataSpec(path=sample_market_csv, symbol="TEST"),
         strategy_spec=StrategySpec(
             name="ma_crossover",
@@ -27,12 +29,14 @@ def test_run_experiment_saves_outputs(sample_market_csv: Path, tmp_path: Path) -
         experiment_name="runner_case",
     )
 
-    assert result.metrics_path is not None
-    assert result.trade_log_path is not None
-    assert result.equity_curve_path is not None
-    assert result.metrics.trade_count >= 0
-    assert not equity_curve.empty
-    assert isinstance(trades, pd.DataFrame)
+    assert execution.artifact_receipt is not None
+    assert execution.artifact_receipt.trade_log_path.name == "trade_log.csv"
+    assert execution.artifact_receipt.equity_curve_path.name == "equity_curve.csv"
+    assert execution.artifact_receipt.metrics_summary_path.name == "metrics_summary.json"
+    assert not hasattr(execution.result, "metrics_path")
+    assert execution.result.metrics.trade_count >= 0
+    assert not execution.equity_curve.empty
+    assert isinstance(execution.trade_log, pd.DataFrame)
 
 
 def test_run_experiment_saved_artifacts_match_returned_metrics_and_trades(
@@ -150,12 +154,10 @@ def test_run_search_saves_empty_ranked_results_with_headers(sample_market_csv: P
 
 
 def test_run_search_generates_exactly_one_best_report(sample_market_csv: Path, tmp_path: Path) -> None:
-    with patch("alphaforge.experiment_runner.render_experiment_report", return_value="<html>best report</html>") as render_report, patch(
-        "alphaforge.experiment_runner.render_search_comparison_report", return_value="<html>search report</html>"
-    ) as render_search_report, patch(
-        "alphaforge.experiment_runner.save_experiment_report",
-        side_effect=lambda content, path: path,
-    ) as save_report:
+    with patch("alphaforge.experiment_runner.save_best_search_report", side_effect=lambda search_root, best_result, artifact_receipt: search_root / "best_report.html") as save_best_report, patch(
+        "alphaforge.experiment_runner.save_search_comparison_report",
+        side_effect=lambda search_root, ranked_results, artifact_receipts, best_report_path, top_n=5: search_root / "search_report.html",
+    ) as save_search_report:
         ranked = run_search(
             data_spec=DataSpec(path=sample_market_csv, symbol="TEST"),
             parameter_grid={"short_window": [2, 3], "long_window": [4, 5]},
@@ -171,21 +173,17 @@ def test_run_search_generates_exactly_one_best_report(sample_market_csv: Path, t
         )
 
     assert len(ranked) == 4
-    assert render_report.call_count == 1
-    assert render_search_report.call_count == 1
-    assert save_report.call_count == 2
-    saved_paths = [call.args[1] for call in save_report.call_args_list]
-    assert tmp_path / "search_report_case" / "best_report.html" in saved_paths
-    assert tmp_path / "search_report_case" / "search_report.html" in saved_paths
+    assert save_best_report.call_count == 1
+    assert save_search_report.call_count == 1
+    assert save_best_report.call_args.kwargs["search_root"] == tmp_path / "search_report_case"
+    assert save_search_report.call_args.kwargs["search_root"] == tmp_path / "search_report_case"
 
 
 def test_run_search_generates_empty_search_report_without_best_report(sample_market_csv: Path, tmp_path: Path) -> None:
-    with patch("alphaforge.experiment_runner.render_experiment_report") as render_report, patch(
-        "alphaforge.experiment_runner.render_search_comparison_report", return_value="<html>empty search report</html>"
-    ) as render_search_report, patch(
-        "alphaforge.experiment_runner.save_experiment_report",
-        side_effect=lambda content, path: path,
-    ) as save_report:
+    with patch("alphaforge.experiment_runner.save_best_search_report") as save_best_report, patch(
+        "alphaforge.experiment_runner.save_search_comparison_report",
+        side_effect=lambda search_root, ranked_results, artifact_receipts, best_report_path, top_n=5: search_root / "search_report.html",
+    ) as save_search_report:
         ranked = run_search(
             data_spec=DataSpec(path=sample_market_csv, symbol="TEST"),
             parameter_grid={"short_window": [2], "long_window": [4]},
@@ -202,7 +200,94 @@ def test_run_search_generates_empty_search_report_without_best_report(sample_mar
         )
 
     assert ranked == []
-    assert render_report.call_count == 0
-    assert render_search_report.call_count == 1
+    assert save_best_report.call_count == 0
+    assert save_search_report.call_count == 1
+    assert save_search_report.call_args.kwargs["search_root"] == tmp_path / "empty_search_report_case"
+
+
+def test_best_search_report_reads_artifacts_from_receipt_not_runtime_result(tmp_path: Path) -> None:
+    search_root = tmp_path / "search_case"
+    run_dir = search_root / "runs" / "run_001"
+    run_dir.mkdir(parents=True)
+    equity_curve_path = run_dir / "equity_curve.csv"
+    trade_log_path = run_dir / "trade_log.csv"
+    pd.DataFrame(
+        {
+            "datetime": pd.date_range("2024-01-01", periods=3, freq="D"),
+            "close": [100.0, 101.0, 103.0],
+            "equity": [1000.0, 1010.0, 1030.0],
+        }
+    ).to_csv(equity_curve_path, index=False)
+    pd.DataFrame(
+        {
+            "entry_time": ["2024-01-02 00:00:00"],
+            "exit_time": ["2024-01-03 00:00:00"],
+            "entry_price": [101.0],
+            "exit_price": [103.0],
+        }
+    ).to_csv(trade_log_path, index=False)
+    best_result = ExperimentResult(
+        data_spec=DataSpec(path=Path("sample_data/a.csv"), symbol="2330"),
+        strategy_spec=StrategySpec(name="ma_crossover", parameters={"short_window": 2, "long_window": 4}),
+        backtest_config=BacktestConfig(100000.0, 0.001, 0.0005, 252),
+        metrics=MetricReport(0.2, 0.3, 1.4, -0.08, 0.6, 1.2, 4),
+        score=0.9,
+    )
+    receipt = ArtifactReceipt(
+        run_dir=run_dir,
+        equity_curve_path=equity_curve_path,
+        trade_log_path=trade_log_path,
+        metrics_summary_path=run_dir / "metrics_summary.json",
+    )
+
+    with patch("alphaforge.search_reporting.save_experiment_report", side_effect=lambda content, path: path) as save_report:
+        report_path = save_best_search_report(search_root=search_root, best_result=best_result, artifact_receipt=receipt)
+
+    assert report_path == search_root / "best_report.html"
     assert save_report.call_count == 1
-    assert save_report.call_args.args[1] == tmp_path / "empty_search_report_case" / "search_report.html"
+
+
+def test_storage_serializes_runtime_result_without_runtime_owned_to_dict(sample_market_csv: Path) -> None:
+    result, _, _ = run_experiment(
+        data_spec=DataSpec(path=sample_market_csv, symbol="TEST"),
+        strategy_spec=StrategySpec(
+            name="ma_crossover",
+            parameters={"short_window": 2, "long_window": 3},
+        ),
+        backtest_config=BacktestConfig(
+            initial_capital=1000,
+            fee_rate=0.0,
+            slippage_rate=0.0,
+            annualization_factor=252,
+        ),
+    )
+
+    payload = serialize_experiment_result(result)
+
+    assert payload["data_spec"]["symbol"] == "TEST"
+    assert payload["strategy_spec"]["parameters"] == {"short_window": 2, "long_window": 3}
+    assert "equity_curve_path" not in payload
+    assert "trade_log_path" not in payload
+    assert "metrics_path" not in payload
+    assert not hasattr(result, "to_dict")
+
+
+def test_runtime_result_remains_valid_domain_truth_without_artifact_paths(sample_market_csv: Path) -> None:
+    result, _, _ = run_experiment(
+        data_spec=DataSpec(path=sample_market_csv, symbol="TEST"),
+        strategy_spec=StrategySpec(
+            name="ma_crossover",
+            parameters={"short_window": 2, "long_window": 3},
+        ),
+        backtest_config=BacktestConfig(
+            initial_capital=1000,
+            fee_rate=0.0,
+            slippage_rate=0.0,
+            annualization_factor=252,
+        ),
+    )
+
+    assert result.metrics.trade_count >= 0
+    assert result.strategy_spec.parameters == {"short_window": 2, "long_window": 3}
+    assert not hasattr(result, "equity_curve_path")
+    assert not hasattr(result, "trade_log_path")

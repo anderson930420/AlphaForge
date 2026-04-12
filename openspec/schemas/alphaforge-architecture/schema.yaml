@@ -1,0 +1,42 @@
+name: alphaforge-architecture
+version: 1
+description: Boundary-first architecture workflow for assigning canonical ownership in AlphaForge.
+artifacts:
+  - id: proposal
+    generates: proposal.md
+    description: Ownership and migration proposal
+    template: proposal.md
+    instruction: |
+      Create a proposal that names the exact boundary problem, the canonical owner after the change, and the migration risks.
+    requires: []
+  - id: specs
+    generates: specs/**/*.md
+    description: Canonical boundary specifications
+    template: spec.md
+    instruction: |
+      Write boundary specifications that assign one canonical owner for each rule, schema, or execution semantic affected by the change.
+    requires:
+      - proposal
+  - id: design
+    generates: design.md
+    description: Technical migration design
+    template: design.md
+    instruction: |
+      Describe how the codebase will be changed so the canonical owners named in the specs become the only authoritative implementations.
+    requires:
+      - proposal
+      - specs
+  - id: tasks
+    generates: tasks.md
+    description: Implementation checklist
+    template: tasks.md
+    instruction: |
+      Break the migration into concrete tasks that move ownership, delete duplicate logic, and verify the resulting contracts.
+    requires:
+      - proposal
+      - specs
+      - design
+apply:
+  requires:
+    - tasks
+  tracks: tasks.md

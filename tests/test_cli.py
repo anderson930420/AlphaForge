@@ -9,6 +9,8 @@ import pandas as pd
 import pytest
 
 from alphaforge.cli import main
+from alphaforge.experiment_runner import ExperimentExecutionOutput
+from alphaforge.storage import ArtifactReceipt
 from alphaforge.schemas import BacktestConfig, DataSpec, ExperimentResult, MetricReport, StrategySpec
 
 
@@ -177,13 +179,20 @@ def test_cli_run_path_does_not_load_twse_client(
     )
 
     with patch("alphaforge.cli._load_twse_client", side_effect=AssertionError("TWSE loader should not be used")), patch(
-        "alphaforge.cli.run_experiment", return_value=(sample_result, pd.DataFrame(), pd.DataFrame())
+        "alphaforge.cli.run_experiment_with_artifacts",
+        return_value=ExperimentExecutionOutput(
+            result=sample_result,
+            equity_curve=pd.DataFrame(),
+            trade_log=pd.DataFrame(),
+            artifact_receipt=None,
+        ),
     ):
         main()
 
     payload = json.loads(capsys.readouterr().out)
     assert payload["strategy_spec"]["parameters"] == {"short_window": 2, "long_window": 3}
     assert "report_path" not in payload
+    assert payload["artifacts"] is None
 
 
 def test_cli_run_generates_report_only_when_requested(
@@ -234,8 +243,22 @@ def test_cli_run_generates_report_only_when_requested(
         }
     )
     sample_trades = pd.DataFrame()
+    sample_receipt = ArtifactReceipt(
+        run_dir=tmp_path / "report_case",
+        equity_curve_path=tmp_path / "report_case" / "equity_curve.csv",
+        trade_log_path=tmp_path / "report_case" / "trade_log.csv",
+        metrics_summary_path=tmp_path / "report_case" / "metrics_summary.json",
+    )
 
-    with patch("alphaforge.cli.run_experiment", return_value=(sample_result, sample_equity_curve, sample_trades)), patch(
+    with patch(
+        "alphaforge.cli.run_experiment_with_artifacts",
+        return_value=ExperimentExecutionOutput(
+            result=sample_result,
+            equity_curve=sample_equity_curve,
+            trade_log=sample_trades,
+            artifact_receipt=sample_receipt,
+        ),
+    ), patch(
         "alphaforge.cli.render_experiment_report", return_value="<html>report</html>"
     ), patch("alphaforge.cli.save_experiment_report", side_effect=lambda content, path: path):
         main()
@@ -244,6 +267,7 @@ def test_cli_run_generates_report_only_when_requested(
     report_path = Path(payload["report_path"])
     assert report_path.name == "report.html"
     assert report_path.parent.name == "report_case"
+    assert Path(payload["artifacts"]["equity_curve_path"]).name == "equity_curve.csv"
 
 
 def test_cli_twse_search_fetches_saves_and_runs_search(

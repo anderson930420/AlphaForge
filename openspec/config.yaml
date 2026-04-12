@@ -1,0 +1,63 @@
+schema: alphaforge-architecture
+context: |
+  Project: AlphaForge
+  Goal: define canonical ownership boundaries for a Python strategy-research engine so every business rule, execution semantic, and artifact schema has exactly one authoritative owner.
+
+  Tech stack:
+  - Python 3.11+
+  - pandas, numpy, plotly, requests
+  - pytest for automated verification
+  - Source layout under src/alphaforge/
+  - CLI-first workflow through src/alphaforge/cli.py
+
+  Current architecture areas:
+  - CLI command entrypoints and argument parsing
+  - Market data loading and TWSE ingestion
+  - Strategy contracts and MA crossover implementation
+  - Backtest execution
+  - Metrics, benchmark comparison, and ranking
+  - Search and validation orchestration
+  - Report generation and output persistence
+
+  Refactor intent:
+  - Assign exactly one canonical owner to every business rule, execution semantic, naming convention, and persisted schema
+  - Eliminate responsibility overlap between config, schemas, storage, report, CLI, and orchestration layers
+  - Keep orchestration from becoming a god module by pushing stable rules into dedicated owners with explicit contracts
+  - Make debugging start from the spec boundary, not from reverse-engineering implementation side effects
+
+  Architecture rules:
+  - If a rule can drift between modules, one module must be declared authoritative and all other layers must be described as adapters or advisory checks only.
+  - If validation exists in multiple layers, the spec must name one authoritative validator and mark the others as advisory, defensive, or user-experience checks only.
+  - If a schema is surfaced through CLI, storage, report, and Python objects, the spec must assign one canonical schema owner and require all other representations to derive from it.
+  - If a semantic affects execution order, default values, ranking, persistence, or report output, it must be named explicitly in the spec rather than left implicit in code flow.
+
+  Repository workflow constraints:
+  - Read local project memory before meaningful implementation work
+  - Preserve continuity with existing implementation instead of restarting from scratch
+  - Log each meaningful implementation step through the local Obsidian logger workflow
+  - Treat logging as incomplete until both the daily note and project worklog are updated
+
+rules:
+  proposal:
+    - State which current business rules, execution semantics, or artifact schemas have ambiguous ownership.
+    - Name the exact module that becomes the canonical owner for each moved or newly defined rule.
+    - State which modules lose ownership as part of the change.
+    - Describe migration risk for CLI behavior, persisted artifacts, reports, tests, and backward compatibility.
+    - Do not use qualitative language such as "cleaner", "simpler", or "more maintainable" unless the proposal also states the operational rule that changed.
+  specs:
+    - Every spec must include these sections exactly once: Purpose, Canonical owner, Allowed responsibilities, Explicit non-responsibilities, Inputs / outputs / contracts, Invariants, Cross-module dependencies, Failure modes if this boundary is violated, Migration notes from current implementation, Open questions / deferred decisions.
+    - Every statement must be operational and testable.
+    - Resolve ambiguous ownership by assigning one canonical owner.
+    - Explicitly identify whether duplicated validation is authoritative or advisory.
+    - Explicitly identify whether duplicated naming or schema rendering is authoritative or derived.
+    - Do not describe current implementation loosely; define the intended boundary that other modules must conform to.
+  design:
+    - Map each rule transfer or schema ownership decision to concrete Python modules under src/alphaforge/ and related tests.
+    - For every affected contract, identify the authoritative definition file and every downstream adapter that must be updated.
+    - Identify the verification strategy that proves no business rule remains multiply owned after the refactor.
+    - Call out any temporary duplication that exists during migration and state the exact removal condition.
+  tasks:
+    - Break work into auditable steps that each move or enforce one ownership boundary.
+    - Include spec updates, code changes, contract updates, tests, and migration cleanup steps when relevant.
+    - Include explicit deletion tasks for legacy duplicate logic, legacy duplicate schemas, and stale adapters.
+    - Call out any required memory/logging follow-through if the workflow changes.

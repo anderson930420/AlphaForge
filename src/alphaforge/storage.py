@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
@@ -8,17 +9,153 @@ import pandas as pd
 
 from .schemas import (
     EquityCurveFrame,
-    RANKED_RESULTS_BASE_COLUMNS,
-    TRADE_LOG_COLUMNS,
+    BacktestConfig,
+    DataSpec,
     ExperimentResult,
+    MetricReport,
+    StrategySpec,
     ValidationResult,
+    WalkForwardFoldResult,
     WalkForwardResult,
 )
+
+TRADE_LOG_COLUMNS = [
+    "entry_time",
+    "exit_time",
+    "side",
+    "quantity",
+    "entry_price",
+    "exit_price",
+    "gross_return",
+    "net_pnl",
+]
+
+RANKED_RESULTS_BASE_COLUMNS = [
+    "strategy",
+    "total_return",
+    "annualized_return",
+    "sharpe_ratio",
+    "max_drawdown",
+    "win_rate",
+    "turnover",
+    "trade_count",
+    "score",
+]
+
+EXPERIMENT_CONFIG_FILENAME = "experiment_config.json"
+METRICS_SUMMARY_FILENAME = "metrics_summary.json"
+TRADE_LOG_FILENAME = "trade_log.csv"
+EQUITY_CURVE_FILENAME = "equity_curve.csv"
+RANKED_RESULTS_FILENAME = "ranked_results.csv"
+VALIDATION_SUMMARY_FILENAME = "validation_summary.json"
+WALK_FORWARD_SUMMARY_FILENAME = "walk_forward_summary.json"
+FOLD_RESULTS_FILENAME = "fold_results.csv"
+
+
+@dataclass(frozen=True)
+class ArtifactReceipt:
+    run_dir: Path
+    equity_curve_path: Path
+    trade_log_path: Path
+    metrics_summary_path: Path
+    best_report_path: Path | None = None
+    comparison_report_path: Path | None = None
 
 
 def ensure_output_dir(path: Path) -> Path:
     path.mkdir(parents=True, exist_ok=True)
     return path
+
+
+def serialize_data_spec(data_spec: DataSpec) -> dict[str, Any]:
+    payload = asdict(data_spec)
+    payload["path"] = str(data_spec.path)
+    return payload
+
+
+def serialize_strategy_spec(strategy_spec: StrategySpec) -> dict[str, Any]:
+    return asdict(strategy_spec)
+
+
+def serialize_backtest_config(backtest_config: BacktestConfig) -> dict[str, Any]:
+    return asdict(backtest_config)
+
+
+def serialize_metric_report(metric_report: MetricReport) -> dict[str, Any]:
+    return asdict(metric_report)
+
+
+def serialize_experiment_result(result: ExperimentResult) -> dict[str, Any]:
+    return {
+        "data_spec": serialize_data_spec(result.data_spec),
+        "strategy_spec": serialize_strategy_spec(result.strategy_spec),
+        "backtest_config": serialize_backtest_config(result.backtest_config),
+        "metrics": serialize_metric_report(result.metrics),
+        "score": result.score,
+        "metadata": result.metadata,
+    }
+
+
+def serialize_artifact_receipt(receipt: ArtifactReceipt | None) -> dict[str, Any] | None:
+    if receipt is None:
+        return None
+    return {
+        "run_dir": str(receipt.run_dir),
+        "equity_curve_path": str(receipt.equity_curve_path),
+        "trade_log_path": str(receipt.trade_log_path),
+        "metrics_summary_path": str(receipt.metrics_summary_path),
+        "best_report_path": _serialize_path(receipt.best_report_path),
+        "comparison_report_path": _serialize_path(receipt.comparison_report_path),
+    }
+
+
+def serialize_validation_result(result: ValidationResult) -> dict[str, Any]:
+    return {
+        "data_spec": serialize_data_spec(result.data_spec),
+        "split_config": asdict(result.split_config),
+        "selected_strategy_spec": serialize_strategy_spec(result.selected_strategy_spec),
+        "train_best_result": serialize_experiment_result(result.train_best_result),
+        "test_result": serialize_experiment_result(result.test_result),
+        "test_benchmark_summary": result.test_benchmark_summary,
+        "train_ranked_results_path": _serialize_path(result.train_ranked_results_path),
+        "metadata": result.metadata,
+    }
+
+
+def serialize_walk_forward_fold_result(fold: WalkForwardFoldResult) -> dict[str, Any]:
+    return {
+        "fold_index": fold.fold_index,
+        "train_start": fold.train_start,
+        "train_end": fold.train_end,
+        "test_start": fold.test_start,
+        "test_end": fold.test_end,
+        "selected_strategy_spec": serialize_strategy_spec(fold.selected_strategy_spec),
+        "train_best_result": serialize_experiment_result(fold.train_best_result),
+        "test_result": serialize_experiment_result(fold.test_result),
+        "test_benchmark_summary": fold.test_benchmark_summary,
+    }
+
+
+def serialize_walk_forward_result(result: WalkForwardResult) -> dict[str, Any]:
+    return {
+        "data_spec": serialize_data_spec(result.data_spec),
+        "walk_forward_config": asdict(result.walk_forward_config),
+        "folds": [serialize_walk_forward_fold_result(fold) for fold in result.folds],
+        "aggregate_test_metrics": result.aggregate_test_metrics,
+        "aggregate_benchmark_metrics": result.aggregate_benchmark_metrics,
+        "walk_forward_summary_path": _serialize_path(result.walk_forward_summary_path),
+        "fold_results_path": _serialize_path(result.fold_results_path),
+        "metadata": result.metadata,
+    }
+
+
+def serialize_experiment_config(result: ExperimentResult) -> dict[str, Any]:
+    return {
+        "data_spec": serialize_data_spec(result.data_spec),
+        "strategy_spec": serialize_strategy_spec(result.strategy_spec),
+        "backtest_config": serialize_backtest_config(result.backtest_config),
+        "metadata": result.metadata,
+    }
 
 
 def save_single_experiment(
@@ -27,29 +164,33 @@ def save_single_experiment(
     result: ExperimentResult,
     equity_curve: EquityCurveFrame,
     trades: pd.DataFrame,
-) -> ExperimentResult:
+) -> tuple[ExperimentResult, ArtifactReceipt]:
     target_dir = ensure_output_dir(output_dir / experiment_name)
-    config_path = target_dir / "experiment_config.json"
-    metrics_path = target_dir / "metrics_summary.json"
-    trade_log_path = target_dir / "trade_log.csv"
-    equity_curve_path = target_dir / "equity_curve.csv"
+    config_path = target_dir / EXPERIMENT_CONFIG_FILENAME
+    metrics_path = target_dir / METRICS_SUMMARY_FILENAME
+    trade_log_path = target_dir / TRADE_LOG_FILENAME
+    equity_curve_path = target_dir / EQUITY_CURVE_FILENAME
 
-    _write_json(config_path, _serialize_config(result))
-    _write_json(metrics_path, result.metrics.__dict__)
+    _write_json(config_path, serialize_experiment_config(result))
+    _write_json(metrics_path, serialize_metric_report(result.metrics))
     trades.reindex(columns=TRADE_LOG_COLUMNS).to_csv(trade_log_path, index=False)
     equity_curve.to_csv(equity_curve_path, index=False)
 
-    return ExperimentResult(
+    persisted_result = ExperimentResult(
         data_spec=result.data_spec,
         strategy_spec=result.strategy_spec,
         backtest_config=result.backtest_config,
         metrics=result.metrics,
         score=result.score,
-        equity_curve_path=equity_curve_path,
-        trade_log_path=trade_log_path,
-        metrics_path=metrics_path,
         metadata=result.metadata,
     )
+    receipt = ArtifactReceipt(
+        run_dir=target_dir,
+        equity_curve_path=equity_curve_path,
+        trade_log_path=trade_log_path,
+        metrics_summary_path=metrics_path,
+    )
+    return persisted_result, receipt
 
 
 def save_ranked_results(output_dir: Path, results: list[ExperimentResult]) -> Path:
@@ -63,7 +204,7 @@ def save_ranked_results_with_columns(
 ) -> Path:
     ensure_output_dir(output_dir)
     return _save_ranked_results_frame(
-        ranked_path=output_dir / "ranked_results.csv",
+        ranked_path=output_dir / RANKED_RESULTS_FILENAME,
         results=results,
         parameter_columns=parameter_columns,
     )
@@ -108,7 +249,7 @@ def _save_ranked_results_frame(
 
 def save_validation_result(output_dir: Path, validation_result: ValidationResult) -> ValidationResult:
     ensure_output_dir(output_dir)
-    summary_path = output_dir / "validation_summary.json"
+    summary_path = output_dir / VALIDATION_SUMMARY_FILENAME
     persisted_result = ValidationResult(
         data_spec=validation_result.data_spec,
         split_config=validation_result.split_config,
@@ -116,18 +257,17 @@ def save_validation_result(output_dir: Path, validation_result: ValidationResult
         train_best_result=validation_result.train_best_result,
         test_result=validation_result.test_result,
         test_benchmark_summary=validation_result.test_benchmark_summary,
-        validation_summary_path=summary_path,
         train_ranked_results_path=validation_result.train_ranked_results_path,
         metadata=validation_result.metadata,
     )
-    _write_json(summary_path, persisted_result.to_dict())
+    _write_json(summary_path, serialize_validation_result(persisted_result))
     return persisted_result
 
 
 def save_walk_forward_result(output_dir: Path, walk_forward_result: WalkForwardResult) -> WalkForwardResult:
     ensure_output_dir(output_dir)
-    summary_path = output_dir / "walk_forward_summary.json"
-    fold_results_path = output_dir / "fold_results.csv"
+    summary_path = output_dir / WALK_FORWARD_SUMMARY_FILENAME
+    fold_results_path = output_dir / FOLD_RESULTS_FILENAME
     persisted_result = WalkForwardResult(
         data_spec=walk_forward_result.data_spec,
         walk_forward_config=walk_forward_result.walk_forward_config,
@@ -138,7 +278,7 @@ def save_walk_forward_result(output_dir: Path, walk_forward_result: WalkForwardR
         fold_results_path=fold_results_path,
         metadata=walk_forward_result.metadata,
     )
-    _write_json(summary_path, persisted_result.to_dict())
+    _write_json(summary_path, serialize_walk_forward_result(persisted_result))
     _write_walk_forward_fold_results_csv(fold_results_path, persisted_result)
     return persisted_result
 
@@ -171,23 +311,15 @@ def _write_walk_forward_fold_results_csv(path: Path, walk_forward_result: WalkFo
                 "test_trade_count": fold.test_result.metrics.trade_count,
                 "benchmark_total_return": fold.test_benchmark_summary.get("total_return"),
                 "benchmark_max_drawdown": fold.test_benchmark_summary.get("max_drawdown"),
-                "fold_path": str(fold.fold_path) if fold.fold_path else None,
+                "fold_path": str(_materialize_walk_forward_fold_dir(path.parent, fold.fold_index)),
             }
         )
     pd.DataFrame(rows).to_csv(path, index=False)
 
 
-def _serialize_config(result: ExperimentResult) -> dict[str, Any]:
-    return {
-        "data_spec": {
-            "path": str(result.data_spec.path),
-            "symbol": result.data_spec.symbol,
-            "datetime_column": result.data_spec.datetime_column,
-        },
-        "strategy_spec": {
-            "name": result.strategy_spec.name,
-            "parameters": result.strategy_spec.parameters,
-        },
-        "backtest_config": result.backtest_config.__dict__,
-        "metadata": result.metadata,
-    }
+def _materialize_walk_forward_fold_dir(output_dir: Path, fold_index: int) -> Path:
+    return output_dir / "folds" / f"fold_{fold_index:03d}"
+
+
+def _serialize_path(path: Path | None) -> str | None:
+    return str(path) if path else None
