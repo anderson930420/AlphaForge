@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 import pandas as pd
 
-from alphaforge.experiment_runner import run_experiment, run_experiment_with_artifacts, run_search
+from alphaforge.experiment_runner import run_experiment, run_experiment_with_artifacts, run_search, run_search_with_details
 from alphaforge.search_reporting import save_best_search_report
 from alphaforge.schemas import BacktestConfig, DataSpec, ExperimentResult, MetricReport, StrategySpec
 from alphaforge.storage import ArtifactReceipt, serialize_experiment_result
@@ -115,6 +115,27 @@ def test_run_search_saves_ranked_results_and_per_run_artifacts_under_search_root
     assert (runs_root / "run_001" / "trade_log.csv").exists()
     assert (runs_root / "run_001" / "equity_curve.csv").exists()
     assert (runs_root / "run_002" / "experiment_config.json").exists()
+
+
+def test_run_search_with_details_returns_explicit_artifact_paths(sample_market_csv: Path, tmp_path: Path) -> None:
+    search_execution = run_search_with_details(
+        data_spec=DataSpec(path=sample_market_csv, symbol="TEST"),
+        parameter_grid={"short_window": [2, 3], "long_window": [4]},
+        backtest_config=BacktestConfig(
+            initial_capital=1000,
+            fee_rate=0.0,
+            slippage_rate=0.0,
+            annualization_factor=252,
+        ),
+        output_dir=tmp_path,
+        experiment_name="search_details_case",
+        generate_best_report=True,
+    )
+
+    assert len(search_execution.ranked_results) == 2
+    assert search_execution.ranked_results_path == tmp_path / "search_details_case" / "ranked_results.csv"
+    assert search_execution.best_report_path == tmp_path / "search_details_case" / "best_report.html"
+    assert search_execution.comparison_report_path == tmp_path / "search_details_case" / "search_report.html"
 
 
 def test_run_search_saves_empty_ranked_results_with_headers(sample_market_csv: Path, tmp_path: Path) -> None:

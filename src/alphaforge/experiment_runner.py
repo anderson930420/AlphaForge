@@ -7,9 +7,10 @@ import pandas as pd
 
 from . import config
 from .backtest import run_backtest
-from .benchmark import normalize_benchmark_summary, summarize_buy_and_hold
+from .benchmark import build_buy_and_hold_equity_curve, normalize_benchmark_summary, summarize_buy_and_hold
 from .data_loader import load_market_data
 from .metrics import compute_metrics
+from .report import ExperimentReportInput
 from .scoring import rank_results, score_metrics
 from .search_reporting import save_best_search_report, save_search_comparison_report
 from .schemas import (
@@ -47,7 +48,18 @@ class ExperimentExecutionOutput:
     result: ExperimentResult
     equity_curve: EquityCurveFrame
     trade_log: pd.DataFrame
+    report_input: ExperimentReportInput
     artifact_receipt: ArtifactReceipt | None = None
+
+
+@dataclass(frozen=True)
+class SearchExecutionOutput:
+    """Runner-local orchestration bundle for ranked search plus saved artifact refs."""
+
+    ranked_results: list[ExperimentResult]
+    ranked_results_path: Path | None = None
+    best_report_path: Path | None = None
+    comparison_report_path: Path | None = None
 
 
 def run_experiment(
@@ -118,10 +130,18 @@ def _run_experiment_on_market_data(
     )
     if output_dir is not None:
         result, receipt = save_single_experiment(output_dir, experiment_name, result, equity_curve, trades)
+    report_input = ExperimentReportInput(
+        result=result,
+        equity_curve=equity_curve,
+        trades=trades,
+        benchmark_summary=benchmark_summary,
+        benchmark_curve=build_buy_and_hold_equity_curve(equity_curve, backtest_config.initial_capital),
+    )
     return ExperimentExecutionOutput(
         result=result,
         equity_curve=equity_curve,
         trade_log=trades,
+        report_input=report_input,
         artifact_receipt=receipt,
     )
 
@@ -136,6 +156,28 @@ def run_search(
     min_trade_count: int | None = None,
     generate_best_report: bool = False,
 ) -> list[ExperimentResult]:
+    return run_search_with_details(
+        data_spec=data_spec,
+        parameter_grid=parameter_grid,
+        backtest_config=backtest_config,
+        output_dir=output_dir,
+        experiment_name=experiment_name,
+        max_drawdown_cap=max_drawdown_cap,
+        min_trade_count=min_trade_count,
+        generate_best_report=generate_best_report,
+    ).ranked_results
+
+
+def run_search_with_details(
+    data_spec: DataSpec,
+    parameter_grid: dict[str, list[int]],
+    backtest_config: BacktestConfig | None = None,
+    output_dir: Path | None = None,
+    experiment_name: str = "search_experiment",
+    max_drawdown_cap: float | None = None,
+    min_trade_count: int | None = None,
+    generate_best_report: bool = False,
+) -> SearchExecutionOutput:
     backtest_config = backtest_config or BacktestConfig(
         initial_capital=config.INITIAL_CAPITAL,
         fee_rate=config.DEFAULT_FEE_RATE,
@@ -166,9 +208,12 @@ def _run_search_on_market_data(
     max_drawdown_cap: float | None = None,
     min_trade_count: int | None = None,
     generate_best_report: bool = False,
-) -> list[ExperimentResult]:
+) -> SearchExecutionOutput:
     results: list[ExperimentResult] = []
     artifact_receipts_by_result_id: dict[int, ArtifactReceipt] = {}
+    ranked_results_path: Path | None = None
+    best_report_path: Path | None = None
+    comparison_report_path: Path | None = None
     strategy_specs = build_strategy_specs("ma_crossover", parameter_grid)
     search_root = (output_dir / experiment_name) if output_dir is not None else None
     runs_output_dir = (search_root / "runs") if search_root is not None else None
@@ -192,7 +237,7 @@ def _run_search_on_market_data(
     )
     if output_dir is not None:
         parameter_columns = list(parameter_grid)
-        save_ranked_results_with_columns(search_root, ranked, parameter_columns=parameter_columns)
+        ranked_results_path = save_ranked_results_with_columns(search_root, ranked, parameter_columns=parameter_columns)
         ranked_receipts = [artifact_receipts_by_result_id.get(id(result)) for result in ranked]
         if generate_best_report:
             best_receipt = ranked_receipts[0] if ranked_receipts else None
@@ -201,13 +246,18 @@ def _run_search_on_market_data(
                 if ranked
                 else None
             )
-            save_search_comparison_report(
+            comparison_report_path = save_search_comparison_report(
                 search_root=search_root,
                 ranked_results=ranked,
                 artifact_receipts=ranked_receipts,
                 best_report_path=best_report_path,
             )
-    return ranked
+    return SearchExecutionOutput(
+        ranked_results=ranked,
+        ranked_results_path=ranked_results_path,
+        best_report_path=best_report_path,
+        comparison_report_path=comparison_report_path,
+    )
 
 
 def run_validate_search(
@@ -231,7 +281,7 @@ def run_validate_search(
     _validate_train_windows(train_data, parameter_grid)
 
     validation_root = (output_dir / experiment_name) if output_dir is not None else None
-    ranked = _run_search_on_market_data(
+    search_execution = _run_search_on_market_data(
         market_data=train_data,
         data_spec=data_spec,
         parameter_grid=parameter_grid,
@@ -242,6 +292,7 @@ def run_validate_search(
         min_trade_count=min_trade_count,
         generate_best_report=False,
     )
+    ranked = search_execution.ranked_results
     if not ranked:
         raise ValueError("No train-segment results remain after ranking and threshold filters")
 
@@ -321,7 +372,7 @@ def run_walk_forward_search(
         train_output_dir = fold_root
         test_output_dir = fold_root
 
-        ranked = _run_search_on_market_data(
+        search_execution = _run_search_on_market_data(
             market_data=train_data,
             data_spec=data_spec,
             parameter_grid=parameter_grid,
@@ -332,6 +383,7 @@ def run_walk_forward_search(
             min_trade_count=min_trade_count,
             generate_best_report=False,
         )
+        ranked = search_execution.ranked_results
         if not ranked:
             raise ValueError(f"No train-fold results remain after ranking and threshold filters for fold {fold_index}")
 

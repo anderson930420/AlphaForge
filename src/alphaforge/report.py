@@ -4,15 +4,16 @@ from __future__ import annotations
 
 This module is the single place for composing experiment outputs into a
 shareable report artifact. It may orchestrate metrics, tables, and figures, but
-it should not run backtests, compute metrics, or own figure construction.
+it should not run backtests, compute metrics, own figure construction, or infer
+workflow-specific layout when explicit presentation inputs are available.
 """
 
+from dataclasses import dataclass
 from html import escape
 from pathlib import Path
 
 import pandas as pd
 
-from .benchmark import build_buy_and_hold_equity_curve, summarize_buy_and_hold
 from .schemas import EquityCurveFrame, ExperimentResult
 from .storage import ArtifactReceipt
 from .visualization import (
@@ -25,25 +26,40 @@ from .visualization import (
 )
 
 
+@dataclass(frozen=True)
+class SearchReportLinkContext:
+    """Report-local link context for rendering search comparison reports."""
+
+    link_base_dir: Path
+    search_display_name: str
+
+
+@dataclass(frozen=True)
+class ExperimentReportInput:
+    """Report-local input contract for rendering a single experiment report."""
+
+    result: ExperimentResult
+    equity_curve: EquityCurveFrame
+    trades: pd.DataFrame
+    benchmark_summary: dict[str, float]
+    benchmark_curve: EquityCurveFrame
+
+
 def render_experiment_report(
-    result: ExperimentResult,
-    equity_curve: EquityCurveFrame,
-    trades: pd.DataFrame,
+    report_input: ExperimentReportInput,
 ) -> str:
     """Assemble a single-experiment HTML report from existing artifacts."""
     to_html = _load_plotly_to_html()
-    benchmark_summary = summarize_buy_and_hold(equity_curve, result.backtest_config.initial_capital)
-    benchmark_curve = build_buy_and_hold_equity_curve(equity_curve, result.backtest_config.initial_capital)
-    metrics_rows = _build_metrics_rows(result, benchmark_summary)
-    equity_figure = build_equity_curve_figure(equity_curve)
-    strategy_benchmark_figure = build_strategy_benchmark_figure(equity_curve, benchmark_curve)
-    drawdown_figure = build_drawdown_figure(equity_curve)
-    price_trade_figure = build_price_trade_figure(equity_curve, trades)
+    metrics_rows = _build_metrics_rows(report_input.result, report_input.benchmark_summary)
+    equity_figure = build_equity_curve_figure(report_input.equity_curve)
+    strategy_benchmark_figure = build_strategy_benchmark_figure(report_input.equity_curve, report_input.benchmark_curve)
+    drawdown_figure = build_drawdown_figure(report_input.equity_curve)
+    price_trade_figure = build_price_trade_figure(report_input.equity_curve, report_input.trades)
     equity_figure_html = _render_figure_html(to_html, equity_figure, include_plotlyjs=True)
     strategy_benchmark_figure_html = _render_figure_html(to_html, strategy_benchmark_figure, include_plotlyjs=False)
     drawdown_figure_html = _render_figure_html(to_html, drawdown_figure, include_plotlyjs=False)
     price_trade_figure_html = _render_figure_html(to_html, price_trade_figure, include_plotlyjs=False)
-    experiment_title = _build_experiment_title(result)
+    experiment_title = _build_experiment_title(report_input.result)
 
     # The report module assembles content; figure creation stays in visualization.py.
     return f"""<!DOCTYPE html>
@@ -103,7 +119,7 @@ def render_experiment_report(
 <body>
   <main>
     <h1>{escape(experiment_title)}</h1>
-    <p class="meta">Strategy: {escape(result.strategy_spec.name)} | Symbol: {escape(result.data_spec.symbol)}</p>
+    <p class="meta">Strategy: {escape(report_input.result.strategy_spec.name)} | Symbol: {escape(report_input.result.data_spec.symbol)}</p>
     <section class="section">
       <h2>Metrics Summary</h2>
       <div class="metrics-grid">
@@ -141,16 +157,16 @@ def save_experiment_report(report_content: str, output_path: Path) -> Path:
 
 
 def render_search_comparison_report(
-    search_root: Path,
+    link_context: SearchReportLinkContext,
     ranked_results: list[ExperimentResult],
     artifact_receipts: list[ArtifactReceipt | None],
     top_equity_curves: dict[str, EquityCurveFrame],
     best_report_path: Path | None = None,
 ) -> str:
     """Assemble an HTML comparison report for ranked search results."""
-    title = f"AlphaForge Search Report: {search_root.name}"
+    title = f"AlphaForge Search Report: {link_context.search_display_name}"
     comparison_table = _build_search_comparison_table(
-        search_root=search_root,
+        link_context=link_context,
         ranked_results=ranked_results,
         artifact_receipts=artifact_receipts,
         best_report_path=best_report_path,
@@ -212,7 +228,7 @@ def render_search_comparison_report(
 <body>
   <main>
     <h1>{escape(title)}</h1>
-    <p class="meta">Search root: {escape(str(search_root))}</p>
+    <p class="meta">Link base: {escape(str(link_context.link_base_dir))}</p>
     <section class="section">
       <h2>Ranked Comparison</h2>
       {comparison_table}
@@ -229,7 +245,7 @@ def _build_experiment_title(result: ExperimentResult) -> str:
 
 
 def _build_search_comparison_table(
-    search_root: Path,
+    link_context: SearchReportLinkContext,
     ranked_results: list[ExperimentResult],
     artifact_receipts: list[ArtifactReceipt | None],
     best_report_path: Path | None,
@@ -242,8 +258,8 @@ def _build_search_comparison_table(
     rows = []
     for rank, (result, receipt) in enumerate(zip(ranked_results, artifact_receipts, strict=False), start=1):
         parameters = result.strategy_spec.parameters
-        artifact_path = _build_relative_artifact_path(search_root, receipt)
-        best_report_link = _build_best_report_link(search_root, best_report_path, rank)
+        artifact_path = _build_relative_artifact_path(link_context, receipt)
+        best_report_link = _build_best_report_link(link_context, best_report_path, rank)
         rows.append(
             f"""<tr>
   <td>{rank}</td>
@@ -309,16 +325,23 @@ def _build_search_chart_sections(top_equity_curves: dict[str, EquityCurveFrame])
     </section>"""
 
 
-def _build_relative_artifact_path(search_root: Path, artifact_receipt: ArtifactReceipt | None) -> str:
+def _build_relative_artifact_path(
+    link_context: SearchReportLinkContext,
+    artifact_receipt: ArtifactReceipt | None,
+) -> str:
     if artifact_receipt is None:
         return ""
-    return str(artifact_receipt.run_dir.relative_to(search_root))
+    return str(artifact_receipt.run_dir.relative_to(link_context.link_base_dir))
 
 
-def _build_best_report_link(search_root: Path, best_report_path: Path | None, rank: int) -> str:
+def _build_best_report_link(
+    link_context: SearchReportLinkContext,
+    best_report_path: Path | None,
+    rank: int,
+) -> str:
     if rank != 1 or best_report_path is None:
         return ""
-    relative_path = best_report_path.relative_to(search_root)
+    relative_path = best_report_path.relative_to(link_context.link_base_dir)
     href = escape(relative_path.as_posix())
     label = escape(str(relative_path))
     return f'<a href="{href}">{label}</a>'

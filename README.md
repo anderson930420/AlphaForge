@@ -127,6 +127,11 @@ Search output now returns a compact summary payload with:
 - `report_path` when `--generate-report` creates `best_report.html`
 - `search_report_path` when `--generate-report` creates `search_report.html`
 
+Report rendering now uses explicit presentation inputs:
+
+- single-experiment HTML reports consume a prepared report input bundle instead of inferring benchmark presentation data internally
+- search comparison reports render relative links from an explicit link context instead of guessing layout from workflow paths
+
 Fetch TWSE daily data to a standardized CSV:
 
 ```powershell

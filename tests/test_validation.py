@@ -9,7 +9,13 @@ import pandas as pd
 import pytest
 
 from alphaforge.cli import main
-from alphaforge.experiment_runner import ExperimentExecutionOutput, run_validate_search, run_walk_forward_search
+from alphaforge.experiment_runner import (
+    ExperimentExecutionOutput,
+    SearchExecutionOutput,
+    run_validate_search,
+    run_walk_forward_search,
+)
+from alphaforge.report import ExperimentReportInput
 from alphaforge.schemas import BacktestConfig, DataSpec, ExperimentResult, MetricReport, StrategySpec
 from alphaforge.storage import serialize_walk_forward_result
 
@@ -87,13 +93,21 @@ def test_run_validate_search_uses_train_only_for_search_and_selected_params_for_
     )
 
     with patch("alphaforge.experiment_runner.load_market_data", return_value=pd.concat([train_data, test_data], ignore_index=True)), patch(
-        "alphaforge.experiment_runner._run_search_on_market_data", return_value=[train_best]
+        "alphaforge.experiment_runner._run_search_on_market_data",
+        return_value=SearchExecutionOutput(ranked_results=[train_best]),
     ) as run_search_mock, patch(
         "alphaforge.experiment_runner._run_experiment_on_market_data",
         return_value=ExperimentExecutionOutput(
             result=test_result,
             equity_curve=pd.DataFrame(),
             trade_log=pd.DataFrame(),
+            report_input=ExperimentReportInput(
+                result=test_result,
+                equity_curve=pd.DataFrame(),
+                trades=pd.DataFrame(),
+                benchmark_summary={"total_return": 0.0, "max_drawdown": 0.0},
+                benchmark_curve=pd.DataFrame(),
+            ),
             artifact_receipt=None,
         ),
     ) as run_experiment_mock:
@@ -248,13 +262,24 @@ def test_run_walk_forward_search_uses_train_fold_for_search_and_next_window_for_
 
     with patch("alphaforge.experiment_runner.load_market_data", return_value=market_data), patch(
         "alphaforge.experiment_runner._run_search_on_market_data",
-        side_effect=[[train_best_fold_1], [train_best_fold_2], [train_best_fold_2]],
+        side_effect=[
+            SearchExecutionOutput(ranked_results=[train_best_fold_1]),
+            SearchExecutionOutput(ranked_results=[train_best_fold_2]),
+            SearchExecutionOutput(ranked_results=[train_best_fold_2]),
+        ],
     ) as run_search_mock, patch(
         "alphaforge.experiment_runner._run_experiment_on_market_data",
         return_value=ExperimentExecutionOutput(
             result=test_result,
             equity_curve=pd.DataFrame(),
             trade_log=pd.DataFrame(),
+            report_input=ExperimentReportInput(
+                result=test_result,
+                equity_curve=pd.DataFrame(),
+                trades=pd.DataFrame(),
+                benchmark_summary={"total_return": 0.0, "max_drawdown": 0.0},
+                benchmark_curve=pd.DataFrame(),
+            ),
             artifact_receipt=None,
         ),
     ) as run_experiment_mock:

@@ -1,7 +1,8 @@
-# Delta for Report Presentation Boundary
+# report-presentation-boundary Specification
 
-## ADDED Requirements
-
+## Purpose
+TBD - created by archiving change refactor-report-presentation-boundary. Update Purpose after archive.
+## Requirements
 ### Requirement: Presentation contracts have explicit rendering owners
 
 User-facing presentation contracts in AlphaForge SHALL be owned explicitly by `src/alphaforge/report.py`, `src/alphaforge/visualization.py`, and `src/alphaforge/cli.py` according to their distinct rendering roles, and SHALL NOT be redefined by storage, runtime schemas, or orchestration modules.
@@ -10,6 +11,10 @@ User-facing presentation contracts in AlphaForge SHALL be owned explicitly by `s
 
 - Define one canonical presentation boundary so reports, figures, and CLI output describe the same experiment artifacts without each layer inventing its own parallel contract.
 - Prevent `report.py`, `visualization.py`, and `cli.py` from silently absorbing storage-owned artifact semantics, runtime-owned schema meaning, or orchestration-owned workflow logic.
+- Make the thin explicit presentation contracts visible in the spec:
+  - `ExperimentReportInput`
+  - `SearchReportLinkContext`
+  - `SearchExecutionOutput`
 
 #### Canonical owner
 
@@ -55,10 +60,11 @@ User-facing presentation contracts in AlphaForge SHALL be owned explicitly by `s
 #### Inputs / outputs / contracts
 
 - Report input contract:
-  - `ExperimentResult` and other runtime result objects for already-computed domain truth
+  - `ExperimentReportInput` for single-run reports
+  - `SearchReportLinkContext` for search comparison report link rendering
   - storage-owned `ArtifactReceipt` for persisted artifact references
-  - normalized benchmark summaries from `benchmark.py`
   - ranked search results and comparison curve payloads prepared without guessing persistence layout
+  - report rendering MAY consume `ExperimentResult` only through `ExperimentReportInput`
 - Visualization input contract:
   - `EquityCurveFrame` inputs for equity and drawdown figures
   - trade-log frames for price/trade figures
@@ -102,15 +108,16 @@ User-facing presentation contracts in AlphaForge SHALL be owned explicitly by `s
 
 #### Migration notes from current implementation
 
-- `report.py` currently renders relative artifact paths using `search_root` plus `ArtifactReceipt`.
+- `report.py` currently renders relative artifact paths using `SearchReportLinkContext` plus `ArtifactReceipt`.
+- `report.py` currently renders single-run reports from `ExperimentReportInput` rather than pulling benchmark-derived presentation inputs internally.
 - `visualization.py` currently owns `REPORT_EQUITY_CURVE_REQUIRED_COLUMNS`; this is acceptable only if those columns remain presentation-only requirements.
-- `cli.py` currently constructs search report paths with helper functions and assembles compact summary payloads documented in `README.md`.
+- `cli.py` now consumes `SearchExecutionOutput` for search/report path ownership and assembles compact summary payloads documented in `README.md`.
 - `README.md` currently documents report artifacts and CLI summary payloads; those descriptions must remain derived from canonical presentation owners rather than becoming a parallel source of truth.
 
 #### Open questions / deferred decisions
 
 - Whether CLI output payloads should remain inside this presentation boundary or later be split into a dedicated CLI-output spec if command contracts become materially more complex than report/figure contracts.
-- Whether report link rendering should continue using `search_root` as a presentation context input or move to a narrower report-input helper once the presentation contract is implemented.
+- Whether report link rendering should continue using `SearchReportLinkContext` as the presentation context input or move to a narrower report-input helper once the presentation contract is implemented.
 - Whether comparison-report input shaping should remain in `search_reporting.py` or migrate into a report-adjacent contract if more presentation workflows appear.
 
 #### Scenario: Reports render artifact links from explicit references
@@ -134,3 +141,4 @@ User-facing presentation contracts in AlphaForge SHALL be owned explicitly by `s
 - THEN runtime result fields SHALL come from canonical runtime serializers
 - AND artifact paths SHALL come from storage-owned serializers or report-returned paths
 - AND `cli.py` SHALL NOT invent a parallel artifact or report contract
+

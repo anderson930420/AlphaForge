@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 
 from . import config
-from .experiment_runner import run_experiment_with_artifacts, run_search, run_validate_search, run_walk_forward_search
+from .experiment_runner import run_experiment_with_artifacts, run_search_with_details, run_validate_search, run_walk_forward_search
 from .report import render_experiment_report, save_experiment_report
 from .schemas import BacktestConfig, DataSpec, StrategySpec
 from .storage import (
@@ -124,7 +124,7 @@ def main() -> None:
                 slippage_rate=args.slippage_rate,
                 annualization_factor=args.annualization_factor,
             )
-            ranked = run_search(
+            search_execution = run_search_with_details(
                 data_spec=data_spec,
                 parameter_grid={
                     "short_window": args.short_windows,
@@ -137,17 +137,11 @@ def main() -> None:
                 min_trade_count=args.min_trade_count,
                 generate_best_report=args.generate_report,
             )
-            report_path = _build_search_report_path(args.output_dir, args.experiment_name) if args.generate_report and ranked else None
-            search_report_path = _build_search_comparison_report_path(args.output_dir, args.experiment_name) if args.generate_report else None
             print(
                 json.dumps(
                     _build_search_summary(
-                        ranked,
-                        args.output_dir,
-                        args.experiment_name,
+                        search_execution,
                         data_output=data_output,
-                        report_path=report_path,
-                        search_report_path=search_report_path,
                     ),
                     indent=2,
                     default=str,
@@ -179,7 +173,7 @@ def main() -> None:
             payload["artifacts"] = serialize_artifact_receipt(execution.artifact_receipt)
             if args.generate_report:
                 experiment_dir = ensure_output_dir(args.output_dir / args.experiment_name)
-                report_content = render_experiment_report(execution.result, execution.equity_curve, execution.trade_log)
+                report_content = render_experiment_report(execution.report_input)
                 report_path = save_experiment_report(report_content, experiment_dir / "report.html")
                 payload["report_path"] = str(report_path)
             print(json.dumps(payload, indent=2, default=str))
@@ -221,7 +215,7 @@ def main() -> None:
             print(json.dumps(serialize_walk_forward_result(walk_forward_result), indent=2, default=str))
             return
 
-        ranked = run_search(
+        search_execution = run_search_with_details(
             data_spec=data_spec,
             parameter_grid={
                 "short_window": args.short_windows,
@@ -234,16 +228,10 @@ def main() -> None:
             min_trade_count=args.min_trade_count,
             generate_best_report=args.generate_report,
         )
-        report_path = _build_search_report_path(args.output_dir, args.experiment_name) if args.generate_report and ranked else None
-        search_report_path = _build_search_comparison_report_path(args.output_dir, args.experiment_name) if args.generate_report else None
         print(
             json.dumps(
                 _build_search_summary(
-                    ranked,
-                    args.output_dir,
-                    args.experiment_name,
-                    report_path=report_path,
-                    search_report_path=search_report_path,
+                    search_execution,
                 ),
                 indent=2,
                 default=str,
@@ -259,38 +247,27 @@ def _load_twse_client():
 
 
 def _build_search_summary(
-    ranked,
-    output_dir: Path,
-    experiment_name: str,
+    search_execution,
     data_output: Path | None = None,
-    report_path: Path | None = None,
-    search_report_path: Path | None = None,
 ) -> dict:
-    search_root = output_dir / experiment_name
+    ranked = search_execution.ranked_results
     payload = {
         "result_count": len(ranked),
-        "ranked_results_path": str(search_root / "ranked_results.csv"),
         "top_results": [serialize_experiment_result(result) for result in ranked[:3]],
     }
+    if search_execution.ranked_results_path is not None:
+        payload["ranked_results_path"] = str(search_execution.ranked_results_path)
     if ranked:
         payload["best_result"] = serialize_experiment_result(ranked[0])
     else:
         payload["best_result"] = None
     if data_output is not None:
         payload["data_output"] = str(data_output)
-    if report_path is not None:
-        payload["report_path"] = str(report_path)
-    if search_report_path is not None:
-        payload["search_report_path"] = str(search_report_path)
+    if search_execution.best_report_path is not None:
+        payload["report_path"] = str(search_execution.best_report_path)
+    if search_execution.comparison_report_path is not None:
+        payload["search_report_path"] = str(search_execution.comparison_report_path)
     return payload
-
-
-def _build_search_report_path(output_dir: Path, experiment_name: str) -> Path:
-    return output_dir / experiment_name / "best_report.html"
-
-
-def _build_search_comparison_report_path(output_dir: Path, experiment_name: str) -> Path:
-    return output_dir / experiment_name / "search_report.html"
 
 
 if __name__ == "__main__":

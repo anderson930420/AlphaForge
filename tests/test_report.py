@@ -5,7 +5,14 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from alphaforge.report import render_experiment_report, render_search_comparison_report, save_experiment_report
+from alphaforge.report import (
+    ExperimentReportInput,
+    SearchReportLinkContext,
+    render_experiment_report,
+    render_search_comparison_report,
+    save_experiment_report,
+)
+from alphaforge.benchmark import build_buy_and_hold_equity_curve, summarize_buy_and_hold
 from alphaforge.schemas import BacktestConfig, DataSpec, ExperimentResult, MetricReport, StrategySpec
 from alphaforge.storage import ArtifactReceipt
 
@@ -56,7 +63,14 @@ def test_render_and_save_experiment_report_creates_html(tmp_path: Path) -> None:
         }
     )
 
-    report_content = render_experiment_report(result, equity_curve, trades)
+    report_input = ExperimentReportInput(
+        result=result,
+        equity_curve=equity_curve,
+        trades=trades,
+        benchmark_summary=summarize_buy_and_hold(equity_curve, result.backtest_config.initial_capital),
+        benchmark_curve=build_buy_and_hold_equity_curve(equity_curve, result.backtest_config.initial_capital),
+    )
+    report_content = render_experiment_report(report_input)
     output_path = save_experiment_report(report_content, tmp_path / "report.html")
 
     assert output_path.exists()
@@ -114,7 +128,14 @@ def test_render_experiment_report_handles_empty_trades_with_price_section() -> N
         }
     )
 
-    report_content = render_experiment_report(result, equity_curve, pd.DataFrame())
+    report_input = ExperimentReportInput(
+        result=result,
+        equity_curve=equity_curve,
+        trades=pd.DataFrame(),
+        benchmark_summary=summarize_buy_and_hold(equity_curve, result.backtest_config.initial_capital),
+        benchmark_curve=build_buy_and_hold_equity_curve(equity_curve, result.backtest_config.initial_capital),
+    )
+    report_content = render_experiment_report(report_input)
 
     assert "Strategy vs Buy-and-Hold" in report_content
     assert "Benchmark Return" in report_content
@@ -126,8 +147,8 @@ def test_render_experiment_report_handles_empty_trades_with_price_section() -> N
 
 
 def test_render_search_comparison_report_includes_ranked_table_and_overlay_sections(tmp_path: Path) -> None:
-    search_root = tmp_path / "search_case"
-    search_root.mkdir()
+    link_base_dir = tmp_path / "presentation_case"
+    link_base_dir.mkdir()
     ranked_results = [
         ExperimentResult(
             data_spec=DataSpec(path=Path("sample_data/a.csv"), symbol="2330"),
@@ -146,16 +167,16 @@ def test_render_search_comparison_report_includes_ranked_table_and_overlay_secti
     ]
     artifact_receipts = [
         ArtifactReceipt(
-            run_dir=search_root / "runs" / "run_001",
-            equity_curve_path=search_root / "runs" / "run_001" / "equity_curve.csv",
-            trade_log_path=search_root / "runs" / "run_001" / "trade_log.csv",
-            metrics_summary_path=search_root / "runs" / "run_001" / "metrics_summary.json",
+            run_dir=link_base_dir / "runs" / "run_001",
+            equity_curve_path=link_base_dir / "runs" / "run_001" / "equity_curve.csv",
+            trade_log_path=link_base_dir / "runs" / "run_001" / "trade_log.csv",
+            metrics_summary_path=link_base_dir / "runs" / "run_001" / "metrics_summary.json",
         ),
         ArtifactReceipt(
-            run_dir=search_root / "runs" / "run_002",
-            equity_curve_path=search_root / "runs" / "run_002" / "equity_curve.csv",
-            trade_log_path=search_root / "runs" / "run_002" / "trade_log.csv",
-            metrics_summary_path=search_root / "runs" / "run_002" / "metrics_summary.json",
+            run_dir=link_base_dir / "runs" / "run_002",
+            equity_curve_path=link_base_dir / "runs" / "run_002" / "equity_curve.csv",
+            trade_log_path=link_base_dir / "runs" / "run_002" / "trade_log.csv",
+            metrics_summary_path=link_base_dir / "runs" / "run_002" / "metrics_summary.json",
         ),
     ]
     top_equity_curves = {
@@ -168,11 +189,14 @@ def test_render_search_comparison_report_includes_ranked_table_and_overlay_secti
     }
 
     report_content = render_search_comparison_report(
-        search_root=search_root,
+        link_context=SearchReportLinkContext(
+            link_base_dir=link_base_dir,
+            search_display_name="search_case",
+        ),
         ranked_results=ranked_results,
         artifact_receipts=artifact_receipts,
         top_equity_curves=top_equity_curves,
-        best_report_path=search_root / "best_report.html",
+        best_report_path=link_base_dir / "best_report.html",
     )
 
     assert "Ranked Comparison" in report_content
@@ -187,11 +211,14 @@ def test_render_search_comparison_report_includes_ranked_table_and_overlay_secti
 
 
 def test_render_search_comparison_report_handles_empty_ranked_results(tmp_path: Path) -> None:
-    search_root = tmp_path / "empty_search"
-    search_root.mkdir()
+    link_base_dir = tmp_path / "empty_search"
+    link_base_dir.mkdir()
 
     report_content = render_search_comparison_report(
-        search_root=search_root,
+        link_context=SearchReportLinkContext(
+            link_base_dir=link_base_dir,
+            search_display_name="empty_search",
+        ),
         ranked_results=[],
         artifact_receipts=[],
         top_equity_curves={},

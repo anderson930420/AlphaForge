@@ -9,7 +9,8 @@ import pandas as pd
 import pytest
 
 from alphaforge.cli import main
-from alphaforge.experiment_runner import ExperimentExecutionOutput
+from alphaforge.experiment_runner import ExperimentExecutionOutput, SearchExecutionOutput
+from alphaforge.report import ExperimentReportInput
 from alphaforge.storage import ArtifactReceipt
 from alphaforge.schemas import BacktestConfig, DataSpec, ExperimentResult, MetricReport, StrategySpec
 
@@ -184,6 +185,13 @@ def test_cli_run_path_does_not_load_twse_client(
             result=sample_result,
             equity_curve=pd.DataFrame(),
             trade_log=pd.DataFrame(),
+            report_input=ExperimentReportInput(
+                result=sample_result,
+                equity_curve=pd.DataFrame(),
+                trades=pd.DataFrame(),
+                benchmark_summary={"total_return": 0.0, "max_drawdown": 0.0},
+                benchmark_curve=pd.DataFrame(),
+            ),
             artifact_receipt=None,
         ),
     ):
@@ -256,6 +264,13 @@ def test_cli_run_generates_report_only_when_requested(
             result=sample_result,
             equity_curve=sample_equity_curve,
             trade_log=sample_trades,
+            report_input=ExperimentReportInput(
+                result=sample_result,
+                equity_curve=sample_equity_curve,
+                trades=sample_trades,
+                benchmark_summary={"total_return": 0.0, "max_drawdown": 0.0},
+                benchmark_curve=sample_equity_curve,
+            ),
             artifact_receipt=sample_receipt,
         ),
     ), patch(
@@ -326,7 +341,13 @@ def test_cli_twse_search_fetches_saves_and_runs_search(
         lambda request: sample_frame,
         lambda frame, path: frame.to_csv(path, index=False) or path,
     )
-    with patch("alphaforge.cli._load_twse_client", return_value=loader), patch("alphaforge.cli.run_search", return_value=[sample_result]):
+    with patch("alphaforge.cli._load_twse_client", return_value=loader), patch(
+        "alphaforge.cli.run_search_with_details",
+        return_value=SearchExecutionOutput(
+            ranked_results=[sample_result],
+            ranked_results_path=tmp_path / "twse_summary_case" / "ranked_results.csv",
+        ),
+    ):
         main()
 
     payload = json.loads(capsys.readouterr().out)
@@ -378,7 +399,15 @@ def test_cli_search_generates_only_best_report_when_requested(
         score=0.5,
     )
 
-    with patch("alphaforge.cli.run_search", return_value=[sample_result]) as run_search_mock:
+    with patch(
+        "alphaforge.cli.run_search_with_details",
+        return_value=SearchExecutionOutput(
+            ranked_results=[sample_result],
+            ranked_results_path=tmp_path / "search_report_case" / "ranked_results.csv",
+            best_report_path=tmp_path / "search_report_case" / "best_report.html",
+            comparison_report_path=tmp_path / "search_report_case" / "search_report.html",
+        ),
+    ) as run_search_mock:
         main()
 
     payload = json.loads(capsys.readouterr().out)
@@ -415,9 +444,74 @@ def test_cli_search_with_empty_ranked_results_still_returns_search_report_path(
         ],
     )
 
-    with patch("alphaforge.cli.run_search", return_value=[]):
+    with patch(
+        "alphaforge.cli.run_search_with_details",
+        return_value=SearchExecutionOutput(
+            ranked_results=[],
+            comparison_report_path=tmp_path / "empty_search_case" / "search_report.html",
+        ),
+    ):
         main()
 
     payload = json.loads(capsys.readouterr().out)
+    assert "report_path" not in payload
+    assert Path(payload["search_report_path"]).name == "search_report.html"
+
+
+def test_cli_search_omits_missing_artifact_paths_instead_of_guessing(
+    sample_market_csv: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "alphaforge",
+            "search",
+            "--data",
+            str(sample_market_csv),
+            "--output-dir",
+            str(tmp_path),
+            "--experiment-name",
+            "partial_search_case",
+            "--short-windows",
+            "2",
+            "--long-windows",
+            "4",
+            "--generate-report",
+        ],
+    )
+
+    sample_result = ExperimentResult(
+        data_spec=DataSpec(path=sample_market_csv, symbol="TEST"),
+        strategy_spec=StrategySpec(name="ma_crossover", parameters={"short_window": 2, "long_window": 4}),
+        backtest_config=BacktestConfig(initial_capital=1000.0, fee_rate=0.0, slippage_rate=0.0, annualization_factor=252),
+        metrics=MetricReport(
+            total_return=0.1,
+            annualized_return=0.1,
+            sharpe_ratio=1.0,
+            max_drawdown=-0.1,
+            win_rate=1.0,
+            turnover=1.0,
+            trade_count=1,
+        ),
+        score=0.5,
+    )
+
+    with patch(
+        "alphaforge.cli.run_search_with_details",
+        return_value=SearchExecutionOutput(
+            ranked_results=[sample_result],
+            ranked_results_path=tmp_path / "partial_search_case" / "ranked_results.csv",
+            best_report_path=None,
+            comparison_report_path=tmp_path / "partial_search_case" / "search_report.html",
+        ),
+    ):
+        main()
+
+    payload = json.loads(capsys.readouterr().out)
+    assert Path(payload["ranked_results_path"]).name == "ranked_results.csv"
     assert "report_path" not in payload
     assert Path(payload["search_report_path"]).name == "search_report.html"
