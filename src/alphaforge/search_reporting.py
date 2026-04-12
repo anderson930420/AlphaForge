@@ -2,9 +2,11 @@ from __future__ import annotations
 
 """Presentation boundary for search-specific report artifacts.
 
-This module prepares and writes HTML report artifacts for search workflows.
-It may consume storage-owned artifact receipts, but it does not own canonical
-persisted experiment artifacts or filename/layout decisions for raw outputs.
+This module prepares search comparison report inputs and writes HTML report
+artifacts for search workflows. It may consume storage-owned artifact receipts,
+but it does not own canonical persisted experiment artifacts or filename/layout
+decisions for raw outputs. Search comparison link semantics are explicit: the
+caller provides a report-local link base and a display-only search label.
 """
 
 from pathlib import Path
@@ -59,10 +61,7 @@ def save_search_comparison_report(
 ) -> Path:
     top_equity_curves = load_top_search_equity_curves(artifact_receipts, ranked_results, top_n=top_n)
     report_content = render_search_comparison_report(
-        link_context=SearchReportLinkContext(
-            link_base_dir=search_root,
-            search_display_name=search_root.name,
-        ),
+        link_context=SearchReportLinkContext(link_base_dir=search_root, search_display_name=search_root.name),
         ranked_results=ranked_results,
         artifact_receipts=artifact_receipts,
         top_equity_curves=top_equity_curves,

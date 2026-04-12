@@ -191,7 +191,7 @@ def test_render_search_comparison_report_includes_ranked_table_and_overlay_secti
     report_content = render_search_comparison_report(
         link_context=SearchReportLinkContext(
             link_base_dir=link_base_dir,
-            search_display_name="search_case",
+            search_display_name="Friendly Search Name",
         ),
         ranked_results=ranked_results,
         artifact_receipts=artifact_receipts,
@@ -199,6 +199,7 @@ def test_render_search_comparison_report_includes_ranked_table_and_overlay_secti
         best_report_path=link_base_dir / "best_report.html",
     )
 
+    assert "Friendly Search Name" in report_content
     assert "Ranked Comparison" in report_content
     assert "Short Window" in report_content
     assert "Long Window" in report_content
@@ -208,6 +209,42 @@ def test_render_search_comparison_report_includes_ranked_table_and_overlay_secti
     assert "best_report.html" in report_content
     _assert_no_external_plotly_cdn_script(report_content)
     assert "Plotly.newPlot" in report_content
+
+
+def test_render_search_comparison_report_omits_best_report_link_when_not_provided(tmp_path: Path) -> None:
+    link_base_dir = tmp_path / "presentation_case"
+    link_base_dir.mkdir()
+    ranked_results = [
+        ExperimentResult(
+            data_spec=DataSpec(path=Path("sample_data/a.csv"), symbol="2330"),
+            strategy_spec=StrategySpec(name="ma_crossover", parameters={"short_window": 2, "long_window": 4}),
+            backtest_config=BacktestConfig(100000.0, 0.001, 0.0005, 252),
+            metrics=MetricReport(0.2, 0.3, 1.4, -0.08, 0.6, 1.2, 4),
+            score=0.9,
+        )
+    ]
+    artifact_receipts = [
+        ArtifactReceipt(
+            run_dir=link_base_dir / "runs" / "run_001",
+            equity_curve_path=link_base_dir / "runs" / "run_001" / "equity_curve.csv",
+            trade_log_path=link_base_dir / "runs" / "run_001" / "trade_log.csv",
+            metrics_summary_path=link_base_dir / "runs" / "run_001" / "metrics_summary.json",
+        )
+    ]
+
+    report_content = render_search_comparison_report(
+        link_context=SearchReportLinkContext(
+            link_base_dir=link_base_dir,
+            search_display_name="search_case",
+        ),
+        ranked_results=ranked_results,
+        artifact_receipts=artifact_receipts,
+        top_equity_curves={},
+    )
+
+    assert "runs/run_001" in report_content
+    assert "best_report.html" not in report_content
+    assert "search_case" in report_content
 
 
 def test_render_search_comparison_report_handles_empty_ranked_results(tmp_path: Path) -> None:

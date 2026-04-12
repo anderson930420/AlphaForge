@@ -21,7 +21,7 @@ def run_backtest(
     frame["equity"] = config.initial_capital * (1.0 + frame["strategy_return"]).cumprod()
 
     trades = _extract_trades(frame)
-    trade_frame = pd.DataFrame([trade.__dict__ for trade in trades])
+    trade_frame = pd.DataFrame([trade.__dict__ for trade in trades], columns=list(TradeRecord.__annotations__.keys()))
     return frame, trade_frame
 
 

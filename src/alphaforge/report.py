@@ -28,7 +28,12 @@ from .visualization import (
 
 @dataclass(frozen=True)
 class SearchReportLinkContext:
-    """Report-local link context for rendering search comparison reports."""
+    """Report-local link context for rendering search comparison reports.
+
+    ``link_base_dir`` is the only relative-link base used by search report
+    helpers. ``search_display_name`` is display-only and does not affect path
+    resolution.
+    """
 
     link_base_dir: Path
     search_display_name: str
@@ -329,6 +334,7 @@ def _build_relative_artifact_path(
     link_context: SearchReportLinkContext,
     artifact_receipt: ArtifactReceipt | None,
 ) -> str:
+    """Render a run-artifact path relative to the explicit report link base."""
     if artifact_receipt is None:
         return ""
     return str(artifact_receipt.run_dir.relative_to(link_context.link_base_dir))
@@ -339,6 +345,7 @@ def _build_best_report_link(
     best_report_path: Path | None,
     rank: int,
 ) -> str:
+    """Render the best-report link only from explicit presentation inputs."""
     if rank != 1 or best_report_path is None:
         return ""
     relative_path = best_report_path.relative_to(link_context.link_base_dir)
