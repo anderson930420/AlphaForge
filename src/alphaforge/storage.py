@@ -1,5 +1,12 @@
 from __future__ import annotations
 
+"""Persistence boundary for AlphaForge experiment artifacts.
+
+This module owns canonical persisted experiment outputs, file naming, directory
+layout, and receipt materialization. Report HTML artifacts remain presentation
+artifacts and are not part of the canonical persisted experiment contract.
+"""
+
 import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -30,6 +37,23 @@ TRADE_LOG_COLUMNS = [
     "net_pnl",
 ]
 
+CANONICAL_SINGLE_RUN_FILENAMES = (
+    "experiment_config.json",
+    "metrics_summary.json",
+    "trade_log.csv",
+    "equity_curve.csv",
+)
+
+CANONICAL_VALIDATION_FILENAMES = (
+    "validation_summary.json",
+    "train_ranked_results.csv",
+)
+
+CANONICAL_WALK_FORWARD_FILENAMES = (
+    "walk_forward_summary.json",
+    "fold_results.csv",
+)
+
 RANKED_RESULTS_BASE_COLUMNS = [
     "strategy",
     "total_return",
@@ -42,6 +66,8 @@ RANKED_RESULTS_BASE_COLUMNS = [
     "score",
 ]
 
+TRAIN_RANKED_RESULTS_FILENAME = "train_ranked_results.csv"
+
 EXPERIMENT_CONFIG_FILENAME = "experiment_config.json"
 METRICS_SUMMARY_FILENAME = "metrics_summary.json"
 TRADE_LOG_FILENAME = "trade_log.csv"
@@ -50,10 +76,20 @@ RANKED_RESULTS_FILENAME = "ranked_results.csv"
 VALIDATION_SUMMARY_FILENAME = "validation_summary.json"
 WALK_FORWARD_SUMMARY_FILENAME = "walk_forward_summary.json"
 FOLD_RESULTS_FILENAME = "fold_results.csv"
+WALK_FORWARD_FOLD_PATH_COLUMN = "fold_path"
+
+CANONICAL_SEARCH_FILENAMES = (RANKED_RESULTS_FILENAME,)
 
 
 @dataclass(frozen=True)
 class ArtifactReceipt:
+    """Storage-owned receipt for persisted experiment artifacts.
+
+    Required fields point at canonical persisted experiment outputs:
+    run_dir, equity_curve_path, trade_log_path, and metrics_summary_path.
+    Optional report fields point at presentation artifacts only.
+    """
+
     run_dir: Path
     equity_curve_path: Path
     trade_log_path: Path
@@ -97,6 +133,7 @@ def serialize_experiment_result(result: ExperimentResult) -> dict[str, Any]:
 
 
 def serialize_artifact_receipt(receipt: ArtifactReceipt | None) -> dict[str, Any] | None:
+    """Serialize storage-owned artifact references and optional report refs."""
     if receipt is None:
         return None
     return {
@@ -165,6 +202,12 @@ def save_single_experiment(
     equity_curve: EquityCurveFrame,
     trades: pd.DataFrame,
 ) -> tuple[ExperimentResult, ArtifactReceipt]:
+    """Write the canonical persisted files for one experiment run.
+
+    The canonical single-run persisted set is:
+    experiment_config.json, metrics_summary.json, trade_log.csv, and
+    equity_curve.csv.
+    """
     target_dir = ensure_output_dir(output_dir / experiment_name)
     config_path = target_dir / EXPERIMENT_CONFIG_FILENAME
     metrics_path = target_dir / METRICS_SUMMARY_FILENAME
@@ -202,6 +245,7 @@ def save_ranked_results_with_columns(
     results: list[ExperimentResult],
     parameter_columns: list[str] | None,
 ) -> Path:
+    """Write the canonical ranked-results CSV for a search run."""
     ensure_output_dir(output_dir)
     return _save_ranked_results_frame(
         ranked_path=output_dir / RANKED_RESULTS_FILENAME,
@@ -248,6 +292,11 @@ def _save_ranked_results_frame(
 
 
 def save_validation_result(output_dir: Path, validation_result: ValidationResult) -> ValidationResult:
+    """Write the canonical persisted validation summary artifact.
+
+    The canonical validation persisted set is validation_summary.json plus any
+    explicit ranked-result reference the validation contract carries.
+    """
     ensure_output_dir(output_dir)
     summary_path = output_dir / VALIDATION_SUMMARY_FILENAME
     persisted_result = ValidationResult(
@@ -265,6 +314,11 @@ def save_validation_result(output_dir: Path, validation_result: ValidationResult
 
 
 def save_walk_forward_result(output_dir: Path, walk_forward_result: WalkForwardResult) -> WalkForwardResult:
+    """Write the canonical persisted walk-forward summary and fold results.
+
+    The canonical walk-forward persisted set is walk_forward_summary.json plus
+    fold_results.csv.
+    """
     ensure_output_dir(output_dir)
     summary_path = output_dir / WALK_FORWARD_SUMMARY_FILENAME
     fold_results_path = output_dir / FOLD_RESULTS_FILENAME
@@ -311,7 +365,7 @@ def _write_walk_forward_fold_results_csv(path: Path, walk_forward_result: WalkFo
                 "test_trade_count": fold.test_result.metrics.trade_count,
                 "benchmark_total_return": fold.test_benchmark_summary.get("total_return"),
                 "benchmark_max_drawdown": fold.test_benchmark_summary.get("max_drawdown"),
-                "fold_path": str(_materialize_walk_forward_fold_dir(path.parent, fold.fold_index)),
+                WALK_FORWARD_FOLD_PATH_COLUMN: str(_materialize_walk_forward_fold_dir(path.parent, fold.fold_index)),
             }
         )
     pd.DataFrame(rows).to_csv(path, index=False)

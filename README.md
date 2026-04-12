@@ -127,6 +127,16 @@ Search output now returns a compact summary payload with:
 - `report_path` when `--generate-report` creates `best_report.html`
 - `search_report_path` when `--generate-report` creates `search_report.html`
 
+Validation output now surfaces:
+
+- `validation_summary_path`
+- `train_ranked_results_path`
+
+Walk-forward output now surfaces:
+
+- `walk_forward_summary_path`
+- `fold_results_path`
+
 Report rendering now uses explicit presentation inputs:
 
 - single-experiment HTML reports consume a prepared report input bundle instead of inferring benchmark presentation data internally

@@ -28,6 +28,8 @@ from .schemas import (
 from .search import build_strategy_specs
 from .storage import (
     ArtifactReceipt,
+    TRAIN_RANKED_RESULTS_FILENAME,
+    VALIDATION_SUMMARY_FILENAME,
     save_ranked_results_artifact,
     save_ranked_results_with_columns,
     save_single_experiment,
@@ -60,6 +62,14 @@ class SearchExecutionOutput:
     ranked_results_path: Path | None = None
     best_report_path: Path | None = None
     comparison_report_path: Path | None = None
+
+
+@dataclass(frozen=True)
+class ValidationExecutionOutput:
+    """Runner-local orchestration bundle for validation results and discovery refs."""
+
+    validation_result: ValidationResult
+    validation_summary_path: Path | None = None
 
 
 def run_experiment(
@@ -304,7 +314,7 @@ def run_validate_search(
             output_dir=validation_root,
             results=ranked,
             parameter_columns=list(parameter_grid),
-            filename="train_ranked_results.csv",
+            filename=TRAIN_RANKED_RESULTS_FILENAME,
         )
         train_best_execution = _run_experiment_on_market_data(
             market_data=train_data,
@@ -338,6 +348,35 @@ def run_validate_search(
     if validation_root is not None:
         validation_result = save_validation_result(validation_root, validation_result)
     return validation_result
+
+
+def run_validate_search_with_details(
+    data_spec: DataSpec,
+    parameter_grid: dict[str, list[int]],
+    split_ratio: float,
+    backtest_config: BacktestConfig | None = None,
+    output_dir: Path | None = None,
+    experiment_name: str = "validation_experiment",
+    max_drawdown_cap: float | None = None,
+    min_trade_count: int | None = None,
+) -> ValidationExecutionOutput:
+    validation_result = run_validate_search(
+        data_spec=data_spec,
+        parameter_grid=parameter_grid,
+        split_ratio=split_ratio,
+        backtest_config=backtest_config,
+        output_dir=output_dir,
+        experiment_name=experiment_name,
+        max_drawdown_cap=max_drawdown_cap,
+        min_trade_count=min_trade_count,
+    )
+    validation_summary_path = None
+    if output_dir is not None:
+        validation_summary_path = output_dir / experiment_name / VALIDATION_SUMMARY_FILENAME
+    return ValidationExecutionOutput(
+        validation_result=validation_result,
+        validation_summary_path=validation_summary_path,
+    )
 
 
 def run_walk_forward_search(

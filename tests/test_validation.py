@@ -12,6 +12,7 @@ from alphaforge.cli import main
 from alphaforge.experiment_runner import (
     ExperimentExecutionOutput,
     SearchExecutionOutput,
+    ValidationExecutionOutput,
     run_validate_search,
     run_walk_forward_search,
 )
@@ -180,7 +181,19 @@ def test_cli_validate_search_prints_validation_summary_payload(
         "train_ranked_results_path": str(tmp_path / "validation_case" / "train_ranked_results.csv"),
     }
 
-    with patch("alphaforge.cli.run_validate_search") as run_validate_mock, patch(
+    with patch(
+        "alphaforge.cli.run_validate_search_with_details",
+        return_value=ValidationExecutionOutput(
+            validation_result=run_validate_search(
+                data_spec=DataSpec(path=sample_market_csv, symbol="TEST"),
+                parameter_grid={"short_window": [2], "long_window": [3]},
+                split_ratio=0.5,
+                output_dir=tmp_path,
+                experiment_name="validation_case",
+            ),
+            validation_summary_path=tmp_path / "validation_case" / "validation_summary.json",
+        ),
+    ) as run_validate_mock, patch(
         "alphaforge.cli.serialize_validation_result", return_value=validation_payload
     ):
         main()
@@ -189,6 +202,7 @@ def test_cli_validate_search_prints_validation_summary_payload(
     assert run_validate_mock.call_args.kwargs["split_ratio"] == 0.5
     assert payload["selected_strategy_spec"]["parameters"] == {"short_window": 2, "long_window": 3}
     assert Path(payload["train_ranked_results_path"]).name == "train_ranked_results.csv"
+    assert Path(payload["validation_summary_path"]).name == "validation_summary.json"
 
 
 def test_run_walk_forward_search_creates_chronological_fold_outputs(sample_market_csv: Path, tmp_path: Path) -> None:

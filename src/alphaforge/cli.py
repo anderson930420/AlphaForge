@@ -6,7 +6,12 @@ import json
 from pathlib import Path
 
 from . import config
-from .experiment_runner import run_experiment_with_artifacts, run_search_with_details, run_validate_search, run_walk_forward_search
+from .experiment_runner import (
+    run_experiment_with_artifacts,
+    run_search_with_details,
+    run_validate_search_with_details,
+    run_walk_forward_search,
+)
 from .report import render_experiment_report, save_experiment_report
 from .schemas import BacktestConfig, DataSpec, StrategySpec
 from .storage import (
@@ -180,7 +185,7 @@ def main() -> None:
             return
 
         if args.command == "validate-search":
-            validation_result = run_validate_search(
+            validation_execution = run_validate_search_with_details(
                 data_spec=data_spec,
                 parameter_grid={
                     "short_window": args.short_windows,
@@ -193,7 +198,10 @@ def main() -> None:
                 max_drawdown_cap=args.max_drawdown_cap,
                 min_trade_count=args.min_trade_count,
             )
-            print(json.dumps(serialize_validation_result(validation_result), indent=2, default=str))
+            payload = serialize_validation_result(validation_execution.validation_result)
+            if validation_execution.validation_summary_path is not None:
+                payload["validation_summary_path"] = str(validation_execution.validation_summary_path)
+            print(json.dumps(payload, indent=2, default=str))
             return
 
         if args.command == "walk-forward":

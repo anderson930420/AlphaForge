@@ -1,5 +1,12 @@
 from __future__ import annotations
 
+"""Presentation boundary for search-specific report artifacts.
+
+This module prepares and writes HTML report artifacts for search workflows.
+It may consume storage-owned artifact receipts, but it does not own canonical
+persisted experiment artifacts or filename/layout decisions for raw outputs.
+"""
+
 from pathlib import Path
 
 import pandas as pd
@@ -14,6 +21,9 @@ from .report import (
 from .benchmark import build_buy_and_hold_equity_curve, summarize_buy_and_hold
 from .schemas import EquityCurveFrame, ExperimentResult
 from .storage import ArtifactReceipt
+
+BEST_REPORT_FILENAME = "best_report.html"
+SEARCH_REPORT_FILENAME = "search_report.html"
 
 
 def save_best_search_report(
@@ -37,7 +47,7 @@ def save_best_search_report(
             benchmark_curve=benchmark_curve,
         )
     )
-    return save_experiment_report(report_content, search_root / "best_report.html")
+    return save_experiment_report(report_content, search_root / BEST_REPORT_FILENAME)
 
 
 def save_search_comparison_report(
@@ -58,7 +68,7 @@ def save_search_comparison_report(
         top_equity_curves=top_equity_curves,
         best_report_path=best_report_path,
     )
-    return save_experiment_report(report_content, search_root / "search_report.html")
+    return save_experiment_report(report_content, search_root / SEARCH_REPORT_FILENAME)
 
 
 def load_top_search_equity_curves(
