@@ -5,3 +5,9 @@ outputs/
 __pycache__/
 temp_log.txt
 src/alphaforge.egg-info/
+
+# Local AI memory / logging workflow
+AGENTS.md
+PROJECT_BRIEF.md
+scripts/read_memory.py
+src/obsidian_logger.py
