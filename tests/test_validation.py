@@ -13,12 +13,19 @@ from alphaforge.experiment_runner import (
     ExperimentExecutionOutput,
     SearchExecutionOutput,
     ValidationExecutionOutput,
+    WalkForwardExecutionOutput,
     run_validate_search,
     run_walk_forward_search,
+    run_walk_forward_search_with_details,
 )
 from alphaforge.report import ExperimentReportInput
 from alphaforge.schemas import BacktestConfig, DataSpec, ExperimentResult, MetricReport, StrategySpec
-from alphaforge.storage import serialize_walk_forward_result
+from alphaforge.storage import (
+    ValidationArtifactReceipt,
+    WalkForwardArtifactReceipt,
+    serialize_walk_forward_artifact_receipt,
+    serialize_walk_forward_result,
+)
 
 
 def test_run_validate_search_splits_data_chronologically_and_saves_outputs(sample_market_csv: Path, tmp_path: Path) -> None:
@@ -46,12 +53,13 @@ def test_run_validate_search_splits_data_chronologically_and_saves_outputs(sampl
     assert train_best_metrics_path.exists()
     assert test_metrics_path.exists()
     summary_payload = json.loads(summary_path.read_text(encoding="utf-8"))
-    assert "validation_summary_path" not in summary_payload
+    assert summary_payload["validation_summary_path"] == str(summary_path)
     assert Path(summary_payload["train_ranked_results_path"]).name == "train_ranked_results.csv"
     assert "test_benchmark_summary" in summary_payload
     assert "total_return" in summary_payload["test_benchmark_summary"]
     assert "max_drawdown" in summary_payload["test_benchmark_summary"]
     assert not hasattr(result, "validation_summary_path")
+    assert not hasattr(result, "train_ranked_results_path")
     assert result.metadata["train_rows"] == 4
     assert result.metadata["test_rows"] == 4
     assert result.metadata["train_end"] < result.metadata["test_start"]
@@ -178,7 +186,6 @@ def test_cli_validate_search_prints_validation_summary_payload(
         "selected_strategy_spec": {"name": "ma_crossover", "parameters": {"short_window": 2, "long_window": 3}},
         "train_best_result": {"score": 0.8},
         "test_result": {"score": 0.4},
-        "train_ranked_results_path": str(tmp_path / "validation_case" / "train_ranked_results.csv"),
     }
 
     with patch(
@@ -191,7 +198,10 @@ def test_cli_validate_search_prints_validation_summary_payload(
                 output_dir=tmp_path,
                 experiment_name="validation_case",
             ),
-            validation_summary_path=tmp_path / "validation_case" / "validation_summary.json",
+            artifact_receipt=ValidationArtifactReceipt(
+                validation_summary_path=tmp_path / "validation_case" / "validation_summary.json",
+                train_ranked_results_path=tmp_path / "validation_case" / "train_ranked_results.csv",
+            ),
         ),
     ) as run_validate_mock, patch(
         "alphaforge.cli.serialize_validation_result", return_value=validation_payload
@@ -206,7 +216,7 @@ def test_cli_validate_search_prints_validation_summary_payload(
 
 
 def test_run_walk_forward_search_creates_chronological_fold_outputs(sample_market_csv: Path, tmp_path: Path) -> None:
-    result = run_walk_forward_search(
+    execution = run_walk_forward_search_with_details(
         data_spec=DataSpec(path=sample_market_csv, symbol="TEST"),
         parameter_grid={"short_window": [2], "long_window": [3]},
         train_size=4,
@@ -221,13 +231,20 @@ def test_run_walk_forward_search_creates_chronological_fold_outputs(sample_marke
         output_dir=tmp_path,
         experiment_name="walk_forward_case",
     )
+    result = execution.walk_forward_result
 
     summary_path = tmp_path / "walk_forward_case" / "walk_forward_summary.json"
     fold_results_path = tmp_path / "walk_forward_case" / "fold_results.csv"
     fold_root = tmp_path / "walk_forward_case" / "folds" / "fold_001"
 
-    assert result.walk_forward_summary_path == summary_path
-    assert result.fold_results_path == fold_results_path
+    assert execution.artifact_receipt is not None
+    assert execution.artifact_receipt.walk_forward_summary_path == summary_path
+    assert execution.artifact_receipt.fold_results_path == fold_results_path
+    serialized_receipt = serialize_walk_forward_artifact_receipt(execution.artifact_receipt)
+    assert serialized_receipt["walk_forward_summary_path"] == str(summary_path)
+    assert serialized_receipt["fold_results_path"] == str(fold_results_path)
+    assert not hasattr(result, "walk_forward_summary_path")
+    assert not hasattr(result, "fold_results_path")
     assert summary_path.exists()
     assert fold_results_path.exists()
     assert len(result.folds) == 2
@@ -388,7 +405,24 @@ def test_cli_walk_forward_prints_summary_payload(
         "walk_forward_summary_path": str(tmp_path / "walk_forward_case" / "walk_forward_summary.json"),
     }
 
-    with patch("alphaforge.cli.run_walk_forward_search") as run_walk_forward_mock, patch(
+    with patch(
+        "alphaforge.cli.run_walk_forward_search_with_details",
+        return_value=WalkForwardExecutionOutput(
+            walk_forward_result=run_walk_forward_search(
+                data_spec=DataSpec(path=sample_market_csv, symbol="TEST"),
+                parameter_grid={"short_window": [2], "long_window": [3]},
+                train_size=4,
+                test_size=2,
+                step_size=2,
+                output_dir=tmp_path,
+                experiment_name="walk_forward_case",
+            ),
+            artifact_receipt=WalkForwardArtifactReceipt(
+                walk_forward_summary_path=tmp_path / "walk_forward_case" / "walk_forward_summary.json",
+                fold_results_path=tmp_path / "walk_forward_case" / "fold_results.csv",
+            ),
+        ),
+    ) as run_walk_forward_mock, patch(
         "alphaforge.cli.serialize_walk_forward_result", return_value=walk_forward_payload
     ):
         main()
@@ -398,3 +432,4 @@ def test_cli_walk_forward_prints_summary_payload(
     assert payload["walk_forward_config"]["step_size"] == 2
     assert payload["aggregate_benchmark_metrics"]["mean_benchmark_total_return"] == 0.03
     assert Path(payload["walk_forward_summary_path"]).name == "walk_forward_summary.json"
+    assert Path(payload["fold_results_path"]).name == "fold_results.csv"

@@ -103,6 +103,22 @@ class ArtifactReceipt:
     comparison_report_path: Path | None = None
 
 
+@dataclass(frozen=True)
+class ValidationArtifactReceipt:
+    """Storage-owned receipt for persisted validation artifacts."""
+
+    validation_summary_path: Path
+    train_ranked_results_path: Path | None = None
+
+
+@dataclass(frozen=True)
+class WalkForwardArtifactReceipt:
+    """Storage-owned receipt for persisted walk-forward artifacts."""
+
+    walk_forward_summary_path: Path
+    fold_results_path: Path
+
+
 def ensure_output_dir(path: Path) -> Path:
     path.mkdir(parents=True, exist_ok=True)
     return path
@@ -159,8 +175,16 @@ def serialize_validation_result(result: ValidationResult) -> dict[str, Any]:
         "train_best_result": serialize_experiment_result(result.train_best_result),
         "test_result": serialize_experiment_result(result.test_result),
         "test_benchmark_summary": result.test_benchmark_summary,
-        "train_ranked_results_path": _serialize_path(result.train_ranked_results_path),
         "metadata": result.metadata,
+    }
+
+
+def serialize_validation_artifact_receipt(receipt: ValidationArtifactReceipt | None) -> dict[str, Any] | None:
+    if receipt is None:
+        return None
+    return {
+        "validation_summary_path": str(receipt.validation_summary_path),
+        "train_ranked_results_path": _serialize_path(receipt.train_ranked_results_path),
     }
 
 
@@ -185,9 +209,16 @@ def serialize_walk_forward_result(result: WalkForwardResult) -> dict[str, Any]:
         "folds": [serialize_walk_forward_fold_result(fold) for fold in result.folds],
         "aggregate_test_metrics": result.aggregate_test_metrics,
         "aggregate_benchmark_metrics": result.aggregate_benchmark_metrics,
-        "walk_forward_summary_path": _serialize_path(result.walk_forward_summary_path),
-        "fold_results_path": _serialize_path(result.fold_results_path),
         "metadata": result.metadata,
+    }
+
+
+def serialize_walk_forward_artifact_receipt(receipt: WalkForwardArtifactReceipt | None) -> dict[str, Any] | None:
+    if receipt is None:
+        return None
+    return {
+        "walk_forward_summary_path": str(receipt.walk_forward_summary_path),
+        "fold_results_path": str(receipt.fold_results_path),
     }
 
 
@@ -296,29 +327,37 @@ def _save_ranked_results_frame(
     return ranked_path
 
 
-def save_validation_result(output_dir: Path, validation_result: ValidationResult) -> ValidationResult:
+def save_validation_result(
+    output_dir: Path,
+    validation_result: ValidationResult,
+    train_ranked_results_path: Path | None = None,
+) -> tuple[ValidationResult, ValidationArtifactReceipt]:
     """Write the canonical persisted validation summary artifact.
 
-    The canonical validation persisted set is validation_summary.json plus any
-    explicit ranked-result reference the validation contract carries.
+    The canonical validation persisted set is validation_summary.json plus the
+    train-ranked-results CSV when validation search output is persisted.
     """
     ensure_output_dir(output_dir)
     summary_path = output_dir / VALIDATION_SUMMARY_FILENAME
-    persisted_result = ValidationResult(
-        data_spec=validation_result.data_spec,
-        split_config=validation_result.split_config,
-        selected_strategy_spec=validation_result.selected_strategy_spec,
-        train_best_result=validation_result.train_best_result,
-        test_result=validation_result.test_result,
-        test_benchmark_summary=validation_result.test_benchmark_summary,
-        train_ranked_results_path=validation_result.train_ranked_results_path,
-        metadata=validation_result.metadata,
+    receipt = ValidationArtifactReceipt(
+        validation_summary_path=summary_path,
+        train_ranked_results_path=train_ranked_results_path,
     )
-    _write_json(summary_path, serialize_validation_result(persisted_result))
-    return persisted_result
+    receipt_payload = serialize_validation_artifact_receipt(receipt) or {}
+    _write_json(
+        summary_path,
+        {
+            **serialize_validation_result(validation_result),
+            **receipt_payload,
+        },
+    )
+    return validation_result, receipt
 
 
-def save_walk_forward_result(output_dir: Path, walk_forward_result: WalkForwardResult) -> WalkForwardResult:
+def save_walk_forward_result(
+    output_dir: Path,
+    walk_forward_result: WalkForwardResult,
+) -> tuple[WalkForwardResult, WalkForwardArtifactReceipt]:
     """Write the canonical persisted walk-forward summary and fold results.
 
     The canonical walk-forward persisted set is walk_forward_summary.json plus
@@ -327,19 +366,20 @@ def save_walk_forward_result(output_dir: Path, walk_forward_result: WalkForwardR
     ensure_output_dir(output_dir)
     summary_path = output_dir / WALK_FORWARD_SUMMARY_FILENAME
     fold_results_path = output_dir / FOLD_RESULTS_FILENAME
-    persisted_result = WalkForwardResult(
-        data_spec=walk_forward_result.data_spec,
-        walk_forward_config=walk_forward_result.walk_forward_config,
-        folds=walk_forward_result.folds,
-        aggregate_test_metrics=walk_forward_result.aggregate_test_metrics,
-        aggregate_benchmark_metrics=walk_forward_result.aggregate_benchmark_metrics,
+    receipt = WalkForwardArtifactReceipt(
         walk_forward_summary_path=summary_path,
         fold_results_path=fold_results_path,
-        metadata=walk_forward_result.metadata,
     )
-    _write_json(summary_path, serialize_walk_forward_result(persisted_result))
-    _write_walk_forward_fold_results_csv(fold_results_path, persisted_result)
-    return persisted_result
+    receipt_payload = serialize_walk_forward_artifact_receipt(receipt) or {}
+    _write_json(
+        summary_path,
+        {
+            **serialize_walk_forward_result(walk_forward_result),
+            **receipt_payload,
+        },
+    )
+    _write_walk_forward_fold_results_csv(fold_results_path, walk_forward_result)
+    return walk_forward_result, receipt
 
 
 def _write_json(path: Path, payload: dict[str, Any]) -> None:

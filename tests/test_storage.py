@@ -38,7 +38,9 @@ from alphaforge.storage import (
     save_validation_result,
     save_walk_forward_result,
     serialize_artifact_receipt,
+    serialize_validation_artifact_receipt,
     serialize_validation_result,
+    serialize_walk_forward_artifact_receipt,
     serialize_walk_forward_result,
 )
 
@@ -170,22 +172,27 @@ def test_save_validation_result_writes_summary_and_train_ranked_reference(tmp_pa
         train_best_result=train_best_result,
         test_result=test_result,
         test_benchmark_summary={"total_return": 0.1, "max_drawdown": -0.05},
-        train_ranked_results_path=train_ranked_results_path,
         metadata={"train_rows": 4, "test_rows": 4},
     )
 
-    persisted_validation = save_validation_result(validation_root, validation_result)
+    persisted_validation, receipt = save_validation_result(
+        validation_root,
+        validation_result,
+        train_ranked_results_path=train_ranked_results_path,
+    )
     summary_path = validation_root / VALIDATION_SUMMARY_FILENAME
     summary_payload = json.loads(summary_path.read_text(encoding="utf-8"))
     serialized_validation = serialize_validation_result(persisted_validation)
+    serialized_receipt = serialize_validation_artifact_receipt(receipt)
 
     assert summary_path.exists()
     for filename in CANONICAL_VALIDATION_FILENAMES:
         assert (validation_root / filename).exists()
     assert summary_payload["train_ranked_results_path"] == str(train_ranked_results_path)
-    assert "best_report_path" not in summary_payload
-    assert "comparison_report_path" not in summary_payload
-    assert serialized_validation["train_ranked_results_path"] == str(train_ranked_results_path)
+    assert summary_payload["validation_summary_path"] == str(summary_path)
+    assert "train_ranked_results_path" not in serialized_validation
+    assert serialized_receipt["train_ranked_results_path"] == str(train_ranked_results_path)
+    assert serialized_receipt["validation_summary_path"] == str(summary_path)
 
 
 def test_save_walk_forward_result_writes_summary_and_fold_results_contract(tmp_path: Path) -> None:
@@ -212,18 +219,24 @@ def test_save_walk_forward_result_writes_summary_and_fold_results_contract(tmp_p
         metadata={"fold_count": 1},
     )
 
-    persisted_result = save_walk_forward_result(walk_forward_root, walk_forward_result)
+    persisted_result, receipt = save_walk_forward_result(walk_forward_root, walk_forward_result)
     summary_path = walk_forward_root / WALK_FORWARD_SUMMARY_FILENAME
     fold_results_path = walk_forward_root / FOLD_RESULTS_FILENAME
     fold_results_frame = pd.read_csv(fold_results_path)
     serialized_walk_forward = serialize_walk_forward_result(persisted_result)
+    serialized_receipt = serialize_walk_forward_artifact_receipt(receipt)
 
     assert summary_path.exists()
     assert fold_results_path.exists()
     for filename in CANONICAL_WALK_FORWARD_FILENAMES:
         assert (walk_forward_root / filename).exists()
+    summary_payload = json.loads(summary_path.read_text(encoding="utf-8"))
+    assert summary_payload["walk_forward_summary_path"] == str(summary_path)
+    assert summary_payload["fold_results_path"] == str(fold_results_path)
     assert fold_results_frame.loc[0, WALK_FORWARD_FOLD_PATH_COLUMN] == str(walk_forward_root / "folds" / "fold_001")
-    assert "fold_path" not in serialized_walk_forward["folds"][0]
+    assert "walk_forward_summary_path" not in serialized_walk_forward
+    assert serialized_receipt["walk_forward_summary_path"] == str(summary_path)
+    assert serialized_receipt["fold_results_path"] == str(fold_results_path)
 
 
 def test_serialize_artifact_receipt_separates_persisted_and_presentation_refs(tmp_path: Path) -> None:

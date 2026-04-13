@@ -87,7 +87,6 @@ class ValidationResult:
     train_best_result: ExperimentResult
     test_result: ExperimentResult
     test_benchmark_summary: dict[str, float] = field(default_factory=dict)
-    train_ranked_results_path: Path | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
@@ -118,6 +117,4 @@ class WalkForwardResult:
     folds: list[WalkForwardFoldResult]
     aggregate_test_metrics: dict[str, float | int]
     aggregate_benchmark_metrics: dict[str, float | int] = field(default_factory=dict)
-    walk_forward_summary_path: Path | None = None
-    fold_results_path: Path | None = None
     metadata: dict[str, Any] = field(default_factory=dict)

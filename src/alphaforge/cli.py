@@ -10,7 +10,7 @@ from .experiment_runner import (
     run_experiment_with_artifacts,
     run_search_with_details,
     run_validate_search_with_details,
-    run_walk_forward_search,
+    run_walk_forward_search_with_details,
 )
 from .report import render_experiment_report, save_experiment_report
 from .schemas import BacktestConfig, DataSpec, StrategySpec
@@ -18,7 +18,9 @@ from .storage import (
     ensure_output_dir,
     serialize_artifact_receipt,
     serialize_experiment_result,
+    serialize_validation_artifact_receipt,
     serialize_validation_result,
+    serialize_walk_forward_artifact_receipt,
     serialize_walk_forward_result,
     REPORT_FILENAME,
 )
@@ -200,13 +202,12 @@ def main() -> None:
                 min_trade_count=args.min_trade_count,
             )
             payload = serialize_validation_result(validation_execution.validation_result)
-            if validation_execution.validation_summary_path is not None:
-                payload["validation_summary_path"] = str(validation_execution.validation_summary_path)
+            payload.update(serialize_validation_artifact_receipt(validation_execution.artifact_receipt) or {})
             print(json.dumps(payload, indent=2, default=str))
             return
 
         if args.command == "walk-forward":
-            walk_forward_result = run_walk_forward_search(
+            walk_forward_execution = run_walk_forward_search_with_details(
                 data_spec=data_spec,
                 parameter_grid={
                     "short_window": args.short_windows,
@@ -221,7 +222,9 @@ def main() -> None:
                 max_drawdown_cap=args.max_drawdown_cap,
                 min_trade_count=args.min_trade_count,
             )
-            print(json.dumps(serialize_walk_forward_result(walk_forward_result), indent=2, default=str))
+            payload = serialize_walk_forward_result(walk_forward_execution.walk_forward_result)
+            payload.update(serialize_walk_forward_artifact_receipt(walk_forward_execution.artifact_receipt) or {})
+            print(json.dumps(payload, indent=2, default=str))
             return
 
         search_execution = run_search_with_details(

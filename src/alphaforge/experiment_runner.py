@@ -28,8 +28,9 @@ from .schemas import (
 from .search import build_strategy_specs
 from .storage import (
     ArtifactReceipt,
+    ValidationArtifactReceipt,
+    WalkForwardArtifactReceipt,
     TRAIN_RANKED_RESULTS_FILENAME,
-    VALIDATION_SUMMARY_FILENAME,
     save_ranked_results_artifact,
     save_ranked_results_with_columns,
     save_single_experiment,
@@ -69,7 +70,15 @@ class ValidationExecutionOutput:
     """Runner-local protocol receipt for validation results and discovery refs."""
 
     validation_result: ValidationResult
-    validation_summary_path: Path | None = None
+    artifact_receipt: ValidationArtifactReceipt | None = None
+
+
+@dataclass(frozen=True)
+class WalkForwardExecutionOutput:
+    """Runner-local protocol receipt for walk-forward results and discovery refs."""
+
+    walk_forward_result: WalkForwardResult
+    artifact_receipt: WalkForwardArtifactReceipt | None = None
 
 
 def _default_backtest_config() -> BacktestConfig:
@@ -83,14 +92,6 @@ def _default_backtest_config() -> BacktestConfig:
 
 def _workflow_root(output_dir: Path | None, experiment_name: str) -> Path | None:
     return (output_dir / experiment_name) if output_dir is not None else None
-
-
-def _build_validation_summary_path(output_dir: Path | None, experiment_name: str) -> Path | None:
-    if output_dir is None:
-        return None
-    validation_root = _workflow_root(output_dir, experiment_name)
-    assert validation_root is not None
-    return validation_root / VALIDATION_SUMMARY_FILENAME
 
 
 def _build_execution_metadata(market_data: pd.DataFrame, benchmark_summary: dict[str, float]) -> dict[str, object]:
@@ -310,6 +311,29 @@ def run_validate_search(
     max_drawdown_cap: float | None = None,
     min_trade_count: int | None = None,
 ) -> ValidationResult:
+    validation_result, _ = _run_validate_search_on_market_data(
+        data_spec=data_spec,
+        parameter_grid=parameter_grid,
+        split_ratio=split_ratio,
+        backtest_config=backtest_config,
+        output_dir=output_dir,
+        experiment_name=experiment_name,
+        max_drawdown_cap=max_drawdown_cap,
+        min_trade_count=min_trade_count,
+    )
+    return validation_result
+
+
+def _run_validate_search_on_market_data(
+    data_spec: DataSpec,
+    parameter_grid: dict[str, list[int]],
+    split_ratio: float,
+    backtest_config: BacktestConfig | None = None,
+    output_dir: Path | None = None,
+    experiment_name: str = "validation_experiment",
+    max_drawdown_cap: float | None = None,
+    min_trade_count: int | None = None,
+) -> tuple[ValidationResult, ValidationArtifactReceipt | None]:
     backtest_config = backtest_config or _default_backtest_config()
     market_data = load_market_data(data_spec)
     train_data, test_data = _split_market_data_by_ratio(market_data, split_ratio)
@@ -367,12 +391,16 @@ def run_validate_search(
         train_best_result=train_best_result,
         test_result=test_result,
         test_benchmark_summary=normalize_benchmark_summary(test_result.metadata.get("benchmark_summary")),
-        train_ranked_results_path=train_ranked_results_path,
         metadata=_build_validation_metadata(train_data, test_data),
     )
+    validation_artifact_receipt: ValidationArtifactReceipt | None = None
     if validation_root is not None:
-        validation_result = save_validation_result(validation_root, validation_result)
-    return validation_result
+        validation_result, validation_artifact_receipt = save_validation_result(
+            validation_root,
+            validation_result,
+            train_ranked_results_path=train_ranked_results_path,
+        )
+    return validation_result, validation_artifact_receipt
 
 
 def run_validate_search_with_details(
@@ -385,7 +413,7 @@ def run_validate_search_with_details(
     max_drawdown_cap: float | None = None,
     min_trade_count: int | None = None,
 ) -> ValidationExecutionOutput:
-    validation_result = run_validate_search(
+    validation_result, validation_artifact_receipt = _run_validate_search_on_market_data(
         data_spec=data_spec,
         parameter_grid=parameter_grid,
         split_ratio=split_ratio,
@@ -395,10 +423,9 @@ def run_validate_search_with_details(
         max_drawdown_cap=max_drawdown_cap,
         min_trade_count=min_trade_count,
     )
-    validation_summary_path = _build_validation_summary_path(output_dir, experiment_name)
     return ValidationExecutionOutput(
         validation_result=validation_result,
-        validation_summary_path=validation_summary_path,
+        artifact_receipt=validation_artifact_receipt,
     )
 
 
@@ -419,6 +446,33 @@ def run_walk_forward_search(
     max_drawdown_cap: float | None = None,
     min_trade_count: int | None = None,
 ) -> WalkForwardResult:
+    walk_forward_result, _ = _run_walk_forward_search_on_market_data(
+        data_spec=data_spec,
+        parameter_grid=parameter_grid,
+        train_size=train_size,
+        test_size=test_size,
+        step_size=step_size,
+        backtest_config=backtest_config,
+        output_dir=output_dir,
+        experiment_name=experiment_name,
+        max_drawdown_cap=max_drawdown_cap,
+        min_trade_count=min_trade_count,
+    )
+    return walk_forward_result
+
+
+def _run_walk_forward_search_on_market_data(
+    data_spec: DataSpec,
+    parameter_grid: dict[str, list[int]],
+    train_size: int,
+    test_size: int,
+    step_size: int,
+    backtest_config: BacktestConfig | None = None,
+    output_dir: Path | None = None,
+    experiment_name: str = "walk_forward_experiment",
+    max_drawdown_cap: float | None = None,
+    min_trade_count: int | None = None,
+) -> tuple[WalkForwardResult, WalkForwardArtifactReceipt | None]:
     backtest_config = backtest_config or _default_backtest_config()
     market_data = load_market_data(data_spec)
     folds = _generate_walk_forward_folds(market_data, train_size=train_size, test_size=test_size, step_size=step_size)
@@ -485,9 +539,40 @@ def run_walk_forward_search(
         aggregate_benchmark_metrics=aggregate_walk_forward_benchmark_metrics(fold_results),
         metadata={"fold_count": len(fold_results)},
     )
+    walk_forward_artifact_receipt: WalkForwardArtifactReceipt | None = None
     if walk_forward_root is not None:
-        result = save_walk_forward_result(walk_forward_root, result)
-    return result
+        result, walk_forward_artifact_receipt = save_walk_forward_result(walk_forward_root, result)
+    return result, walk_forward_artifact_receipt
+
+
+def run_walk_forward_search_with_details(
+    data_spec: DataSpec,
+    parameter_grid: dict[str, list[int]],
+    train_size: int,
+    test_size: int,
+    step_size: int,
+    backtest_config: BacktestConfig | None = None,
+    output_dir: Path | None = None,
+    experiment_name: str = "walk_forward_experiment",
+    max_drawdown_cap: float | None = None,
+    min_trade_count: int | None = None,
+) -> WalkForwardExecutionOutput:
+    walk_forward_result, walk_forward_artifact_receipt = _run_walk_forward_search_on_market_data(
+        data_spec=data_spec,
+        parameter_grid=parameter_grid,
+        train_size=train_size,
+        test_size=test_size,
+        step_size=step_size,
+        backtest_config=backtest_config,
+        output_dir=output_dir,
+        experiment_name=experiment_name,
+        max_drawdown_cap=max_drawdown_cap,
+        min_trade_count=min_trade_count,
+    )
+    return WalkForwardExecutionOutput(
+        walk_forward_result=walk_forward_result,
+        artifact_receipt=walk_forward_artifact_receipt,
+    )
 
 
 # =============================================================================
