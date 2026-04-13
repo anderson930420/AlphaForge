@@ -40,3 +40,16 @@ def rank_results(
         if passes_thresholds(result.metrics, max_drawdown_cap=max_drawdown_cap, min_trade_count=min_trade_count)
     ]
     return sorted(filtered, key=lambda item: item.score, reverse=True)
+
+
+def select_best_result(
+    results: Iterable[ExperimentResult],
+    max_drawdown_cap: float | None = None,
+    min_trade_count: int | None = None,
+) -> ExperimentResult | None:
+    ranked = rank_results(
+        results,
+        max_drawdown_cap=max_drawdown_cap,
+        min_trade_count=min_trade_count,
+    )
+    return ranked[0] if ranked else None

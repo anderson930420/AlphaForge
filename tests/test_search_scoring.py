@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
-from alphaforge.scoring import passes_thresholds
-from alphaforge.schemas import MetricReport
+from alphaforge.scoring import passes_thresholds, select_best_result
+from alphaforge.schemas import DataSpec, ExperimentResult, MetricReport, StrategySpec, BacktestConfig
 from alphaforge.search import build_strategy_specs
 
 
@@ -41,3 +43,22 @@ def test_passes_thresholds_allows_boundary_values() -> None:
     )
 
     assert passes_thresholds(metrics, max_drawdown_cap=0.2, min_trade_count=3)
+
+
+def test_select_best_result_returns_highest_ranked_passing_result() -> None:
+    lower = ExperimentResult(
+        data_spec=DataSpec(path=Path(__file__)),
+        strategy_spec=StrategySpec(name="ma_crossover", parameters={"short_window": 2, "long_window": 4}),
+        backtest_config=BacktestConfig(1000.0, 0.0, 0.0, 252),
+        metrics=MetricReport(0.1, 0.1, 1.0, -0.1, 1.0, 1.0, 2),
+        score=0.4,
+    )
+    higher = ExperimentResult(
+        data_spec=DataSpec(path=Path(__file__)),
+        strategy_spec=StrategySpec(name="ma_crossover", parameters={"short_window": 3, "long_window": 5}),
+        backtest_config=BacktestConfig(1000.0, 0.0, 0.0, 252),
+        metrics=MetricReport(0.2, 0.2, 1.5, -0.05, 1.0, 1.2, 3),
+        score=0.8,
+    )
+
+    assert select_best_result([lower, higher]) == higher

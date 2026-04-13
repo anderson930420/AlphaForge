@@ -4,6 +4,7 @@ from itertools import product
 from typing import Any
 
 from .schemas import StrategySpec
+from .strategy.ma_crossover import validate_candidate_parameters as validate_ma_crossover_candidate_parameters
 
 
 def grid_search_parameters(parameter_grid: dict[str, list[Any]]) -> list[dict[str, Any]]:
@@ -17,11 +18,18 @@ def build_strategy_specs(strategy_name: str, parameter_grid: dict[str, list[Any]
     specs: list[StrategySpec] = []
     attempted = grid_search_parameters(parameter_grid)
     for params in attempted:
-        short_window = params.get("short_window")
-        long_window = params.get("long_window")
-        if short_window is not None and long_window is not None and int(short_window) >= int(long_window):
+        if not _validate_strategy_candidate(strategy_name, params):
             continue
         specs.append(StrategySpec(name=strategy_name, parameters=params))
     if attempted and not specs:
         raise ValueError("No valid parameter combinations remain after strategy validation")
     return specs
+
+
+def _validate_strategy_candidate(strategy_name: str, parameters: dict[str, Any]) -> bool:
+    if strategy_name == "ma_crossover":
+        try:
+            validate_ma_crossover_candidate_parameters(parameters)
+        except ValueError:
+            return False
+    return True

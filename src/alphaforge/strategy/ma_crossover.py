@@ -1,9 +1,20 @@
 from __future__ import annotations
 
+from typing import Any
+
 import pandas as pd
 
 from alphaforge.schemas import StrategySpec
 from alphaforge.strategy.base import Strategy
+
+
+def validate_candidate_parameters(parameters: dict[str, Any]) -> None:
+    short_window = int(parameters["short_window"])
+    long_window = int(parameters["long_window"])
+    if short_window <= 0 or long_window <= 0:
+        raise ValueError("Window lengths must be positive integers")
+    if short_window >= long_window:
+        raise ValueError("short_window must be smaller than long_window")
 
 
 class MovingAverageCrossoverStrategy(Strategy):
@@ -11,12 +22,7 @@ class MovingAverageCrossoverStrategy(Strategy):
 
     def __init__(self, spec: StrategySpec) -> None:
         super().__init__(spec)
-        short_window = int(spec.parameters["short_window"])
-        long_window = int(spec.parameters["long_window"])
-        if short_window <= 0 or long_window <= 0:
-            raise ValueError("Window lengths must be positive integers")
-        if short_window >= long_window:
-            raise ValueError("short_window must be smaller than long_window")
+        validate_candidate_parameters(spec.parameters)
 
     def generate_signals(self, market_data: pd.DataFrame) -> pd.Series:
         close = market_data["close"].astype(float)

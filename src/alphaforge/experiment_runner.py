@@ -11,7 +11,7 @@ from .benchmark import build_buy_and_hold_equity_curve, normalize_benchmark_summ
 from .data_loader import load_market_data
 from .metrics import compute_metrics
 from .report import ExperimentReportInput, build_experiment_report_input
-from .scoring import rank_results, score_metrics
+from .scoring import rank_results, score_metrics, select_best_result
 from .search_reporting import save_best_search_report, save_search_comparison_report
 from .schemas import (
     BacktestConfig,
@@ -360,8 +360,10 @@ def _run_validate_search_on_market_data(
     if not ranked:
         raise ValueError("No train-segment results remain after ranking and threshold filters")
 
-    selected_strategy_spec = ranked[0].strategy_spec
-    train_best_result = ranked[0]
+    best_ranked_result = select_best_result(ranked)
+    assert best_ranked_result is not None
+    selected_strategy_spec = best_ranked_result.strategy_spec
+    train_best_result = best_ranked_result
     train_ranked_results_path = None
     if validation_root is not None:
         train_ranked_results_path = save_ranked_results_artifact(
@@ -508,7 +510,9 @@ def _run_walk_forward_search_on_market_data(
         if not ranked:
             raise ValueError(f"No train-fold results remain after ranking and threshold filters for fold {fold_index}")
 
-        selected_strategy_spec = ranked[0].strategy_spec
+        best_ranked_result = select_best_result(ranked)
+        assert best_ranked_result is not None
+        selected_strategy_spec = best_ranked_result.strategy_spec
         test_execution = _run_experiment_on_market_data(
             market_data=test_data,
             data_spec=data_spec,
@@ -526,7 +530,7 @@ def _run_walk_forward_search_on_market_data(
                 test_start=str(test_data["datetime"].iloc[0]),
                 test_end=str(test_data["datetime"].iloc[-1]),
                 selected_strategy_spec=selected_strategy_spec,
-                train_best_result=ranked[0],
+                train_best_result=best_ranked_result,
                 test_result=test_result,
                 test_benchmark_summary=normalize_benchmark_summary(test_result.metadata.get("benchmark_summary")),
             )
