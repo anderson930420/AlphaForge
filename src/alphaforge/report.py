@@ -50,6 +50,28 @@ class ExperimentReportInput:
     benchmark_curve: EquityCurveFrame
 
 
+def build_experiment_report_input(
+    result: ExperimentResult,
+    equity_curve: EquityCurveFrame,
+    trades: pd.DataFrame,
+    benchmark_summary: dict[str, float],
+    benchmark_curve: EquityCurveFrame,
+) -> ExperimentReportInput:
+    """Assemble the canonical single-experiment report input."""
+    return ExperimentReportInput(
+        result=result,
+        equity_curve=equity_curve,
+        trades=trades,
+        benchmark_summary=benchmark_summary,
+        benchmark_curve=benchmark_curve,
+    )
+
+
+def build_search_report_link_context(search_root: Path) -> SearchReportLinkContext:
+    """Assemble the canonical search-report link context from a storage-owned root."""
+    return SearchReportLinkContext(link_base_dir=search_root, search_display_name=search_root.name)
+
+
 def render_experiment_report(
     report_input: ExperimentReportInput,
 ) -> str:

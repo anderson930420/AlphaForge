@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-"""Presentation boundary for search-specific report artifacts.
+"""Thin adapter for search-specific report artifacts.
 
-This module prepares search comparison report inputs and writes HTML report
-artifacts for search workflows. It may consume storage-owned artifact receipts,
-but it does not own canonical persisted experiment artifacts or filename/layout
-decisions for raw outputs. Search comparison link semantics are explicit: the
-caller provides a report-local link base and a display-only search label.
+This module loads stored search artifacts and delegates report-input shaping and
+rendering to :mod:`alphaforge.report`. It may coordinate the report workflow,
+but it does not own canonical view-model semantics, persisted artifact truth,
+or filename/layout decisions for raw outputs.
 """
 
 from pathlib import Path
@@ -14,18 +13,15 @@ from pathlib import Path
 import pandas as pd
 
 from .report import (
-    ExperimentReportInput,
-    SearchReportLinkContext,
+    build_experiment_report_input,
+    build_search_report_link_context,
     render_experiment_report,
     render_search_comparison_report,
     save_experiment_report,
 )
 from .benchmark import build_buy_and_hold_equity_curve, summarize_buy_and_hold
 from .schemas import EquityCurveFrame, ExperimentResult
-from .storage import ArtifactReceipt
-
-BEST_REPORT_FILENAME = "best_report.html"
-SEARCH_REPORT_FILENAME = "search_report.html"
+from .storage import ArtifactReceipt, BEST_REPORT_FILENAME, SEARCH_REPORT_FILENAME
 
 
 def save_best_search_report(
@@ -40,15 +36,14 @@ def save_best_search_report(
     trades = pd.read_csv(artifact_receipt.trade_log_path)
     benchmark_summary = summarize_buy_and_hold(equity_curve, best_result.backtest_config.initial_capital)
     benchmark_curve = build_buy_and_hold_equity_curve(equity_curve, best_result.backtest_config.initial_capital)
-    report_content = render_experiment_report(
-        ExperimentReportInput(
-            result=best_result,
-            equity_curve=equity_curve,
-            trades=trades,
-            benchmark_summary=benchmark_summary,
-            benchmark_curve=benchmark_curve,
-        )
+    report_input = build_experiment_report_input(
+        result=best_result,
+        equity_curve=equity_curve,
+        trades=trades,
+        benchmark_summary=benchmark_summary,
+        benchmark_curve=benchmark_curve,
     )
+    report_content = render_experiment_report(report_input)
     return save_experiment_report(report_content, search_root / BEST_REPORT_FILENAME)
 
 
@@ -61,7 +56,7 @@ def save_search_comparison_report(
 ) -> Path:
     top_equity_curves = load_top_search_equity_curves(artifact_receipts, ranked_results, top_n=top_n)
     report_content = render_search_comparison_report(
-        link_context=SearchReportLinkContext(link_base_dir=search_root, search_display_name=search_root.name),
+        link_context=build_search_report_link_context(search_root),
         ranked_results=ranked_results,
         artifact_receipts=artifact_receipts,
         top_equity_curves=top_equity_curves,

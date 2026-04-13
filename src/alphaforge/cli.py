@@ -20,6 +20,7 @@ from .storage import (
     serialize_experiment_result,
     serialize_validation_result,
     serialize_walk_forward_result,
+    REPORT_FILENAME,
 )
 
 
@@ -179,7 +180,7 @@ def main() -> None:
             if args.generate_report:
                 experiment_dir = ensure_output_dir(args.output_dir / args.experiment_name)
                 report_content = render_experiment_report(execution.report_input)
-                report_path = save_experiment_report(report_content, experiment_dir / "report.html")
+                report_path = save_experiment_report(report_content, experiment_dir / REPORT_FILENAME)
                 payload["report_path"] = str(report_path)
             print(json.dumps(payload, indent=2, default=str))
             return

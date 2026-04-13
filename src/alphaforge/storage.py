@@ -37,6 +37,10 @@ TRADE_LOG_COLUMNS = [
     "net_pnl",
 ]
 
+REPORT_FILENAME = "report.html"
+BEST_REPORT_FILENAME = "best_report.html"
+SEARCH_REPORT_FILENAME = "search_report.html"
+
 CANONICAL_SINGLE_RUN_FILENAMES = (
     "experiment_config.json",
     "metrics_summary.json",
@@ -79,6 +83,7 @@ FOLD_RESULTS_FILENAME = "fold_results.csv"
 WALK_FORWARD_FOLD_PATH_COLUMN = "fold_path"
 
 CANONICAL_SEARCH_FILENAMES = (RANKED_RESULTS_FILENAME,)
+CANONICAL_SEARCH_REPORT_FILENAMES = (BEST_REPORT_FILENAME, SEARCH_REPORT_FILENAME)
 
 
 @dataclass(frozen=True)

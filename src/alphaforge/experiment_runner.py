@@ -10,7 +10,7 @@ from .backtest import run_backtest
 from .benchmark import build_buy_and_hold_equity_curve, normalize_benchmark_summary, summarize_buy_and_hold
 from .data_loader import load_market_data
 from .metrics import compute_metrics
-from .report import ExperimentReportInput
+from .report import ExperimentReportInput, build_experiment_report_input
 from .scoring import rank_results, score_metrics
 from .search_reporting import save_best_search_report, save_search_comparison_report
 from .schemas import (
@@ -165,7 +165,7 @@ def _run_experiment_on_market_data(
     )
     if output_dir is not None:
         result, receipt = save_single_experiment(output_dir, experiment_name, result, equity_curve, trades)
-    report_input = ExperimentReportInput(
+    report_input = build_experiment_report_input(
         result=result,
         equity_curve=equity_curve,
         trades=trades,
