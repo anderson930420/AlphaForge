@@ -133,9 +133,14 @@ def test_run_search_with_details_returns_explicit_artifact_paths(sample_market_c
     )
 
     assert len(search_execution.ranked_results) == 2
-    assert search_execution.ranked_results_path == tmp_path / "search_details_case" / "ranked_results.csv"
-    assert search_execution.best_report_path == tmp_path / "search_details_case" / "best_report.html"
-    assert search_execution.comparison_report_path == tmp_path / "search_details_case" / "search_report.html"
+    assert search_execution.artifact_receipt is not None
+    assert search_execution.artifact_receipt.search_root == tmp_path / "search_details_case"
+    assert search_execution.artifact_receipt.ranked_results_path == tmp_path / "search_details_case" / "ranked_results.csv"
+    assert search_execution.artifact_receipt.best_report_path == tmp_path / "search_details_case" / "best_report.html"
+    assert search_execution.artifact_receipt.comparison_report_path == tmp_path / "search_details_case" / "search_report.html"
+    assert not hasattr(search_execution, "ranked_results_path")
+    assert not hasattr(search_execution, "best_report_path")
+    assert not hasattr(search_execution, "comparison_report_path")
 
 
 def test_run_search_saves_empty_ranked_results_with_headers(sample_market_csv: Path, tmp_path: Path) -> None:

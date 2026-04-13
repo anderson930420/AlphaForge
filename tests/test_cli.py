@@ -11,7 +11,7 @@ import pytest
 from alphaforge.cli import main
 from alphaforge.experiment_runner import ExperimentExecutionOutput, SearchExecutionOutput
 from alphaforge.report import ExperimentReportInput
-from alphaforge.storage import ArtifactReceipt
+from alphaforge.storage import ArtifactReceipt, SearchArtifactReceipt
 from alphaforge.schemas import BacktestConfig, DataSpec, ExperimentResult, MetricReport, StrategySpec
 
 
@@ -345,7 +345,10 @@ def test_cli_twse_search_fetches_saves_and_runs_search(
         "alphaforge.cli.run_search_with_details",
         return_value=SearchExecutionOutput(
             ranked_results=[sample_result],
-            ranked_results_path=tmp_path / "twse_summary_case" / "ranked_results.csv",
+            artifact_receipt=SearchArtifactReceipt(
+                search_root=tmp_path / "twse_summary_case",
+                ranked_results_path=tmp_path / "twse_summary_case" / "ranked_results.csv",
+            ),
         ),
     ):
         main()
@@ -403,9 +406,12 @@ def test_cli_search_generates_only_best_report_when_requested(
         "alphaforge.cli.run_search_with_details",
         return_value=SearchExecutionOutput(
             ranked_results=[sample_result],
-            ranked_results_path=tmp_path / "search_report_case" / "ranked_results.csv",
-            best_report_path=tmp_path / "search_report_case" / "best_report.html",
-            comparison_report_path=tmp_path / "search_report_case" / "search_report.html",
+            artifact_receipt=SearchArtifactReceipt(
+                search_root=tmp_path / "search_report_case",
+                ranked_results_path=tmp_path / "search_report_case" / "ranked_results.csv",
+                best_report_path=tmp_path / "search_report_case" / "best_report.html",
+                comparison_report_path=tmp_path / "search_report_case" / "search_report.html",
+            ),
         ),
     ) as run_search_mock:
         main()
@@ -448,7 +454,10 @@ def test_cli_search_with_empty_ranked_results_still_returns_search_report_path(
         "alphaforge.cli.run_search_with_details",
         return_value=SearchExecutionOutput(
             ranked_results=[],
-            comparison_report_path=tmp_path / "empty_search_case" / "search_report.html",
+            artifact_receipt=SearchArtifactReceipt(
+                search_root=tmp_path / "empty_search_case",
+                comparison_report_path=tmp_path / "empty_search_case" / "search_report.html",
+            ),
         ),
     ):
         main()
@@ -504,9 +513,11 @@ def test_cli_search_omits_missing_artifact_paths_instead_of_guessing(
         "alphaforge.cli.run_search_with_details",
         return_value=SearchExecutionOutput(
             ranked_results=[sample_result],
-            ranked_results_path=tmp_path / "partial_search_case" / "ranked_results.csv",
-            best_report_path=None,
-            comparison_report_path=tmp_path / "partial_search_case" / "search_report.html",
+            artifact_receipt=SearchArtifactReceipt(
+                search_root=tmp_path / "partial_search_case",
+                ranked_results_path=tmp_path / "partial_search_case" / "ranked_results.csv",
+                comparison_report_path=tmp_path / "partial_search_case" / "search_report.html",
+            ),
         ),
     ):
         main()

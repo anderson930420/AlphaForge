@@ -38,10 +38,12 @@ from alphaforge.storage import (
     save_validation_result,
     save_walk_forward_result,
     serialize_artifact_receipt,
+    serialize_search_artifact_receipt,
     serialize_validation_artifact_receipt,
     serialize_validation_result,
     serialize_walk_forward_artifact_receipt,
     serialize_walk_forward_result,
+    SearchArtifactReceipt,
 )
 
 
@@ -255,5 +257,21 @@ def test_serialize_artifact_receipt_separates_persisted_and_presentation_refs(tm
     assert serialized["equity_curve_path"] == str(tmp_path / "run_001" / EQUITY_CURVE_FILENAME)
     assert serialized["trade_log_path"] == str(tmp_path / "run_001" / TRADE_LOG_FILENAME)
     assert serialized["metrics_summary_path"] == str(tmp_path / "run_001" / METRICS_SUMMARY_FILENAME)
+    assert serialized["best_report_path"] == str(tmp_path / "search_case" / "best_report.html")
+    assert serialized["comparison_report_path"] == str(tmp_path / "search_case" / "search_report.html")
+
+
+def test_serialize_search_artifact_receipt_tracks_ranked_and_report_paths(tmp_path: Path) -> None:
+    receipt = SearchArtifactReceipt(
+        search_root=tmp_path / "search_case",
+        ranked_results_path=tmp_path / "search_case" / "ranked_results.csv",
+        best_report_path=tmp_path / "search_case" / "best_report.html",
+        comparison_report_path=tmp_path / "search_case" / "search_report.html",
+    )
+
+    serialized = serialize_search_artifact_receipt(receipt)
+
+    assert serialized["search_root"] == str(tmp_path / "search_case")
+    assert serialized["ranked_results_path"] == str(tmp_path / "search_case" / "ranked_results.csv")
     assert serialized["best_report_path"] == str(tmp_path / "search_case" / "best_report.html")
     assert serialized["comparison_report_path"] == str(tmp_path / "search_case" / "search_report.html")

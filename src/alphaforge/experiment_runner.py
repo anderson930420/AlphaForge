@@ -28,6 +28,7 @@ from .schemas import (
 from .search import build_strategy_specs
 from .storage import (
     ArtifactReceipt,
+    SearchArtifactReceipt,
     ValidationArtifactReceipt,
     WalkForwardArtifactReceipt,
     TRAIN_RANKED_RESULTS_FILENAME,
@@ -60,9 +61,7 @@ class SearchExecutionOutput:
     """Runner-local protocol receipt for ranked search plus saved artifact refs."""
 
     ranked_results: list[ExperimentResult]
-    ranked_results_path: Path | None = None
-    best_report_path: Path | None = None
-    comparison_report_path: Path | None = None
+    artifact_receipt: SearchArtifactReceipt | None = None
 
 
 @dataclass(frozen=True)
@@ -288,11 +287,17 @@ def _run_search_on_market_data(
                 artifact_receipts=ranked_receipts,
                 best_report_path=best_report_path,
             )
+    search_artifact_receipt: SearchArtifactReceipt | None = None
+    if output_dir is not None:
+        search_artifact_receipt = SearchArtifactReceipt(
+            search_root=search_root,
+            ranked_results_path=ranked_results_path,
+            best_report_path=best_report_path,
+            comparison_report_path=comparison_report_path,
+        )
     return SearchExecutionOutput(
         ranked_results=ranked,
-        ranked_results_path=ranked_results_path,
-        best_report_path=best_report_path,
-        comparison_report_path=comparison_report_path,
+        artifact_receipt=search_artifact_receipt,
     )
 
 

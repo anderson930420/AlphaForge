@@ -267,18 +267,20 @@ def _build_search_summary(
         "result_count": len(ranked),
         "top_results": [serialize_experiment_result(result) for result in ranked[:3]],
     }
-    if search_execution.ranked_results_path is not None:
-        payload["ranked_results_path"] = str(search_execution.ranked_results_path)
     if ranked:
         payload["best_result"] = serialize_experiment_result(ranked[0])
     else:
         payload["best_result"] = None
     if data_output is not None:
         payload["data_output"] = str(data_output)
-    if search_execution.best_report_path is not None:
-        payload["report_path"] = str(search_execution.best_report_path)
-    if search_execution.comparison_report_path is not None:
-        payload["search_report_path"] = str(search_execution.comparison_report_path)
+    receipt = search_execution.artifact_receipt
+    if receipt is not None:
+        if receipt.ranked_results_path is not None:
+            payload["ranked_results_path"] = str(receipt.ranked_results_path)
+        if receipt.best_report_path is not None:
+            payload["report_path"] = str(receipt.best_report_path)
+        if receipt.comparison_report_path is not None:
+            payload["search_report_path"] = str(receipt.comparison_report_path)
     return payload
 
 

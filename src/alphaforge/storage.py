@@ -119,6 +119,16 @@ class WalkForwardArtifactReceipt:
     fold_results_path: Path
 
 
+@dataclass(frozen=True)
+class SearchArtifactReceipt:
+    """Storage-owned receipt for persisted search artifacts."""
+
+    search_root: Path | None
+    ranked_results_path: Path | None = None
+    best_report_path: Path | None = None
+    comparison_report_path: Path | None = None
+
+
 def ensure_output_dir(path: Path) -> Path:
     path.mkdir(parents=True, exist_ok=True)
     return path
@@ -219,6 +229,17 @@ def serialize_walk_forward_artifact_receipt(receipt: WalkForwardArtifactReceipt 
     return {
         "walk_forward_summary_path": str(receipt.walk_forward_summary_path),
         "fold_results_path": str(receipt.fold_results_path),
+    }
+
+
+def serialize_search_artifact_receipt(receipt: SearchArtifactReceipt | None) -> dict[str, Any] | None:
+    if receipt is None:
+        return None
+    return {
+        "search_root": _serialize_path(receipt.search_root),
+        "ranked_results_path": _serialize_path(receipt.ranked_results_path),
+        "best_report_path": _serialize_path(receipt.best_report_path),
+        "comparison_report_path": _serialize_path(receipt.comparison_report_path),
     }
 
 
