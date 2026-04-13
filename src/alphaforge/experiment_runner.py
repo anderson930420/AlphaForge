@@ -45,7 +45,7 @@ from .walk_forward_aggregation import (
 
 @dataclass(frozen=True)
 class ExperimentExecutionOutput:
-    """Runner-local orchestration bundle for one executed strategy run."""
+    """Runner-local protocol receipt for one executed strategy run."""
 
     result: ExperimentResult
     equity_curve: EquityCurveFrame
@@ -56,7 +56,7 @@ class ExperimentExecutionOutput:
 
 @dataclass(frozen=True)
 class SearchExecutionOutput:
-    """Runner-local orchestration bundle for ranked search plus saved artifact refs."""
+    """Runner-local protocol receipt for ranked search plus saved artifact refs."""
 
     ranked_results: list[ExperimentResult]
     ranked_results_path: Path | None = None
@@ -66,10 +66,43 @@ class SearchExecutionOutput:
 
 @dataclass(frozen=True)
 class ValidationExecutionOutput:
-    """Runner-local orchestration bundle for validation results and discovery refs."""
+    """Runner-local protocol receipt for validation results and discovery refs."""
 
     validation_result: ValidationResult
     validation_summary_path: Path | None = None
+
+
+def _default_backtest_config() -> BacktestConfig:
+    return BacktestConfig(
+        initial_capital=config.INITIAL_CAPITAL,
+        fee_rate=config.DEFAULT_FEE_RATE,
+        slippage_rate=config.DEFAULT_SLIPPAGE_RATE,
+        annualization_factor=config.DEFAULT_ANNUALIZATION,
+    )
+
+
+def _workflow_root(output_dir: Path | None, experiment_name: str) -> Path | None:
+    return (output_dir / experiment_name) if output_dir is not None else None
+
+
+def _build_validation_summary_path(output_dir: Path | None, experiment_name: str) -> Path | None:
+    if output_dir is None:
+        return None
+    validation_root = _workflow_root(output_dir, experiment_name)
+    assert validation_root is not None
+    return validation_root / VALIDATION_SUMMARY_FILENAME
+
+
+def _build_execution_metadata(market_data: pd.DataFrame, benchmark_summary: dict[str, float]) -> dict[str, object]:
+    return {
+        "missing_data_policy": market_data.attrs.get("missing_data_policy", ""),
+        "benchmark_summary": benchmark_summary,
+    }
+
+
+# =============================================================================
+# Single-run protocol
+# =============================================================================
 
 
 def run_experiment(
@@ -78,7 +111,7 @@ def run_experiment(
     backtest_config: BacktestConfig | None = None,
     output_dir: Path | None = None,
     experiment_name: str = "single_experiment",
-) -> tuple[ExperimentResult, EquityCurveFrame, object]:
+) -> tuple[ExperimentResult, EquityCurveFrame, pd.DataFrame]:
     execution = run_experiment_with_artifacts(
         data_spec=data_spec,
         strategy_spec=strategy_spec,
@@ -96,12 +129,7 @@ def run_experiment_with_artifacts(
     output_dir: Path | None = None,
     experiment_name: str = "single_experiment",
 ) -> ExperimentExecutionOutput:
-    backtest_config = backtest_config or BacktestConfig(
-        initial_capital=config.INITIAL_CAPITAL,
-        fee_rate=config.DEFAULT_FEE_RATE,
-        slippage_rate=config.DEFAULT_SLIPPAGE_RATE,
-        annualization_factor=config.DEFAULT_ANNUALIZATION,
-    )
+    backtest_config = backtest_config or _default_backtest_config()
     market_data = load_market_data(data_spec)
     return _run_experiment_on_market_data(
         market_data=market_data,
@@ -122,7 +150,7 @@ def _run_experiment_on_market_data(
     experiment_name: str = "single_experiment",
 ) -> ExperimentExecutionOutput:
     receipt: ArtifactReceipt | None = None
-    strategy = build_strategy(strategy_spec)
+    strategy = _build_strategy(strategy_spec)
     target_positions = strategy.generate_signals(market_data)
     equity_curve, trades = run_backtest(market_data, target_positions, backtest_config)
     metrics = compute_metrics(equity_curve, trades, backtest_config.annualization_factor)
@@ -133,10 +161,7 @@ def _run_experiment_on_market_data(
         backtest_config=backtest_config,
         metrics=metrics,
         score=score_metrics(metrics),
-        metadata={
-            "missing_data_policy": market_data.attrs.get("missing_data_policy", ""),
-            "benchmark_summary": benchmark_summary,
-        },
+        metadata=_build_execution_metadata(market_data, benchmark_summary),
     )
     if output_dir is not None:
         result, receipt = save_single_experiment(output_dir, experiment_name, result, equity_curve, trades)
@@ -154,6 +179,11 @@ def _run_experiment_on_market_data(
         report_input=report_input,
         artifact_receipt=receipt,
     )
+
+
+# =============================================================================
+# Search-execution protocol
+# =============================================================================
 
 
 def run_search(
@@ -188,12 +218,7 @@ def run_search_with_details(
     min_trade_count: int | None = None,
     generate_best_report: bool = False,
 ) -> SearchExecutionOutput:
-    backtest_config = backtest_config or BacktestConfig(
-        initial_capital=config.INITIAL_CAPITAL,
-        fee_rate=config.DEFAULT_FEE_RATE,
-        slippage_rate=config.DEFAULT_SLIPPAGE_RATE,
-        annualization_factor=config.DEFAULT_ANNUALIZATION,
-    )
+    backtest_config = backtest_config or _default_backtest_config()
     market_data = load_market_data(data_spec)
     return _run_search_on_market_data(
         market_data=market_data,
@@ -225,7 +250,7 @@ def _run_search_on_market_data(
     best_report_path: Path | None = None
     comparison_report_path: Path | None = None
     strategy_specs = build_strategy_specs("ma_crossover", parameter_grid)
-    search_root = (output_dir / experiment_name) if output_dir is not None else None
+    search_root = _workflow_root(output_dir, experiment_name)
     runs_output_dir = (search_root / "runs") if search_root is not None else None
     for index, strategy_spec in enumerate(strategy_specs, start=1):
         execution = _run_experiment_on_market_data(
@@ -270,6 +295,11 @@ def _run_search_on_market_data(
     )
 
 
+# =============================================================================
+# Validate-search protocol
+# =============================================================================
+
+
 def run_validate_search(
     data_spec: DataSpec,
     parameter_grid: dict[str, list[int]],
@@ -280,17 +310,12 @@ def run_validate_search(
     max_drawdown_cap: float | None = None,
     min_trade_count: int | None = None,
 ) -> ValidationResult:
-    backtest_config = backtest_config or BacktestConfig(
-        initial_capital=config.INITIAL_CAPITAL,
-        fee_rate=config.DEFAULT_FEE_RATE,
-        slippage_rate=config.DEFAULT_SLIPPAGE_RATE,
-        annualization_factor=config.DEFAULT_ANNUALIZATION,
-    )
+    backtest_config = backtest_config or _default_backtest_config()
     market_data = load_market_data(data_spec)
     train_data, test_data = _split_market_data_by_ratio(market_data, split_ratio)
     _validate_train_windows(train_data, parameter_grid)
 
-    validation_root = (output_dir / experiment_name) if output_dir is not None else None
+    validation_root = _workflow_root(output_dir, experiment_name)
     search_execution = _run_search_on_market_data(
         market_data=train_data,
         data_spec=data_spec,
@@ -370,13 +395,16 @@ def run_validate_search_with_details(
         max_drawdown_cap=max_drawdown_cap,
         min_trade_count=min_trade_count,
     )
-    validation_summary_path = None
-    if output_dir is not None:
-        validation_summary_path = output_dir / experiment_name / VALIDATION_SUMMARY_FILENAME
+    validation_summary_path = _build_validation_summary_path(output_dir, experiment_name)
     return ValidationExecutionOutput(
         validation_result=validation_result,
         validation_summary_path=validation_summary_path,
     )
+
+
+# =============================================================================
+# Walk-forward protocol
+# =============================================================================
 
 
 def run_walk_forward_search(
@@ -391,17 +419,12 @@ def run_walk_forward_search(
     max_drawdown_cap: float | None = None,
     min_trade_count: int | None = None,
 ) -> WalkForwardResult:
-    backtest_config = backtest_config or BacktestConfig(
-        initial_capital=config.INITIAL_CAPITAL,
-        fee_rate=config.DEFAULT_FEE_RATE,
-        slippage_rate=config.DEFAULT_SLIPPAGE_RATE,
-        annualization_factor=config.DEFAULT_ANNUALIZATION,
-    )
+    backtest_config = backtest_config or _default_backtest_config()
     market_data = load_market_data(data_spec)
     folds = _generate_walk_forward_folds(market_data, train_size=train_size, test_size=test_size, step_size=step_size)
     _validate_train_windows(market_data.iloc[:train_size].reset_index(drop=True), parameter_grid)
 
-    walk_forward_root = (output_dir / experiment_name) if output_dir is not None else None
+    walk_forward_root = _workflow_root(output_dir, experiment_name)
     fold_results: list[WalkForwardFoldResult] = []
     for fold_index, (train_start_idx, train_end_idx, test_end_idx) in enumerate(folds, start=1):
         train_data = market_data.iloc[train_start_idx:train_end_idx].reset_index(drop=True)
@@ -467,7 +490,12 @@ def run_walk_forward_search(
     return result
 
 
-def build_strategy(strategy_spec: StrategySpec) -> MovingAverageCrossoverStrategy:
+# =============================================================================
+# Shared protocol helpers
+# =============================================================================
+
+
+def _build_strategy(strategy_spec: StrategySpec) -> MovingAverageCrossoverStrategy:
     if strategy_spec.name != "ma_crossover":
         raise ValueError(f"Unsupported strategy: {strategy_spec.name}")
     return MovingAverageCrossoverStrategy(strategy_spec)
