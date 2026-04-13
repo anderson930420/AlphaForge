@@ -6,6 +6,18 @@
 - Make search comparison links, best-report links, and relative artifact links explicit rather than inferred from hidden workflow layout.
 - Keep presentation-link behavior downstream of storage-owned artifact refs and CLI discovery output.
 
+## Requirements
+
+### Requirement: Search report links are explicit and downstream of storage-owned refs
+
+Search report linking SHALL be rendered from explicit presentation context and storage-owned artifact references, not from hidden layout reconstruction.
+
+#### Scenario: Relative links use the explicit base directory only
+
+- **WHEN** a search comparison report renders links to run artifacts or best-report artifacts
+- **THEN** the renderer SHALL use the provided `SearchReportLinkContext` and explicit artifact refs
+- **AND** it SHALL NOT infer link targets from hidden directory-layout assumptions
+
 ## Canonical owner
 
 - `src/alphaforge/search_reporting.py` is the authoritative owner of search-report linking behavior and search-report presentation composition.
@@ -119,4 +131,3 @@
 - WHEN its artifact receipt is materialized
 - THEN the canonical persisted refs SHALL still be present
 - AND optional presentation refs SHALL be allowed to remain empty
-

@@ -7,6 +7,18 @@
 - Prevent business-rule drift between `config.py`, `schemas.py`, `storage.py`, `report.py`, `cli.py`, and `experiment_runner.py`.
 - Prevent future feature additions from turning `experiment_runner.py` or `cli.py` into modules that silently own domain rules.
 
+## Requirements
+
+### Requirement: AlphaForge modules shall have exactly one canonical owner per boundary
+
+AlphaForge SHALL assign each business rule, execution semantic, schema, naming convention, and workflow responsibility to exactly one canonical owner, with lower-level capability specs allowed to refine but not contradict the top-level map.
+
+#### Scenario: Boundary ownership remains single-sourced
+
+- **WHEN** a maintainer looks up the owner for market data, execution, persistence, reporting, CLI dispatch, or orchestration
+- **THEN** the architecture boundary map SHALL provide a single canonical answer
+- **AND** lower-level specs SHALL only refine that answer, not create a competing one
+
 ## Canonical owner
 
 - This specification file is the authoritative top-level boundary definition for AlphaForge architecture.

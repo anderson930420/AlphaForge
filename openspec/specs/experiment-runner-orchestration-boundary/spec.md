@@ -7,6 +7,17 @@
 - Prevent `experiment_runner.py` from becoming the authoritative owner of domain rules already owned by `data_loader.py`, `search.py`, `backtest.py`, `metrics.py`, `benchmark.py`, `report.py`, `storage.py`, or `schemas.py`.
 - Define the exact points where `experiment_runner.py` may assemble workflow-level metadata and result objects without redefining lower-layer schemas.
 
+## Requirements
+
+### Requirement: `experiment_runner.py` remains orchestration-only
+
+`src/alphaforge/experiment_runner.py` SHALL coordinate workflows only and SHALL defer domain truth to the lower-level owners named by the architecture boundary map and the subprotocol boundary spec.
+
+#### Scenario: Workflow sequencing does not redefine domain semantics
+
+- **WHEN** the runner executes single-run, search, validation, walk-forward, or report flows
+- **THEN** it SHALL sequence authoritative modules rather than own execution, search, scoring, persistence, or reporting truth locally
+
 ## Canonical owner
 
 - `src/alphaforge/experiment_runner.py` is the authoritative owner of AlphaForge runtime workflow orchestration semantics.
