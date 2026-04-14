@@ -27,7 +27,7 @@ from .storage import (
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="AlphaForge MVP CLI")
+    parser = argparse.ArgumentParser(description="AlphaForge workflow orchestration CLI")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     single = subparsers.add_parser("run", help="Run a single MA crossover experiment")

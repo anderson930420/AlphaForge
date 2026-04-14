@@ -2,7 +2,9 @@
 
 AlphaForge is a minimal strategy research engine that proves a reproducible MVP pipeline:
 
-`strategy spec -> backtest -> metrics -> ranking -> save result`
+`strategy spec -> candidate search -> backtest -> metrics -> scoring -> storage/report`
+
+The canonical contract and boundary details live in `openspec/specs/...`; this README is a practical usage overview, not the source of truth for ownership or workflow semantics.
 
 ## MVP Status
 

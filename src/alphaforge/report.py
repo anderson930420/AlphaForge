@@ -2,10 +2,11 @@ from __future__ import annotations
 
 """Report assembly and export interfaces for AlphaForge experiments.
 
-This module is the single place for composing experiment outputs into a
-shareable report artifact. It may orchestrate metrics, tables, and figures, but
-it should not run backtests, compute metrics, own figure construction, or infer
-workflow-specific layout when explicit presentation inputs are available.
+This module assembles report-ready inputs into shareable HTML artifacts. It
+consumes already-computed metrics, benchmark summaries, and storage-owned
+artifact refs; it should not run backtests, compute metrics, or infer workflow
+layout when explicit presentation inputs are available. Figure construction
+stays in :mod:`alphaforge.visualization`.
 """
 
 from dataclasses import dataclass
