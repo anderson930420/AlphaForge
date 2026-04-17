@@ -72,6 +72,12 @@ def test_run_validate_search_splits_data_chronologically_and_saves_outputs(sampl
     assert "test_benchmark_summary" in summary_payload
     assert "total_return" in summary_payload["test_benchmark_summary"]
     assert "max_drawdown" in summary_payload["test_benchmark_summary"]
+    assert summary_payload["candidate_evidence"]["verdict"] == "validated"
+    assert summary_payload["candidate_evidence"]["degradation_summary"]["return_degradation"] == result.candidate_evidence.degradation_summary["return_degradation"]
+    assert result.candidate_evidence.search_rank == 1
+    assert result.candidate_evidence.search_result_count == 1
+    assert result.candidate_evidence.degradation_summary["return_degradation"] == result.test_result.metrics.total_return - result.train_best_result.metrics.total_return
+    assert result.candidate_evidence.benchmark_relative_summary["benchmark_total_return"] == summary_payload["candidate_evidence"]["benchmark_relative_summary"]["benchmark_total_return"]
     assert not hasattr(result, "validation_summary_path")
     assert not hasattr(result, "train_ranked_results_path")
     assert result.metadata["train_rows"] == 4
@@ -148,6 +154,9 @@ def test_run_validate_search_uses_train_only_for_search_and_selected_params_for_
     assert tested_strategy.parameters == {"short_window": 2, "long_window": 4}
     assert result.selected_strategy_spec.parameters == {"short_window": 2, "long_window": 4}
     assert result.test_benchmark_summary == {"total_return": 0.0, "max_drawdown": 0.0}
+    assert result.candidate_evidence.verdict == "validated"
+    assert result.candidate_evidence.search_rank == 1
+    assert result.candidate_evidence.search_result_count == 1
 
 
 def test_run_validate_search_rejects_invalid_split_ratio(sample_market_csv: Path) -> None:
@@ -200,6 +209,21 @@ def test_cli_validate_search_prints_validation_summary_payload(
         "selected_strategy_spec": {"name": "ma_crossover", "parameters": {"short_window": 2, "long_window": 3}},
         "train_best_result": {"score": 0.8},
         "test_result": {"score": 0.4},
+        "candidate_evidence": {
+            "strategy_name": "ma_crossover",
+            "strategy_parameters": {"short_window": 2, "long_window": 3},
+            "verdict": "validated",
+            "search_rank": 1,
+            "search_result_count": 1,
+            "search_ranking_score": "score",
+            "search_score": 0.8,
+            "train_metrics": {"total_return": 0.0},
+            "test_metrics": {"total_return": 0.0},
+            "benchmark_relative_summary": {"benchmark_total_return": 0.0},
+            "degradation_summary": {"return_degradation": 0.0, "sharpe_degradation": 0.0, "max_drawdown_delta": 0.0},
+            "artifact_paths": {"validation_summary_path": str(tmp_path / "validation_case" / "validation_summary.json")},
+            "metadata": {},
+        },
     }
 
     with patch(
@@ -227,6 +251,7 @@ def test_cli_validate_search_prints_validation_summary_payload(
     assert payload["selected_strategy_spec"]["parameters"] == {"short_window": 2, "long_window": 3}
     assert Path(payload["train_ranked_results_path"]).name == "train_ranked_results.csv"
     assert Path(payload["validation_summary_path"]).name == "validation_summary.json"
+    assert payload["candidate_evidence"]["verdict"] == "validated"
 
 
 def test_run_walk_forward_search_creates_chronological_fold_outputs(sample_market_csv: Path, tmp_path: Path) -> None:
@@ -265,6 +290,10 @@ def test_run_walk_forward_search_creates_chronological_fold_outputs(sample_marke
     assert result.folds[0].train_end < result.folds[0].test_start
     assert "total_return" in result.folds[0].test_benchmark_summary
     assert "mean_benchmark_total_return" in result.aggregate_benchmark_metrics
+    assert result.folds[0].candidate_evidence.verdict == "validated"
+    assert result.walk_forward_evidence.verdict == "validated"
+    assert result.walk_forward_evidence.fold_count == 2
+    assert result.walk_forward_evidence.aggregate_test_metrics["fold_count"] == 2
     assert (fold_root / "train_search" / "ranked_results.csv").exists()
     assert (fold_root / "test_selected" / "metrics_summary.json").exists()
     fold_results_frame = pd.read_csv(fold_results_path)
@@ -417,6 +446,16 @@ def test_cli_walk_forward_prints_summary_payload(
         "aggregate_test_metrics": {"fold_count": 2},
         "aggregate_benchmark_metrics": {"fold_count": 2, "mean_benchmark_total_return": 0.03},
         "walk_forward_summary_path": str(tmp_path / "walk_forward_case" / "walk_forward_summary.json"),
+        "walk_forward_evidence": {
+            "verdict": "validated",
+            "fold_count": 2,
+            "validated_fold_count": 2,
+            "skipped_fold_count": 0,
+            "aggregate_test_metrics": {"fold_count": 2},
+            "aggregate_benchmark_metrics": {"fold_count": 2, "mean_benchmark_total_return": 0.03},
+            "artifact_paths": {"walk_forward_summary_path": str(tmp_path / "walk_forward_case" / "walk_forward_summary.json"), "fold_results_path": str(tmp_path / "walk_forward_case" / "fold_results.csv")},
+            "metadata": {},
+        },
     }
 
     with patch(
@@ -447,3 +486,4 @@ def test_cli_walk_forward_prints_summary_payload(
     assert payload["aggregate_benchmark_metrics"]["mean_benchmark_total_return"] == 0.03
     assert Path(payload["walk_forward_summary_path"]).name == "walk_forward_summary.json"
     assert Path(payload["fold_results_path"]).name == "fold_results.csv"
+    assert payload["walk_forward_evidence"]["verdict"] == "validated"

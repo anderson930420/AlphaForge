@@ -8,6 +8,7 @@ import pandas as pd
 from . import config
 from .backtest import run_backtest
 from .benchmark import build_buy_and_hold_equity_curve, normalize_benchmark_summary, summarize_buy_and_hold
+from .evidence import build_candidate_evidence_summary, build_walk_forward_evidence_summary
 from .data_loader import load_market_data
 from .metrics import compute_metrics
 from .report import ExperimentReportInput, build_experiment_report_input
@@ -32,12 +33,15 @@ from .storage import (
     SearchArtifactReceipt,
     ValidationArtifactReceipt,
     WalkForwardArtifactReceipt,
+    FOLD_RESULTS_FILENAME,
     TRAIN_RANKED_RESULTS_FILENAME,
     save_ranked_results_artifact,
     save_ranked_results_with_columns,
     save_single_experiment,
     save_validation_result,
     save_walk_forward_result,
+    VALIDATION_SUMMARY_FILENAME,
+    WALK_FORWARD_SUMMARY_FILENAME,
 )
 from .strategy.ma_crossover import MovingAverageCrossoverStrategy
 from .walk_forward_aggregation import (
@@ -386,6 +390,8 @@ def _run_validate_search_on_market_data(
     selected_strategy_spec = best_ranked_result.strategy_spec
     train_best_result = best_ranked_result
     train_ranked_results_path = None
+    train_best_receipt: ArtifactReceipt | None = None
+    test_receipt: ArtifactReceipt | None = None
     if validation_root is not None:
         train_ranked_results_path = save_ranked_results_artifact(
             output_dir=validation_root,
@@ -402,6 +408,7 @@ def _run_validate_search_on_market_data(
             experiment_name="train_best",
         )
         train_best_result = train_best_execution.result
+        train_best_receipt = train_best_execution.artifact_receipt
     test_execution = _run_experiment_on_market_data(
         market_data=test_data,
         data_spec=data_spec,
@@ -411,7 +418,32 @@ def _run_validate_search_on_market_data(
         experiment_name="test_selected",
     )
     test_result = test_execution.result
+    test_receipt = test_execution.artifact_receipt
 
+    candidate_artifact_paths: dict[str, str] = {}
+    if validation_root is not None:
+        candidate_artifact_paths["validation_summary_path"] = str(validation_root / VALIDATION_SUMMARY_FILENAME)
+        if train_ranked_results_path is not None:
+            candidate_artifact_paths["train_ranked_results_path"] = str(train_ranked_results_path)
+        if train_best_receipt is not None:
+            candidate_artifact_paths["train_best_run_dir"] = str(train_best_receipt.run_dir)
+            candidate_artifact_paths["train_best_equity_curve_path"] = str(train_best_receipt.equity_curve_path)
+            candidate_artifact_paths["train_best_trade_log_path"] = str(train_best_receipt.trade_log_path)
+            candidate_artifact_paths["train_best_metrics_summary_path"] = str(train_best_receipt.metrics_summary_path)
+        if test_receipt is not None:
+            candidate_artifact_paths["test_selected_run_dir"] = str(test_receipt.run_dir)
+            candidate_artifact_paths["test_selected_equity_curve_path"] = str(test_receipt.equity_curve_path)
+            candidate_artifact_paths["test_selected_trade_log_path"] = str(test_receipt.trade_log_path)
+            candidate_artifact_paths["test_selected_metrics_summary_path"] = str(test_receipt.metrics_summary_path)
+
+    candidate_evidence = build_candidate_evidence_summary(
+        strategy_spec=selected_strategy_spec,
+        train_result=train_best_result,
+        test_result=test_result,
+        search_summary=search_execution.summary,
+        benchmark_summary=normalize_benchmark_summary(test_result.metadata.get("benchmark_summary")),
+        artifact_paths=candidate_artifact_paths,
+    )
     validation_result = ValidationResult(
         data_spec=data_spec,
         split_config=ValidationSplitConfig(split_ratio=split_ratio),
@@ -419,6 +451,7 @@ def _run_validate_search_on_market_data(
         train_best_result=train_best_result,
         test_result=test_result,
         test_benchmark_summary=normalize_benchmark_summary(test_result.metadata.get("benchmark_summary")),
+        candidate_evidence=candidate_evidence,
         metadata=_build_validation_metadata(train_data, test_data),
     )
     validation_artifact_receipt: ValidationArtifactReceipt | None = None
@@ -543,6 +576,31 @@ def _run_walk_forward_search_on_market_data(
             experiment_name="test_selected",
         )
         test_result = test_execution.result
+        fold_candidate_artifact_paths: dict[str, str] = {}
+        if fold_root is not None:
+            fold_candidate_artifact_paths["fold_root"] = str(fold_root)
+        if search_execution.artifact_receipt is not None:
+            if search_execution.artifact_receipt.search_root is not None:
+                fold_candidate_artifact_paths["train_search_root"] = str(search_execution.artifact_receipt.search_root)
+            if search_execution.artifact_receipt.ranked_results_path is not None:
+                fold_candidate_artifact_paths["train_search_ranked_results_path"] = str(search_execution.artifact_receipt.ranked_results_path)
+            if search_execution.artifact_receipt.best_report_path is not None:
+                fold_candidate_artifact_paths["train_search_best_report_path"] = str(search_execution.artifact_receipt.best_report_path)
+            if search_execution.artifact_receipt.comparison_report_path is not None:
+                fold_candidate_artifact_paths["train_search_comparison_report_path"] = str(search_execution.artifact_receipt.comparison_report_path)
+        if test_execution.artifact_receipt is not None:
+            fold_candidate_artifact_paths["test_selected_run_dir"] = str(test_execution.artifact_receipt.run_dir)
+            fold_candidate_artifact_paths["test_selected_equity_curve_path"] = str(test_execution.artifact_receipt.equity_curve_path)
+            fold_candidate_artifact_paths["test_selected_trade_log_path"] = str(test_execution.artifact_receipt.trade_log_path)
+            fold_candidate_artifact_paths["test_selected_metrics_summary_path"] = str(test_execution.artifact_receipt.metrics_summary_path)
+        fold_candidate_evidence = build_candidate_evidence_summary(
+            strategy_spec=selected_strategy_spec,
+            train_result=best_ranked_result,
+            test_result=test_result,
+            search_summary=search_execution.summary,
+            benchmark_summary=normalize_benchmark_summary(test_result.metadata.get("benchmark_summary")),
+            artifact_paths=fold_candidate_artifact_paths,
+        )
         fold_results.append(
             WalkForwardFoldResult(
                 fold_index=fold_index,
@@ -554,8 +612,16 @@ def _run_walk_forward_search_on_market_data(
                 train_best_result=best_ranked_result,
                 test_result=test_result,
                 test_benchmark_summary=normalize_benchmark_summary(test_result.metadata.get("benchmark_summary")),
+                candidate_evidence=fold_candidate_evidence,
             )
         )
+
+    walk_forward_evidence_paths: dict[str, str] = {}
+    if walk_forward_root is not None:
+        walk_forward_evidence_paths["walk_forward_summary_path"] = str(walk_forward_root / WALK_FORWARD_SUMMARY_FILENAME)
+        walk_forward_evidence_paths["fold_results_path"] = str(walk_forward_root / FOLD_RESULTS_FILENAME)
+    aggregate_test_metrics = aggregate_walk_forward_test_metrics(fold_results)
+    aggregate_benchmark_metrics = aggregate_walk_forward_benchmark_metrics(fold_results)
 
     result = WalkForwardResult(
         data_spec=data_spec,
@@ -565,8 +631,16 @@ def _run_walk_forward_search_on_market_data(
             step_size=step_size,
         ),
         folds=fold_results,
-        aggregate_test_metrics=aggregate_walk_forward_test_metrics(fold_results),
-        aggregate_benchmark_metrics=aggregate_walk_forward_benchmark_metrics(fold_results),
+        aggregate_test_metrics=aggregate_test_metrics,
+        aggregate_benchmark_metrics=aggregate_benchmark_metrics,
+        walk_forward_evidence=build_walk_forward_evidence_summary(
+            fold_count=len(fold_results),
+            validated_fold_count=len(fold_results),
+            skipped_fold_count=0,
+            aggregate_test_metrics=aggregate_test_metrics,
+            aggregate_benchmark_metrics=aggregate_benchmark_metrics,
+            artifact_paths=walk_forward_evidence_paths,
+        ),
         metadata={"fold_count": len(fold_results)},
     )
     walk_forward_artifact_receipt: WalkForwardArtifactReceipt | None = None

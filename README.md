@@ -137,11 +137,13 @@ Search output now returns a compact summary payload with:
 
 Validation output now surfaces:
 
+- `candidate_evidence`
 - `validation_summary_path`
 - `train_ranked_results_path`
 
 Walk-forward output now surfaces:
 
+- `walk_forward_evidence`
 - `walk_forward_summary_path`
 - `fold_results_path`
 

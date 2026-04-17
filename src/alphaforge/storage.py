@@ -15,6 +15,7 @@ from typing import Any
 import pandas as pd
 
 from .schemas import (
+    CandidateEvidenceSummary,
     EquityCurveFrame,
     BacktestConfig,
     DataSpec,
@@ -22,6 +23,7 @@ from .schemas import (
     MetricReport,
     StrategySpec,
     ValidationResult,
+    WalkForwardEvidenceSummary,
     WalkForwardFoldResult,
     WalkForwardResult,
 )
@@ -163,6 +165,26 @@ def serialize_experiment_result(result: ExperimentResult) -> dict[str, Any]:
     }
 
 
+def serialize_candidate_evidence_summary(summary: CandidateEvidenceSummary | None) -> dict[str, Any] | None:
+    if summary is None:
+        return None
+    return {
+        "strategy_name": summary.strategy_name,
+        "strategy_parameters": summary.strategy_parameters,
+        "verdict": summary.verdict,
+        "search_rank": summary.search_rank,
+        "search_result_count": summary.search_result_count,
+        "search_ranking_score": summary.search_ranking_score,
+        "search_score": summary.search_score,
+        "train_metrics": serialize_metric_report(summary.train_metrics) if summary.train_metrics is not None else None,
+        "test_metrics": serialize_metric_report(summary.test_metrics) if summary.test_metrics is not None else None,
+        "benchmark_relative_summary": summary.benchmark_relative_summary,
+        "degradation_summary": summary.degradation_summary,
+        "artifact_paths": summary.artifact_paths,
+        "metadata": summary.metadata,
+    }
+
+
 def serialize_artifact_receipt(receipt: ArtifactReceipt | None) -> dict[str, Any] | None:
     """Serialize storage-owned artifact references and optional report refs."""
     if receipt is None:
@@ -185,6 +207,7 @@ def serialize_validation_result(result: ValidationResult) -> dict[str, Any]:
         "train_best_result": serialize_experiment_result(result.train_best_result),
         "test_result": serialize_experiment_result(result.test_result),
         "test_benchmark_summary": result.test_benchmark_summary,
+        "candidate_evidence": serialize_candidate_evidence_summary(result.candidate_evidence),
         "metadata": result.metadata,
     }
 
@@ -209,6 +232,22 @@ def serialize_walk_forward_fold_result(fold: WalkForwardFoldResult) -> dict[str,
         "train_best_result": serialize_experiment_result(fold.train_best_result),
         "test_result": serialize_experiment_result(fold.test_result),
         "test_benchmark_summary": fold.test_benchmark_summary,
+        "candidate_evidence": serialize_candidate_evidence_summary(fold.candidate_evidence),
+    }
+
+
+def serialize_walk_forward_evidence_summary(summary: WalkForwardEvidenceSummary | None) -> dict[str, Any] | None:
+    if summary is None:
+        return None
+    return {
+        "verdict": summary.verdict,
+        "fold_count": summary.fold_count,
+        "validated_fold_count": summary.validated_fold_count,
+        "skipped_fold_count": summary.skipped_fold_count,
+        "aggregate_test_metrics": summary.aggregate_test_metrics,
+        "aggregate_benchmark_metrics": summary.aggregate_benchmark_metrics,
+        "artifact_paths": summary.artifact_paths,
+        "metadata": summary.metadata,
     }
 
 
@@ -219,6 +258,7 @@ def serialize_walk_forward_result(result: WalkForwardResult) -> dict[str, Any]:
         "folds": [serialize_walk_forward_fold_result(fold) for fold in result.folds],
         "aggregate_test_metrics": result.aggregate_test_metrics,
         "aggregate_benchmark_metrics": result.aggregate_benchmark_metrics,
+        "walk_forward_evidence": serialize_walk_forward_evidence_summary(result.walk_forward_evidence),
         "metadata": result.metadata,
     }
 

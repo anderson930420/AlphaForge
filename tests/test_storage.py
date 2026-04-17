@@ -5,11 +5,13 @@ from pathlib import Path
 
 import pandas as pd
 
+from alphaforge.evidence import build_candidate_evidence_summary, build_walk_forward_evidence_summary
 from alphaforge.schemas import (
     BacktestConfig,
     DataSpec,
     ExperimentResult,
     MetricReport,
+    SearchSummary,
     StrategySpec,
     ValidationResult,
     ValidationSplitConfig,
@@ -93,6 +95,20 @@ def _make_trade_log() -> pd.DataFrame:
     )
 
 
+def _make_search_summary(result: ExperimentResult, result_count: int = 1) -> SearchSummary:
+    return SearchSummary(
+        strategy_name=result.strategy_spec.name,
+        search_parameter_names=list(result.strategy_spec.parameters),
+        attempted_combinations=result_count,
+        valid_combinations=result_count,
+        invalid_combinations=0,
+        result_count=result_count,
+        ranking_score="score",
+        best_result=result,
+        top_results=[result],
+    )
+
+
 def test_save_single_experiment_writes_canonical_persisted_files_and_receipt_refs(tmp_path: Path) -> None:
     result = _make_result(short_window=2, long_window=4)
     equity_curve = _make_equity_curve()
@@ -161,6 +177,7 @@ def test_save_validation_result_writes_summary_and_train_ranked_reference(tmp_pa
     validation_root = tmp_path / "validation_case"
     train_best_result = _make_result(short_window=2, long_window=4, score=0.9)
     test_result = _make_result(short_window=2, long_window=4, score=0.4)
+    search_summary = _make_search_summary(train_best_result)
     train_ranked_results_path = save_ranked_results_artifact(
         output_dir=validation_root,
         results=[train_best_result],
@@ -174,6 +191,17 @@ def test_save_validation_result_writes_summary_and_train_ranked_reference(tmp_pa
         train_best_result=train_best_result,
         test_result=test_result,
         test_benchmark_summary={"total_return": 0.1, "max_drawdown": -0.05},
+        candidate_evidence=build_candidate_evidence_summary(
+            strategy_spec=train_best_result.strategy_spec,
+            train_result=train_best_result,
+            test_result=test_result,
+            search_summary=search_summary,
+            benchmark_summary={"total_return": 0.1, "max_drawdown": -0.05},
+            artifact_paths={
+                "validation_summary_path": str(validation_root / VALIDATION_SUMMARY_FILENAME),
+                "train_ranked_results_path": str(train_ranked_results_path),
+            },
+        ),
         metadata={"train_rows": 4, "test_rows": 4},
     )
 
@@ -192,6 +220,9 @@ def test_save_validation_result_writes_summary_and_train_ranked_reference(tmp_pa
         assert (validation_root / filename).exists()
     assert summary_payload["train_ranked_results_path"] == str(train_ranked_results_path)
     assert summary_payload["validation_summary_path"] == str(summary_path)
+    assert summary_payload["candidate_evidence"]["verdict"] == "validated"
+    assert summary_payload["candidate_evidence"]["search_rank"] == 1
+    assert summary_payload["candidate_evidence"]["artifact_paths"]["validation_summary_path"] == str(summary_path)
     assert "train_ranked_results_path" not in serialized_validation
     assert serialized_receipt["train_ranked_results_path"] == str(train_ranked_results_path)
     assert serialized_receipt["validation_summary_path"] == str(summary_path)
@@ -201,6 +232,7 @@ def test_save_walk_forward_result_writes_summary_and_fold_results_contract(tmp_p
     walk_forward_root = tmp_path / "walk_forward_case"
     train_best_result = _make_result(short_window=2, long_window=4, score=0.9)
     test_result = _make_result(short_window=2, long_window=4, score=0.4)
+    search_summary = _make_search_summary(train_best_result, result_count=2)
     fold_result = WalkForwardFoldResult(
         fold_index=1,
         train_start="2024-01-01",
@@ -211,6 +243,18 @@ def test_save_walk_forward_result_writes_summary_and_fold_results_contract(tmp_p
         train_best_result=train_best_result,
         test_result=test_result,
         test_benchmark_summary={"total_return": 0.1, "max_drawdown": -0.05},
+        candidate_evidence=build_candidate_evidence_summary(
+            strategy_spec=train_best_result.strategy_spec,
+            train_result=train_best_result,
+            test_result=test_result,
+            search_summary=search_summary,
+            benchmark_summary={"total_return": 0.1, "max_drawdown": -0.05},
+            artifact_paths={
+                "fold_root": str(walk_forward_root / "folds" / "fold_001"),
+                "train_search_root": str(walk_forward_root / "folds" / "fold_001" / "train_search"),
+                "test_selected_run_dir": str(walk_forward_root / "folds" / "fold_001" / "test_selected"),
+            },
+        ),
     )
     walk_forward_result = WalkForwardResult(
         data_spec=DataSpec(path=Path("sample_data/example.csv"), symbol="2330"),
@@ -218,6 +262,17 @@ def test_save_walk_forward_result_writes_summary_and_fold_results_contract(tmp_p
         folds=[fold_result],
         aggregate_test_metrics={"fold_count": 1},
         aggregate_benchmark_metrics={"fold_count": 1, "mean_benchmark_total_return": 0.1},
+        walk_forward_evidence=build_walk_forward_evidence_summary(
+            fold_count=1,
+            validated_fold_count=1,
+            skipped_fold_count=0,
+            aggregate_test_metrics={"fold_count": 1},
+            aggregate_benchmark_metrics={"fold_count": 1, "mean_benchmark_total_return": 0.1},
+            artifact_paths={
+                "walk_forward_summary_path": str(walk_forward_root / WALK_FORWARD_SUMMARY_FILENAME),
+                "fold_results_path": str(walk_forward_root / FOLD_RESULTS_FILENAME),
+            },
+        ),
         metadata={"fold_count": 1},
     )
 
@@ -235,6 +290,9 @@ def test_save_walk_forward_result_writes_summary_and_fold_results_contract(tmp_p
     summary_payload = json.loads(summary_path.read_text(encoding="utf-8"))
     assert summary_payload["walk_forward_summary_path"] == str(summary_path)
     assert summary_payload["fold_results_path"] == str(fold_results_path)
+    assert summary_payload["walk_forward_evidence"]["verdict"] == "validated"
+    assert summary_payload["walk_forward_evidence"]["fold_count"] == 1
+    assert summary_payload["folds"][0]["candidate_evidence"]["verdict"] == "validated"
     assert fold_results_frame.loc[0, WALK_FORWARD_FOLD_PATH_COLUMN] == str(walk_forward_root / "folds" / "fold_001")
     assert "walk_forward_summary_path" not in serialized_walk_forward
     assert serialized_receipt["walk_forward_summary_path"] == str(summary_path)

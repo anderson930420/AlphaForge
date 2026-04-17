@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import pandas as pd
 
@@ -74,6 +74,9 @@ class ExperimentResult:
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
+CandidateVerdict = Literal["candidate", "validated", "rejected", "inconclusive"]
+
+
 @dataclass(frozen=True)
 class SearchSummary:
     strategy_name: str
@@ -85,6 +88,35 @@ class SearchSummary:
     ranking_score: str
     best_result: ExperimentResult | None = None
     top_results: list[ExperimentResult] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class CandidateEvidenceSummary:
+    strategy_name: str
+    strategy_parameters: dict[str, Any]
+    verdict: CandidateVerdict
+    search_rank: int | None = None
+    search_result_count: int | None = None
+    search_ranking_score: str | None = None
+    search_score: float | None = None
+    train_metrics: MetricReport | None = None
+    test_metrics: MetricReport | None = None
+    benchmark_relative_summary: dict[str, float] = field(default_factory=dict)
+    degradation_summary: dict[str, float] = field(default_factory=dict)
+    artifact_paths: dict[str, str] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class WalkForwardEvidenceSummary:
+    verdict: CandidateVerdict
+    fold_count: int
+    validated_fold_count: int
+    skipped_fold_count: int
+    aggregate_test_metrics: dict[str, float | int] = field(default_factory=dict)
+    aggregate_benchmark_metrics: dict[str, float | int] = field(default_factory=dict)
+    artifact_paths: dict[str, str] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -100,6 +132,7 @@ class ValidationResult:
     train_best_result: ExperimentResult
     test_result: ExperimentResult
     test_benchmark_summary: dict[str, float] = field(default_factory=dict)
+    candidate_evidence: CandidateEvidenceSummary | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
@@ -121,6 +154,7 @@ class WalkForwardFoldResult:
     train_best_result: ExperimentResult
     test_result: ExperimentResult
     test_benchmark_summary: dict[str, float] = field(default_factory=dict)
+    candidate_evidence: CandidateEvidenceSummary | None = None
 
 
 @dataclass(frozen=True)
@@ -130,4 +164,5 @@ class WalkForwardResult:
     folds: list[WalkForwardFoldResult]
     aggregate_test_metrics: dict[str, float | int]
     aggregate_benchmark_metrics: dict[str, float | int] = field(default_factory=dict)
+    walk_forward_evidence: WalkForwardEvidenceSummary | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
