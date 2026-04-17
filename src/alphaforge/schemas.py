@@ -75,6 +75,19 @@ class ExperimentResult:
 
 
 @dataclass(frozen=True)
+class SearchSummary:
+    strategy_name: str
+    search_parameter_names: list[str]
+    attempted_combinations: int
+    valid_combinations: int
+    invalid_combinations: int
+    result_count: int
+    ranking_score: str
+    best_result: ExperimentResult | None = None
+    top_results: list[ExperimentResult] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
 class ValidationSplitConfig:
     split_ratio: float
 

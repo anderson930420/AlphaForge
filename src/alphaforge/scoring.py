@@ -4,6 +4,8 @@ from collections.abc import Iterable
 
 from .schemas import ExperimentResult, MetricReport
 
+RANKING_SCORE_FIELD = "score"
+
 
 def passes_thresholds(
     metrics: MetricReport,
@@ -39,7 +41,21 @@ def rank_results(
         for result in results
         if passes_thresholds(result.metrics, max_drawdown_cap=max_drawdown_cap, min_trade_count=min_trade_count)
     ]
-    return sorted(filtered, key=lambda item: item.score, reverse=True)
+    return sorted(filtered, key=_result_ranking_key)
+
+
+def select_top_results(
+    results: Iterable[ExperimentResult],
+    limit: int,
+    max_drawdown_cap: float | None = None,
+    min_trade_count: int | None = None,
+) -> list[ExperimentResult]:
+    ranked = rank_results(
+        results,
+        max_drawdown_cap=max_drawdown_cap,
+        min_trade_count=min_trade_count,
+    )
+    return ranked[: max(limit, 0)]
 
 
 def select_best_result(
@@ -47,9 +63,18 @@ def select_best_result(
     max_drawdown_cap: float | None = None,
     min_trade_count: int | None = None,
 ) -> ExperimentResult | None:
-    ranked = rank_results(
+    top_results = select_top_results(
         results,
+        limit=1,
         max_drawdown_cap=max_drawdown_cap,
         min_trade_count=min_trade_count,
     )
-    return ranked[0] if ranked else None
+    return top_results[0] if top_results else None
+
+
+def _result_ranking_key(result: ExperimentResult) -> tuple[float, str, tuple[tuple[str, Any], ...]]:
+    return (
+        -result.score,
+        result.strategy_spec.name,
+        tuple(sorted(result.strategy_spec.parameters.items())),
+    )

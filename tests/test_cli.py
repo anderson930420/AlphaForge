@@ -12,7 +12,21 @@ from alphaforge.cli import main
 from alphaforge.experiment_runner import ExperimentExecutionOutput, SearchExecutionOutput
 from alphaforge.report import ExperimentReportInput
 from alphaforge.storage import ArtifactReceipt, SearchArtifactReceipt
-from alphaforge.schemas import BacktestConfig, DataSpec, ExperimentResult, MetricReport, StrategySpec
+from alphaforge.schemas import BacktestConfig, DataSpec, ExperimentResult, MetricReport, SearchSummary, StrategySpec
+
+
+def _make_search_summary(results: list[ExperimentResult], attempted: int | None = None, invalid: int = 0) -> SearchSummary:
+    return SearchSummary(
+        strategy_name="ma_crossover",
+        search_parameter_names=["short_window", "long_window"],
+        attempted_combinations=attempted if attempted is not None else len(results) + invalid,
+        valid_combinations=len(results),
+        invalid_combinations=invalid,
+        result_count=len(results),
+        ranking_score="score",
+        best_result=results[0] if results else None,
+        top_results=results[:3],
+    )
 
 
 def test_cli_search_exits_with_clear_error_on_invalid_grid(
@@ -131,7 +145,13 @@ def test_cli_search_prints_summary_payload(
     main()
     payload = json.loads(capsys.readouterr().out)
 
+    assert payload["strategy_name"] == "ma_crossover"
+    assert payload["search_parameter_names"] == ["short_window", "long_window"]
+    assert payload["attempted_combinations"] == 1
+    assert payload["valid_combinations"] == 1
+    assert payload["invalid_combinations"] == 0
     assert payload["result_count"] == 1
+    assert payload["ranking_score"] == "score"
     assert payload["best_result"] is not None
     assert Path(payload["ranked_results_path"]).name == "ranked_results.csv"
     assert Path(payload["ranked_results_path"]).parent.name == "summary_case"
@@ -345,6 +365,7 @@ def test_cli_twse_search_fetches_saves_and_runs_search(
         "alphaforge.cli.run_search_with_details",
         return_value=SearchExecutionOutput(
             ranked_results=[sample_result],
+            summary=_make_search_summary([sample_result]),
             artifact_receipt=SearchArtifactReceipt(
                 search_root=tmp_path / "twse_summary_case",
                 ranked_results_path=tmp_path / "twse_summary_case" / "ranked_results.csv",
@@ -406,6 +427,7 @@ def test_cli_search_generates_only_best_report_when_requested(
         "alphaforge.cli.run_search_with_details",
         return_value=SearchExecutionOutput(
             ranked_results=[sample_result],
+            summary=_make_search_summary([sample_result]),
             artifact_receipt=SearchArtifactReceipt(
                 search_root=tmp_path / "search_report_case",
                 ranked_results_path=tmp_path / "search_report_case" / "ranked_results.csv",
@@ -454,6 +476,7 @@ def test_cli_search_with_empty_ranked_results_still_returns_search_report_path(
         "alphaforge.cli.run_search_with_details",
         return_value=SearchExecutionOutput(
             ranked_results=[],
+            summary=_make_search_summary([]),
             artifact_receipt=SearchArtifactReceipt(
                 search_root=tmp_path / "empty_search_case",
                 comparison_report_path=tmp_path / "empty_search_case" / "search_report.html",
@@ -513,6 +536,7 @@ def test_cli_search_omits_missing_artifact_paths_instead_of_guessing(
         "alphaforge.cli.run_search_with_details",
         return_value=SearchExecutionOutput(
             ranked_results=[sample_result],
+            summary=_make_search_summary([sample_result]),
             artifact_receipt=SearchArtifactReceipt(
                 search_root=tmp_path / "partial_search_case",
                 ranked_results_path=tmp_path / "partial_search_case" / "ranked_results.csv",

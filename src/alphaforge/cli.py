@@ -13,7 +13,7 @@ from .experiment_runner import (
     run_walk_forward_search_with_details,
 )
 from .report import render_experiment_report, save_experiment_report
-from .schemas import BacktestConfig, DataSpec, StrategySpec
+from .schemas import BacktestConfig, DataSpec, SearchSummary, StrategySpec
 from .storage import (
     ensure_output_dir,
     serialize_artifact_receipt,
@@ -262,15 +262,7 @@ def _build_search_summary(
     search_execution,
     data_output: Path | None = None,
 ) -> dict:
-    ranked = search_execution.ranked_results
-    payload = {
-        "result_count": len(ranked),
-        "top_results": [serialize_experiment_result(result) for result in ranked[:3]],
-    }
-    if ranked:
-        payload["best_result"] = serialize_experiment_result(ranked[0])
-    else:
-        payload["best_result"] = None
+    payload = _serialize_search_summary(search_execution.summary)
     if data_output is not None:
         payload["data_output"] = str(data_output)
     receipt = search_execution.artifact_receipt
@@ -282,6 +274,20 @@ def _build_search_summary(
         if receipt.comparison_report_path is not None:
             payload["search_report_path"] = str(receipt.comparison_report_path)
     return payload
+
+
+def _serialize_search_summary(summary: SearchSummary) -> dict:
+    return {
+        "strategy_name": summary.strategy_name,
+        "search_parameter_names": summary.search_parameter_names,
+        "attempted_combinations": summary.attempted_combinations,
+        "valid_combinations": summary.valid_combinations,
+        "invalid_combinations": summary.invalid_combinations,
+        "result_count": summary.result_count,
+        "ranking_score": summary.ranking_score,
+        "best_result": serialize_experiment_result(summary.best_result) if summary.best_result is not None else None,
+        "top_results": [serialize_experiment_result(result) for result in summary.top_results],
+    }
 
 
 if __name__ == "__main__":

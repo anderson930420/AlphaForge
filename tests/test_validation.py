@@ -19,13 +19,27 @@ from alphaforge.experiment_runner import (
     run_walk_forward_search_with_details,
 )
 from alphaforge.report import ExperimentReportInput
-from alphaforge.schemas import BacktestConfig, DataSpec, ExperimentResult, MetricReport, StrategySpec
+from alphaforge.schemas import BacktestConfig, DataSpec, ExperimentResult, MetricReport, SearchSummary, StrategySpec
 from alphaforge.storage import (
     ValidationArtifactReceipt,
     WalkForwardArtifactReceipt,
     serialize_walk_forward_artifact_receipt,
     serialize_walk_forward_result,
 )
+
+
+def _make_search_summary(results: list[ExperimentResult]) -> SearchSummary:
+    return SearchSummary(
+        strategy_name="ma_crossover",
+        search_parameter_names=["short_window", "long_window"],
+        attempted_combinations=len(results),
+        valid_combinations=len(results),
+        invalid_combinations=0,
+        result_count=len(results),
+        ranking_score="score",
+        best_result=results[0] if results else None,
+        top_results=results[:3],
+    )
 
 
 def test_run_validate_search_splits_data_chronologically_and_saves_outputs(sample_market_csv: Path, tmp_path: Path) -> None:
@@ -103,7 +117,7 @@ def test_run_validate_search_uses_train_only_for_search_and_selected_params_for_
 
     with patch("alphaforge.experiment_runner.load_market_data", return_value=pd.concat([train_data, test_data], ignore_index=True)), patch(
         "alphaforge.experiment_runner._run_search_on_market_data",
-        return_value=SearchExecutionOutput(ranked_results=[train_best]),
+        return_value=SearchExecutionOutput(ranked_results=[train_best], summary=_make_search_summary([train_best])),
     ) as run_search_mock, patch(
         "alphaforge.experiment_runner._run_experiment_on_market_data",
         return_value=ExperimentExecutionOutput(
@@ -294,9 +308,9 @@ def test_run_walk_forward_search_uses_train_fold_for_search_and_next_window_for_
     with patch("alphaforge.experiment_runner.load_market_data", return_value=market_data), patch(
         "alphaforge.experiment_runner._run_search_on_market_data",
         side_effect=[
-            SearchExecutionOutput(ranked_results=[train_best_fold_1]),
-            SearchExecutionOutput(ranked_results=[train_best_fold_2]),
-            SearchExecutionOutput(ranked_results=[train_best_fold_2]),
+            SearchExecutionOutput(ranked_results=[train_best_fold_1], summary=_make_search_summary([train_best_fold_1])),
+            SearchExecutionOutput(ranked_results=[train_best_fold_2], summary=_make_search_summary([train_best_fold_2])),
+            SearchExecutionOutput(ranked_results=[train_best_fold_2], summary=_make_search_summary([train_best_fold_2])),
         ],
     ) as run_search_mock, patch(
         "alphaforge.experiment_runner._run_experiment_on_market_data",

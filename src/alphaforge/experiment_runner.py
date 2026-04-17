@@ -11,13 +11,14 @@ from .benchmark import build_buy_and_hold_equity_curve, normalize_benchmark_summ
 from .data_loader import load_market_data
 from .metrics import compute_metrics
 from .report import ExperimentReportInput, build_experiment_report_input
-from .scoring import rank_results, score_metrics, select_best_result
+from .scoring import RANKING_SCORE_FIELD, rank_results, score_metrics, select_best_result, select_top_results
 from .search_reporting import save_best_search_report, save_search_comparison_report
 from .schemas import (
     BacktestConfig,
     DataSpec,
     EquityCurveFrame,
     ExperimentResult,
+    SearchSummary,
     StrategySpec,
     ValidationResult,
     ValidationSplitConfig,
@@ -25,7 +26,7 @@ from .schemas import (
     WalkForwardFoldResult,
     WalkForwardResult,
 )
-from .search import build_strategy_specs
+from .search import SearchSpaceEvaluation, evaluate_strategy_search_space
 from .storage import (
     ArtifactReceipt,
     SearchArtifactReceipt,
@@ -61,6 +62,7 @@ class SearchExecutionOutput:
     """Runner-local protocol receipt for ranked search plus saved artifact refs."""
 
     ranked_results: list[ExperimentResult]
+    summary: SearchSummary
     artifact_receipt: SearchArtifactReceipt | None = None
 
 
@@ -249,7 +251,8 @@ def _run_search_on_market_data(
     ranked_results_path: Path | None = None
     best_report_path: Path | None = None
     comparison_report_path: Path | None = None
-    strategy_specs = build_strategy_specs("ma_crossover", parameter_grid)
+    search_space = evaluate_strategy_search_space("ma_crossover", parameter_grid)
+    strategy_specs = list(search_space.strategy_specs)
     search_root = _workflow_root(output_dir, experiment_name)
     runs_output_dir = (search_root / "runs") if search_root is not None else None
     for index, strategy_spec in enumerate(strategy_specs, start=1):
@@ -270,15 +273,16 @@ def _run_search_on_market_data(
         max_drawdown_cap=max_drawdown_cap,
         min_trade_count=min_trade_count,
     )
+    summary = _build_search_summary(search_space, ranked)
     if output_dir is not None:
         parameter_columns = list(parameter_grid)
         ranked_results_path = save_ranked_results_with_columns(search_root, ranked, parameter_columns=parameter_columns)
         ranked_receipts = [artifact_receipts_by_result_id.get(id(result)) for result in ranked]
         if generate_best_report:
-            best_receipt = ranked_receipts[0] if ranked_receipts else None
+            best_receipt = artifact_receipts_by_result_id.get(id(summary.best_result)) if summary.best_result is not None else None
             best_report_path = (
-                save_best_search_report(search_root=search_root, best_result=ranked[0], artifact_receipt=best_receipt)
-                if ranked
+                save_best_search_report(search_root=search_root, best_result=summary.best_result, artifact_receipt=best_receipt)
+                if summary.best_result is not None
                 else None
             )
             comparison_report_path = save_search_comparison_report(
@@ -297,7 +301,24 @@ def _run_search_on_market_data(
         )
     return SearchExecutionOutput(
         ranked_results=ranked,
+        summary=summary,
         artifact_receipt=search_artifact_receipt,
+    )
+
+
+def _build_search_summary(search_space: SearchSpaceEvaluation, ranked_results: list[ExperimentResult], top_n: int = 3) -> SearchSummary:
+    top_results = select_top_results(ranked_results, limit=top_n)
+    best_result = top_results[0] if top_results else None
+    return SearchSummary(
+        strategy_name=search_space.strategy_name,
+        search_parameter_names=list(search_space.parameter_names),
+        attempted_combinations=search_space.attempted_combination_count,
+        valid_combinations=search_space.valid_combination_count,
+        invalid_combinations=search_space.invalid_combination_count,
+        result_count=len(ranked_results),
+        ranking_score=RANKING_SCORE_FIELD,
+        best_result=best_result,
+        top_results=top_results,
     )
 
 

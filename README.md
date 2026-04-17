@@ -122,7 +122,13 @@ Run a walk-forward validation search from a CSV:
 
 Search output now returns a compact summary payload with:
 
+- `strategy_name`
+- `search_parameter_names`
+- `attempted_combinations`
+- `valid_combinations`
+- `invalid_combinations`
 - `result_count`
+- `ranking_score`
 - `best_result`
 - `top_results`
 - `ranked_results_path`

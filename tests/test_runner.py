@@ -138,9 +138,42 @@ def test_run_search_with_details_returns_explicit_artifact_paths(sample_market_c
     assert search_execution.artifact_receipt.ranked_results_path == tmp_path / "search_details_case" / "ranked_results.csv"
     assert search_execution.artifact_receipt.best_report_path == tmp_path / "search_details_case" / "best_report.html"
     assert search_execution.artifact_receipt.comparison_report_path == tmp_path / "search_details_case" / "search_report.html"
+    assert search_execution.summary.strategy_name == "ma_crossover"
+    assert search_execution.summary.search_parameter_names == ["short_window", "long_window"]
+    assert search_execution.summary.attempted_combinations == 2
+    assert search_execution.summary.valid_combinations == 2
+    assert search_execution.summary.invalid_combinations == 0
+    assert search_execution.summary.result_count == 2
+    assert search_execution.summary.best_result == search_execution.ranked_results[0]
+    assert search_execution.summary.top_results == search_execution.ranked_results[:2]
     assert not hasattr(search_execution, "ranked_results_path")
     assert not hasattr(search_execution, "best_report_path")
     assert not hasattr(search_execution, "comparison_report_path")
+
+
+def test_run_search_summary_counts_invalid_combinations_and_top_results_prefix(
+    sample_market_csv: Path,
+    tmp_path: Path,
+) -> None:
+    search_execution = run_search_with_details(
+        data_spec=DataSpec(path=sample_market_csv, symbol="TEST"),
+        parameter_grid={"short_window": [2, 4], "long_window": [3, 4, 5]},
+        backtest_config=BacktestConfig(
+            initial_capital=1000,
+            fee_rate=0.0,
+            slippage_rate=0.0,
+            annualization_factor=252,
+        ),
+        output_dir=tmp_path,
+        experiment_name="search_summary_case",
+    )
+
+    assert search_execution.summary.attempted_combinations == 6
+    assert search_execution.summary.valid_combinations == 4
+    assert search_execution.summary.invalid_combinations == 2
+    assert search_execution.summary.result_count == len(search_execution.ranked_results)
+    assert search_execution.summary.best_result == search_execution.ranked_results[0]
+    assert search_execution.summary.top_results == search_execution.ranked_results[:3]
 
 
 def test_run_search_saves_empty_ranked_results_with_headers(sample_market_csv: Path, tmp_path: Path) -> None:
