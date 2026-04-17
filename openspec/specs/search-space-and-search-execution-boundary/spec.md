@@ -1,7 +1,7 @@
 # search-space-and-search-execution-boundary Specification
 
 ## Purpose
-TBD - created by archiving change formalize-search-space-and-search-execution-boundary. Update Purpose after archive.
+Define the canonical MA search-space contract, including parameter enumeration, invalid-combination filtering, ranking handoff, and stable search-summary semantics.
 ## Requirements
 ### Requirement: `search.py` is the canonical owner of search-space generation and candidate construction
 
@@ -432,4 +432,3 @@ Executed search outputs in AlphaForge SHALL be treated as downstream business fa
 - WHEN storage, reporting, or CLI surfaces them
 - THEN those layers SHALL display or persist the results only
 - AND they SHALL NOT replace the search or ranking owners’ business semantics
-

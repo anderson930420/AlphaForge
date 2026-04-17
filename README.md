@@ -20,6 +20,7 @@ The current MVP supports:
 - Running everything from a CLI
 - Running a simple train/test validation workflow for parameter search
 - Running a first-pass walk-forward validation workflow for parameter search
+- Running a seed-controlled permutation/null-comparison diagnostic for a fixed MA candidate
 - Comparing strategy results against a buy-and-hold baseline in reports and validation summaries
 
 Deferred capabilities such as paper parsing, formula extraction, genetic algorithms, broker integration, live trading, and web UI remain intentionally out of scope.
@@ -120,6 +121,12 @@ Run a walk-forward validation search from a CSV:
 .venv\Scripts\python.exe -m alphaforge.cli walk-forward --data .\sample_data\sample_ohlcv.csv --symbol SAMPLE --short-windows 2 5 10 --long-windows 20 40 60 --train-size 120 --test-size 20 --step-size 20 --experiment-name sample_walk_forward
 ```
 
+Run a permutation/null-comparison diagnostic for a fixed MA candidate:
+
+```powershell
+.venv\Scripts\python.exe -m alphaforge.cli permutation-test --data .\sample_data\sample_ohlcv.csv --symbol SAMPLE --short-window 2 --long-window 4 --permutations 100 --seed 42 --experiment-name sample_permutation
+```
+
 Search output now returns a compact summary payload with:
 
 - `strategy_name`
@@ -138,14 +145,30 @@ Search output now returns a compact summary payload with:
 Validation output now surfaces:
 
 - `candidate_evidence`
+- `candidate_decision`
 - `validation_summary_path`
 - `train_ranked_results_path`
 
 Walk-forward output now surfaces:
 
 - `walk_forward_evidence`
+- `walk_forward_decision`
 - `walk_forward_summary_path`
 - `fold_results_path`
+
+Permutation diagnostic output now surfaces:
+
+- `strategy_name`
+- `strategy_parameters`
+- `target_metric_name`
+- `real_observed_score`
+- `permutation_scores`
+- `permutation_count`
+- `seed`
+- `null_ge_count`
+- `empirical_p_value`
+- `permutation_test_summary_path`
+- `permutation_scores_path`
 
 Report rendering now uses explicit presentation inputs:
 
@@ -215,7 +238,7 @@ outputs/<validation_name>/
     equity_curve.csv
 ```
 
-`validation_summary.json` includes the selected strategy test result plus a test-side `test_benchmark_summary` for buy-and-hold comparison.
+`validation_summary.json` includes the selected strategy test result, the explicit `candidate_decision`, and a test-side `test_benchmark_summary` for buy-and-hold comparison.
 
 Walk-forward outputs:
 
@@ -233,7 +256,17 @@ outputs/<walk_forward_name>/
     ...
 ```
 
-`walk_forward_summary.json` and `fold_results.csv` include buy-and-hold benchmark summaries for each test fold.
+`walk_forward_summary.json` and `fold_results.csv` include buy-and-hold benchmark summaries for each test fold, plus an explicit `walk_forward_decision` in the summary JSON.
+
+Permutation diagnostic outputs:
+
+```text
+outputs/<permutation_name>/
+  permutation_test_summary.json
+  permutation_scores.csv
+```
+
+`permutation_test_summary.json` records the real observed score, the permutation scores, and the empirical p-value for the fixed candidate.
 
 ## Verification
 

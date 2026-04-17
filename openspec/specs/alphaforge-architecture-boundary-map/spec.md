@@ -45,6 +45,7 @@ AlphaForge SHALL assign each business rule, execution semantic, schema, naming c
   - `src/alphaforge/metrics.py` is authoritative for performance analytics semantics.
   - `src/alphaforge/benchmark.py` is authoritative for benchmark semantics.
   - `src/alphaforge/search.py` is authoritative for search-space generation rules.
+  - `src/alphaforge/policy.py` is authoritative for post-search candidate promotion/rejection policy evaluation.
 - External adapter layer:
   - `src/alphaforge/twse_client.py` is authoritative for external TWSE payload normalization into AlphaForge market-data shape before the generic loader validates it.
 - Presentation layer:
@@ -68,6 +69,7 @@ AlphaForge SHALL assign each business rule, execution semantic, schema, naming c
 | Strategy interface contract | `src/alphaforge/strategy/base.py` | contract-only | `strategy/ma_crossover.py`, `experiment_runner.py` |
 | Execution semantics | `src/alphaforge/backtest.py` | implementation-authoritative | `metrics.py`, `report.py`, `storage.py`, `cli.py` |
 | Search-space generation | `src/alphaforge/search.py` | implementation-authoritative | `cli.py`, `experiment_runner.py` |
+| Post-search candidate promotion/rejection policy | `src/alphaforge/policy.py` | implementation-authoritative | `experiment_runner.py`, `storage.py`, `cli.py` |
 | Search execution | `src/alphaforge/experiment_runner.py` | orchestration-only | `cli.py` |
 | Validation protocol | `src/alphaforge/experiment_runner.py` | orchestration-only | `cli.py`, `storage.py` |
 | Walk-forward protocol | `src/alphaforge/experiment_runner.py` | orchestration-only | `cli.py`, `storage.py` |
@@ -99,6 +101,8 @@ AlphaForge SHALL assign each business rule, execution semantic, schema, naming c
 | `visualization.py` | presentation-only | chart building from already-computed data |
 | `report.py` | presentation-authoritative | HTML assembly, report section composition, figure embedding, rendered report persistence |
 | `search.py` | implementation-authoritative | parameter-grid expansion and strategy-spec generation |
+| `policy.py` | implementation-authoritative | post-search candidate promotion/rejection policy evaluation |
+| `permutation.py` | implementation-authoritative | fixed-candidate permutation/null-comparison diagnostic computation |
 | `experiment_runner.py` | orchestration-only | sequence runtime steps, call authoritative owners, assemble workflow-level result objects |
 | `storage.py` | persistence-authoritative | disk schema, filenames, directory paths, JSON/CSV export shape |
 | `cli.py` | orchestration-only | parse command requests, instantiate request contracts, dispatch workflows, print CLI payloads |
@@ -119,6 +123,8 @@ AlphaForge SHALL assign each business rule, execution semantic, schema, naming c
 - `visualization.py` must not compute authoritative metrics, mutate persisted artifacts, or decide report workflow ordering.
 - `report.py` must not compute authoritative backtest metrics, define benchmark semantics, own artifact directory layout, or choose search-space rules.
 - `search.py` must not run backtests, compute metrics, save artifacts, or decide validation or walk-forward scheduling.
+- `policy.py` must not run backtests, generate candidates, save artifacts, or define report/view-model semantics.
+- `permutation.py` must not generate candidates, decide promotion policy, or define report/view-model semantics.
 - `experiment_runner.py` must not redefine schemas already owned by `schemas.py` or `storage.py`, and must not embed business rules that belong to `backtest.py`, `metrics.py`, `benchmark.py`, `search.py`, or `data_loader.py`.
 - `storage.py` must not compute metrics, decide ranking, generate figures, or decide validation protocol semantics.
 - `cli.py` must not validate business rules beyond request-shape checks, and must not redefine workflow semantics that belong to `experiment_runner.py` or domain rules that belong elsewhere.
@@ -163,6 +169,7 @@ AlphaForge SHALL assign each business rule, execution semantic, schema, naming c
 - `metrics.py` depends on the equity-curve and trade-log semantics emitted by `backtest.py`.
 - `benchmark.py` depends on market-data close-price semantics but does not depend on backtest internals.
 - `search.py` depends on `StrategySpec` contract shape from `schemas.py`.
+- `policy.py` depends on evidence contracts from `schemas.py` and on workflow evidence assembled by `experiment_runner.py`.
 - `experiment_runner.py` depends on all authoritative domain owners and is downstream of them.
 - `storage.py` depends on in-memory result contracts from `schemas.py` and on runtime outputs from `backtest.py`, `metrics.py`, and `experiment_runner.py`.
 - `visualization.py` depends on report-facing frame shapes and trade-log data, but those inputs are derived from authoritative runtime and persistence owners.

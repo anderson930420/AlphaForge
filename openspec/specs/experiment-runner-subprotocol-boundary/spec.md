@@ -19,6 +19,7 @@ TBD - created by archiving change formalize-experiment-runner-subprotocol-bounda
 - The runner is authoritative for protocol sequencing, not for the business meaning of the data it passes through.
 - `src/alphaforge/search.py` remains authoritative for search-space generation.
 - `src/alphaforge.scoring.py` remains authoritative for ranking and best-candidate semantics.
+- `src/alphaforge/policy.py` remains authoritative for post-search candidate promotion/rejection policy evaluation.
 - `src/alphaforge.backtest.py` remains authoritative for execution semantics.
 - `src/alphaforge.storage.py` remains authoritative for artifact layout and persisted artifact refs.
 - `src/alphaforge.report.py` remains authoritative for report-view-model assembly and rendering semantics.
@@ -70,6 +71,7 @@ TBD - created by archiving change formalize-experiment-runner-subprotocol-bounda
 - `data_loader.py` supplies accepted market data.
 - `search.py` supplies candidates.
 - `scoring.py` supplies ranked results and best-candidate selection.
+- `policy.py` supplies candidate promotion/rejection decisions derived from validation and walk-forward evidence.
 - `backtest.py`, `metrics.py`, and `benchmark.py` supply executed domain facts.
 - `storage.py` supplies artifact refs and persisted summaries.
 - `report.py` supplies report inputs and rendered output behavior.
@@ -754,4 +756,3 @@ Runner outputs in AlphaForge SHALL be protocol aggregates or receipts over autho
 - WHEN the caller inspects its fields
 - THEN the caller SHALL treat the bundle as a protocol receipt over upstream owners
 - AND the caller SHALL NOT treat it as an alternate canonical contract for execution, ranking, storage, or reporting
-

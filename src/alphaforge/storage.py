@@ -8,7 +8,7 @@ artifacts and are not part of the canonical persisted experiment contract.
 """
 
 import json
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -16,11 +16,14 @@ import pandas as pd
 
 from .schemas import (
     CandidateEvidenceSummary,
+    CandidatePolicyDecision,
     EquityCurveFrame,
     BacktestConfig,
     DataSpec,
     ExperimentResult,
     MetricReport,
+    PermutationTestArtifactReceipt,
+    PermutationTestSummary,
     StrategySpec,
     ValidationResult,
     WalkForwardEvidenceSummary,
@@ -83,6 +86,8 @@ VALIDATION_SUMMARY_FILENAME = "validation_summary.json"
 WALK_FORWARD_SUMMARY_FILENAME = "walk_forward_summary.json"
 FOLD_RESULTS_FILENAME = "fold_results.csv"
 WALK_FORWARD_FOLD_PATH_COLUMN = "fold_path"
+PERMUTATION_TEST_SUMMARY_FILENAME = "permutation_test_summary.json"
+PERMUTATION_SCORES_FILENAME = "permutation_scores.csv"
 
 CANONICAL_SEARCH_FILENAMES = (RANKED_RESULTS_FILENAME,)
 CANONICAL_SEARCH_REPORT_FILENAMES = (BEST_REPORT_FILENAME, SEARCH_REPORT_FILENAME)
@@ -185,6 +190,17 @@ def serialize_candidate_evidence_summary(summary: CandidateEvidenceSummary | Non
     }
 
 
+def serialize_candidate_policy_decision(decision: CandidatePolicyDecision | None) -> dict[str, Any] | None:
+    if decision is None:
+        return None
+    return {
+        "policy_name": decision.policy_name,
+        "policy_scope": decision.policy_scope,
+        "verdict": decision.verdict,
+        "decision_reasons": list(decision.decision_reasons),
+    }
+
+
 def serialize_artifact_receipt(receipt: ArtifactReceipt | None) -> dict[str, Any] | None:
     """Serialize storage-owned artifact references and optional report refs."""
     if receipt is None:
@@ -208,6 +224,7 @@ def serialize_validation_result(result: ValidationResult) -> dict[str, Any]:
         "test_result": serialize_experiment_result(result.test_result),
         "test_benchmark_summary": result.test_benchmark_summary,
         "candidate_evidence": serialize_candidate_evidence_summary(result.candidate_evidence),
+        "candidate_decision": serialize_candidate_policy_decision(result.candidate_decision),
         "metadata": result.metadata,
     }
 
@@ -233,6 +250,7 @@ def serialize_walk_forward_fold_result(fold: WalkForwardFoldResult) -> dict[str,
         "test_result": serialize_experiment_result(fold.test_result),
         "test_benchmark_summary": fold.test_benchmark_summary,
         "candidate_evidence": serialize_candidate_evidence_summary(fold.candidate_evidence),
+        "candidate_decision": serialize_candidate_policy_decision(fold.candidate_decision),
     }
 
 
@@ -259,6 +277,7 @@ def serialize_walk_forward_result(result: WalkForwardResult) -> dict[str, Any]:
         "aggregate_test_metrics": result.aggregate_test_metrics,
         "aggregate_benchmark_metrics": result.aggregate_benchmark_metrics,
         "walk_forward_evidence": serialize_walk_forward_evidence_summary(result.walk_forward_evidence),
+        "walk_forward_decision": serialize_candidate_policy_decision(result.walk_forward_decision),
         "metadata": result.metadata,
     }
 
@@ -269,6 +288,37 @@ def serialize_walk_forward_artifact_receipt(receipt: WalkForwardArtifactReceipt 
     return {
         "walk_forward_summary_path": str(receipt.walk_forward_summary_path),
         "fold_results_path": str(receipt.fold_results_path),
+    }
+
+
+def serialize_permutation_test_summary(
+    summary: PermutationTestSummary | None,
+) -> dict[str, Any] | None:
+    if summary is None:
+        return None
+    return {
+        "strategy_name": summary.strategy_name,
+        "strategy_parameters": summary.strategy_parameters,
+        "target_metric_name": summary.target_metric_name,
+        "real_observed_score": summary.real_observed_score,
+        "permutation_scores": list(summary.permutation_scores),
+        "permutation_count": summary.permutation_count,
+        "seed": summary.seed,
+        "null_ge_count": summary.null_ge_count,
+        "empirical_p_value": summary.empirical_p_value,
+        "artifact_paths": summary.artifact_paths,
+        "metadata": summary.metadata,
+    }
+
+
+def serialize_permutation_test_artifact_receipt(
+    receipt: PermutationTestArtifactReceipt | None,
+) -> dict[str, Any] | None:
+    if receipt is None:
+        return None
+    return {
+        "permutation_test_summary_path": str(receipt.permutation_test_summary_path),
+        "permutation_scores_path": str(receipt.permutation_scores_path),
     }
 
 
@@ -443,6 +493,36 @@ def save_walk_forward_result(
     return walk_forward_result, receipt
 
 
+def save_permutation_test_result(
+    output_dir: Path,
+    summary: PermutationTestSummary,
+) -> tuple[PermutationTestSummary, PermutationTestArtifactReceipt]:
+    """Write the canonical persisted permutation-test summary and score list."""
+    ensure_output_dir(output_dir)
+    summary_path = output_dir / PERMUTATION_TEST_SUMMARY_FILENAME
+    scores_path = output_dir / PERMUTATION_SCORES_FILENAME
+    receipt = PermutationTestArtifactReceipt(
+        permutation_test_summary_path=summary_path,
+        permutation_scores_path=scores_path,
+    )
+    persisted_summary = replace(
+        summary,
+        artifact_paths={
+            **summary.artifact_paths,
+            **serialize_permutation_test_artifact_receipt(receipt),
+        },
+    )
+    _write_json(
+        summary_path,
+        {
+            **serialize_permutation_test_summary(persisted_summary),
+            **serialize_permutation_test_artifact_receipt(receipt),
+        },
+    )
+    _write_permutation_scores_csv(scores_path, persisted_summary)
+    return persisted_summary, receipt
+
+
 def _write_json(path: Path, payload: dict[str, Any]) -> None:
     path.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
 
@@ -475,6 +555,17 @@ def _write_walk_forward_fold_results_csv(path: Path, walk_forward_result: WalkFo
             }
         )
     pd.DataFrame(rows).to_csv(path, index=False)
+
+
+def _write_permutation_scores_csv(path: Path, summary: PermutationTestSummary) -> None:
+    rows = [
+        {
+            "permutation_index": index,
+            "score": score,
+        }
+        for index, score in enumerate(summary.permutation_scores, start=1)
+    ]
+    pd.DataFrame(rows, columns=["permutation_index", "score"]).to_csv(path, index=False)
 
 
 def _materialize_walk_forward_fold_dir(output_dir: Path, fold_index: int) -> Path:

@@ -1,7 +1,7 @@
 # cli-request-assembly-boundary Specification
 
 ## Purpose
-TBD - created by archiving change formalize-cli-request-assembly-boundary. Update Purpose after archive.
+Define the canonical CLI request-assembly and dispatch boundary, including command parsing, workflow selection, and presentation-only payload formatting.
 ## Requirements
 ### Requirement: `cli.py` is the canonical owner of CLI request assembly and workflow dispatch
 
@@ -22,6 +22,7 @@ TBD - created by archiving change formalize-cli-request-assembly-boundary. Updat
   - workflow dispatch selection,
   - CLI-facing output formatting.
 - `src/alphaforge/experiment_runner.py` remains the authoritative owner of workflow orchestration behavior.
+- `src/alphaforge/permutation.py` remains the authoritative owner of permutation/null-comparison diagnostic behavior.
 - `src/alphaforge/storage.py` remains the authoritative owner of canonical artifact paths and layout.
 - `src/alphaforge/report.py` remains the authoritative owner of report-view-model semantics.
 - `src/alphaforge.data_loader.py`, `src/alphaforge/backtest.py`, `src/alphaforge.metrics.py`, `src/alphaforge.benchmark.py`, `src/alphaforge.search.py`, and `src/alphaforge.strategy/*` remain the authoritative owners of their respective domain semantics.
@@ -188,6 +189,7 @@ TBD - created by archiving change formalize-cli-request-assembly-boundary. Updat
 - `config.py` may provide default values and ranges used to populate parser defaults.
 - `data_loader.py` owns market-data acceptance checks.
 - `search.py` owns search-space validity.
+- `permutation.py` owns permutation/null-comparison diagnostic semantics.
 - `backtest.py` owns execution semantics that make some combinations invalid.
 - `report.py` owns report-input completeness checks.
 
@@ -201,7 +203,7 @@ TBD - created by archiving change formalize-cli-request-assembly-boundary. Updat
 #### Migration notes from current implementation
 
 - `cli.py` already delegates type conversion to `argparse` and constructs typed DTOs from parsed values.
-- The current CLI also performs command-level branching for `generate-report`, `fetch-twse`, and `twse-search`, which is acceptable only if the branch stays syntactic and dispatch-oriented.
+- The current CLI also performs command-level branching for `generate-report`, `fetch-twse`, `twse-search`, and `permutation-test`, which is acceptable only if the branch stays syntactic and dispatch-oriented.
 - Some of the current command output is built from serialized runtime objects, which is correct as long as the CLI does not reinterpret those objects as its own truth.
 
 #### Open questions / deferred decisions
@@ -374,4 +376,3 @@ CLI commands that talk to adapters, including TWSE flows, SHALL remain transport
 - WHEN `cli.py` assembles the request
 - THEN it SHALL build the adapter request and dispatch the downstream workflow
 - AND it SHALL NOT redefine TWSE normalization or canonical market-data acceptance
-

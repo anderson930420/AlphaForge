@@ -46,6 +46,7 @@ Persisted artifact schemas SHALL be owned by `src/alphaforge/storage.py` or stor
   - `walk_forward_summary.json`
   - `fold_results.csv`
   - any storage-owned path manifest or schema-version marker introduced later
+  - validation and walk-forward summary payload fields such as `candidate_evidence`, `candidate_decision`, `walk_forward_evidence`, and `walk_forward_decision`
 - Conversion boundary:
   - runtime object in
   - storage-owned serializer converts runtime fields into persisted JSON/CSV payloads
@@ -96,6 +97,7 @@ Persisted artifact schemas SHALL be owned by `src/alphaforge/storage.py` or stor
 - `to_dict()` methods in `schemas.py` currently serialize runtime objects into persistence-friendly dictionaries.
 - `save_single_experiment()`, `save_validation_result()`, and `save_walk_forward_result()` currently return reconstructed runtime objects whose fields incorporate write-time paths.
 - `storage.py` currently owns artifact writing, but some artifact shape knowledge still lives in `schemas.py`.
+- `storage.py` now serializes explicit candidate-evidence and policy-decision payloads inside validation and walk-forward summary artifacts.
 - Current field classification audit:
   - `ExperimentResult.equity_curve_path`, `trade_log_path`, `metrics_path`: persisted artifact references
   - `ValidationResult.validation_summary_path`, `train_ranked_results_path`: persisted artifact references
@@ -147,4 +149,3 @@ Persisted artifact schemas SHALL be owned by `src/alphaforge/storage.py` or stor
 - WHEN that change is proposed
 - THEN the change SHALL be evaluated as a persistence-contract compatibility change
 - AND the proposal SHALL state whether older artifacts remain readable, require migration, or are intentionally unsupported
-

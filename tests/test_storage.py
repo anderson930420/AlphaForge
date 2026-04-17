@@ -11,6 +11,8 @@ from alphaforge.schemas import (
     DataSpec,
     ExperimentResult,
     MetricReport,
+    CandidatePolicyDecision,
+    PermutationTestSummary,
     SearchSummary,
     StrategySpec,
     ValidationResult,
@@ -28,6 +30,8 @@ from alphaforge.storage import (
     EQUITY_CURVE_FILENAME,
     FOLD_RESULTS_FILENAME,
     METRICS_SUMMARY_FILENAME,
+    PERMUTATION_SCORES_FILENAME,
+    PERMUTATION_TEST_SUMMARY_FILENAME,
     RANKED_RESULTS_FILENAME,
     TRAIN_RANKED_RESULTS_FILENAME,
     TRADE_LOG_FILENAME,
@@ -36,11 +40,13 @@ from alphaforge.storage import (
     WALK_FORWARD_SUMMARY_FILENAME,
     save_ranked_results_artifact,
     save_ranked_results_with_columns,
+    save_permutation_test_result,
     save_single_experiment,
     save_validation_result,
     save_walk_forward_result,
     serialize_artifact_receipt,
     serialize_search_artifact_receipt,
+    serialize_permutation_test_artifact_receipt,
     serialize_validation_artifact_receipt,
     serialize_validation_result,
     serialize_walk_forward_artifact_receipt,
@@ -202,6 +208,12 @@ def test_save_validation_result_writes_summary_and_train_ranked_reference(tmp_pa
                 "train_ranked_results_path": str(train_ranked_results_path),
             },
         ),
+        candidate_decision=CandidatePolicyDecision(
+            policy_name="post_search_candidate_policy",
+            policy_scope="validate-search",
+            verdict="validated",
+            decision_reasons=["evidence_complete", "out_of_sample_return_positive"],
+        ),
         metadata={"train_rows": 4, "test_rows": 4},
     )
 
@@ -221,6 +233,7 @@ def test_save_validation_result_writes_summary_and_train_ranked_reference(tmp_pa
     assert summary_payload["train_ranked_results_path"] == str(train_ranked_results_path)
     assert summary_payload["validation_summary_path"] == str(summary_path)
     assert summary_payload["candidate_evidence"]["verdict"] == "validated"
+    assert summary_payload["candidate_decision"]["verdict"] == "validated"
     assert summary_payload["candidate_evidence"]["search_rank"] == 1
     assert summary_payload["candidate_evidence"]["artifact_paths"]["validation_summary_path"] == str(summary_path)
     assert "train_ranked_results_path" not in serialized_validation
@@ -255,6 +268,12 @@ def test_save_walk_forward_result_writes_summary_and_fold_results_contract(tmp_p
                 "test_selected_run_dir": str(walk_forward_root / "folds" / "fold_001" / "test_selected"),
             },
         ),
+        candidate_decision=CandidatePolicyDecision(
+            policy_name="post_search_candidate_policy",
+            policy_scope="walk-forward",
+            verdict="validated",
+            decision_reasons=["evidence_complete", "out_of_sample_return_positive"],
+        ),
     )
     walk_forward_result = WalkForwardResult(
         data_spec=DataSpec(path=Path("sample_data/example.csv"), symbol="2330"),
@@ -272,6 +291,18 @@ def test_save_walk_forward_result_writes_summary_and_fold_results_contract(tmp_p
                 "walk_forward_summary_path": str(walk_forward_root / WALK_FORWARD_SUMMARY_FILENAME),
                 "fold_results_path": str(walk_forward_root / FOLD_RESULTS_FILENAME),
             },
+        ),
+        walk_forward_decision=CandidatePolicyDecision(
+            policy_name="post_search_candidate_policy",
+            policy_scope="walk-forward",
+            verdict="validated",
+            decision_reasons=[
+                "fold_coverage_complete",
+                "aggregate_return_positive",
+                "aggregate_sharpe_positive",
+                "aggregate_return_excess_non_negative",
+                "aggregate_drawdown_non_worsening",
+            ],
         ),
         metadata={"fold_count": 1},
     )
@@ -291,12 +322,51 @@ def test_save_walk_forward_result_writes_summary_and_fold_results_contract(tmp_p
     assert summary_payload["walk_forward_summary_path"] == str(summary_path)
     assert summary_payload["fold_results_path"] == str(fold_results_path)
     assert summary_payload["walk_forward_evidence"]["verdict"] == "validated"
+    assert summary_payload["walk_forward_decision"]["verdict"] == "validated"
     assert summary_payload["walk_forward_evidence"]["fold_count"] == 1
     assert summary_payload["folds"][0]["candidate_evidence"]["verdict"] == "validated"
+    assert summary_payload["folds"][0]["candidate_decision"]["verdict"] == "validated"
     assert fold_results_frame.loc[0, WALK_FORWARD_FOLD_PATH_COLUMN] == str(walk_forward_root / "folds" / "fold_001")
     assert "walk_forward_summary_path" not in serialized_walk_forward
     assert serialized_receipt["walk_forward_summary_path"] == str(summary_path)
     assert serialized_receipt["fold_results_path"] == str(fold_results_path)
+
+
+def test_save_permutation_test_result_writes_canonical_summary_and_scores(tmp_path: Path) -> None:
+    summary = PermutationTestSummary(
+        strategy_name="ma_crossover",
+        strategy_parameters={"short_window": 2, "long_window": 4},
+        target_metric_name="score",
+        real_observed_score=0.42,
+        permutation_scores=[0.1, 0.2, 0.3],
+        permutation_count=3,
+        seed=11,
+        null_ge_count=1,
+        empirical_p_value=0.5,
+        metadata={"source": "unit-test"},
+    )
+
+    persisted_summary, receipt = save_permutation_test_result(tmp_path / "permutation_case", summary)
+    summary_path = tmp_path / "permutation_case" / PERMUTATION_TEST_SUMMARY_FILENAME
+    scores_path = tmp_path / "permutation_case" / PERMUTATION_SCORES_FILENAME
+    summary_payload = json.loads(summary_path.read_text(encoding="utf-8"))
+    scores_frame = pd.read_csv(scores_path)
+    serialized_receipt = serialize_permutation_test_artifact_receipt(receipt)
+
+    assert summary_path.exists()
+    assert scores_path.exists()
+    assert summary_payload["strategy_name"] == "ma_crossover"
+    assert summary_payload["real_observed_score"] == 0.42
+    assert summary_payload["null_ge_count"] == 1
+    assert summary_payload["empirical_p_value"] == 0.5
+    assert summary_payload["artifact_paths"]["permutation_test_summary_path"] == str(summary_path)
+    assert summary_payload["artifact_paths"]["permutation_scores_path"] == str(scores_path)
+    assert persisted_summary.artifact_paths["permutation_test_summary_path"] == str(summary_path)
+    assert persisted_summary.artifact_paths["permutation_scores_path"] == str(scores_path)
+    assert serialized_receipt["permutation_test_summary_path"] == str(summary_path)
+    assert serialized_receipt["permutation_scores_path"] == str(scores_path)
+    assert scores_frame.columns.tolist() == ["permutation_index", "score"]
+    assert scores_frame["score"].tolist() == [0.1, 0.2, 0.3]
 
 
 def test_serialize_artifact_receipt_separates_persisted_and_presentation_refs(tmp_path: Path) -> None:

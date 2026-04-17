@@ -75,6 +75,15 @@ class ExperimentResult:
 
 
 CandidateVerdict = Literal["candidate", "validated", "rejected", "inconclusive"]
+PolicyScope = Literal["validate-search", "walk-forward"]
+
+
+@dataclass(frozen=True)
+class CandidatePolicyDecision:
+    policy_name: str
+    policy_scope: PolicyScope
+    verdict: CandidateVerdict
+    decision_reasons: list[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -133,6 +142,7 @@ class ValidationResult:
     test_result: ExperimentResult
     test_benchmark_summary: dict[str, float] = field(default_factory=dict)
     candidate_evidence: CandidateEvidenceSummary | None = None
+    candidate_decision: CandidatePolicyDecision | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
@@ -155,6 +165,7 @@ class WalkForwardFoldResult:
     test_result: ExperimentResult
     test_benchmark_summary: dict[str, float] = field(default_factory=dict)
     candidate_evidence: CandidateEvidenceSummary | None = None
+    candidate_decision: CandidatePolicyDecision | None = None
 
 
 @dataclass(frozen=True)
@@ -165,4 +176,32 @@ class WalkForwardResult:
     aggregate_test_metrics: dict[str, float | int]
     aggregate_benchmark_metrics: dict[str, float | int] = field(default_factory=dict)
     walk_forward_evidence: WalkForwardEvidenceSummary | None = None
+    walk_forward_decision: CandidatePolicyDecision | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class PermutationTestSummary:
+    strategy_name: str
+    strategy_parameters: dict[str, Any]
+    target_metric_name: str
+    real_observed_score: float
+    permutation_scores: list[float]
+    permutation_count: int
+    seed: int
+    null_ge_count: int
+    empirical_p_value: float
+    artifact_paths: dict[str, str] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class PermutationTestArtifactReceipt:
+    permutation_test_summary_path: Path
+    permutation_scores_path: Path
+
+
+@dataclass(frozen=True)
+class PermutationTestExecutionOutput:
+    permutation_test_summary: PermutationTestSummary
+    artifact_receipt: PermutationTestArtifactReceipt | None = None

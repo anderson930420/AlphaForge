@@ -1,7 +1,7 @@
 # artifact-schema-and-output-layout Specification
 
 ## Purpose
-TBD - created by archiving change formalize-artifact-schema-and-output-layout. Update Purpose after archive.
+Define the canonical persisted artifact schema and output layout for AlphaForge workflows, including single-run, search, validation, walk-forward, and diagnostic artifacts.
 ## Requirements
 ### Requirement: `storage.py` is the canonical owner of persisted artifact schema and output layout
 
@@ -91,6 +91,9 @@ TBD - created by archiving change formalize-artifact-schema-and-output-layout. U
     - `folds/fold_###/test_selected/metrics_summary.json`
     - `folds/fold_###/test_selected/trade_log.csv`
     - `folds/fold_###/test_selected/equity_curve.csv`
+  - diagnostic artifacts:
+    - `permutation_test_summary.json`
+    - `permutation_scores.csv`
 - Canonical output root semantics:
   - `output_dir / experiment_name` is the root for each top-level workflow.
   - nested workflow-specific subdirectories are derived from that root by storage-owned rules.
@@ -124,6 +127,7 @@ TBD - created by archiving change formalize-artifact-schema-and-output-layout. U
 #### Migration notes from current implementation
 
 - `storage.py` already writes the canonical single-run, search, validation, and walk-forward files, but some path naming is still surfaced or reconstructed elsewhere.
+- `storage.py` also owns the canonical permutation/null-comparison summary and score-list artifacts once that diagnostic is enabled.
 - `experiment_runner.py` currently builds workflow roots such as `search_root`, `validation_root`, and `walk_forward_root`.
 - `search_reporting.py` currently knows `best_report.html` and `search_report.html`.
 - `cli.py` currently surfaces derived presentation refs like `report_path` and `search_report_path`.
@@ -318,4 +322,3 @@ TBD - created by archiving change formalize-artifact-schema-and-output-layout. U
 - WHEN the renderer needs links to run artifacts and the best report
 - THEN it SHALL use explicit artifact refs and the explicit link base only
 - AND it SHALL NOT infer path targets from hidden directory layout assumptions
-

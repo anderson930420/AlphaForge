@@ -12,12 +12,15 @@ from .experiment_runner import (
     run_validate_search_with_details,
     run_walk_forward_search_with_details,
 )
+from .permutation import run_permutation_test_with_details
 from .report import render_experiment_report, save_experiment_report
 from .schemas import BacktestConfig, DataSpec, SearchSummary, StrategySpec
 from .storage import (
     ensure_output_dir,
     serialize_artifact_receipt,
     serialize_experiment_result,
+    serialize_permutation_test_artifact_receipt,
+    serialize_permutation_test_summary,
     serialize_validation_artifact_receipt,
     serialize_validation_result,
     serialize_walk_forward_artifact_receipt,
@@ -61,6 +64,16 @@ def build_parser() -> argparse.ArgumentParser:
     walk_forward.add_argument("--step-size", type=int, required=True)
     walk_forward.add_argument("--max-drawdown-cap", type=float, default=None)
     walk_forward.add_argument("--min-trade-count", type=int, default=None)
+
+    permutation_test = subparsers.add_parser(
+        "permutation-test",
+        help="Run a permutation/null-comparison diagnostic for a fixed MA candidate",
+    )
+    _add_common_arguments(permutation_test)
+    permutation_test.add_argument("--short-window", type=int, required=True)
+    permutation_test.add_argument("--long-window", type=int, required=True)
+    permutation_test.add_argument("--permutations", type=int, required=True)
+    permutation_test.add_argument("--seed", type=int, default=42)
 
     fetch_twse = subparsers.add_parser("fetch-twse", help="Fetch TWSE stock-day data and save standardized CSV")
     fetch_twse.add_argument("--stock-no", type=str, required=True)
@@ -224,6 +237,24 @@ def main() -> None:
             )
             payload = serialize_walk_forward_result(walk_forward_execution.walk_forward_result)
             payload.update(serialize_walk_forward_artifact_receipt(walk_forward_execution.artifact_receipt) or {})
+            print(json.dumps(payload, indent=2, default=str))
+            return
+
+        if args.command == "permutation-test":
+            permutation_execution = run_permutation_test_with_details(
+                data_spec=data_spec,
+                strategy_spec=StrategySpec(
+                    name="ma_crossover",
+                    parameters={"short_window": args.short_window, "long_window": args.long_window},
+                ),
+                permutation_count=args.permutations,
+                seed=args.seed,
+                backtest_config=backtest_config,
+                output_dir=args.output_dir,
+                experiment_name=args.experiment_name,
+            )
+            payload = serialize_permutation_test_summary(permutation_execution.permutation_test_summary)
+            payload.update(serialize_permutation_test_artifact_receipt(permutation_execution.artifact_receipt) or {})
             print(json.dumps(payload, indent=2, default=str))
             return
 

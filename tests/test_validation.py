@@ -72,10 +72,14 @@ def test_run_validate_search_splits_data_chronologically_and_saves_outputs(sampl
     assert "test_benchmark_summary" in summary_payload
     assert "total_return" in summary_payload["test_benchmark_summary"]
     assert "max_drawdown" in summary_payload["test_benchmark_summary"]
-    assert summary_payload["candidate_evidence"]["verdict"] == "validated"
+    assert summary_payload["candidate_decision"]["verdict"] == summary_payload["candidate_evidence"]["verdict"]
+    assert summary_payload["candidate_decision"]["decision_reasons"]
     assert summary_payload["candidate_evidence"]["degradation_summary"]["return_degradation"] == result.candidate_evidence.degradation_summary["return_degradation"]
     assert result.candidate_evidence.search_rank == 1
     assert result.candidate_evidence.search_result_count == 1
+    assert result.candidate_decision is not None
+    assert result.candidate_decision.verdict == result.candidate_evidence.verdict
+    assert result.candidate_decision.policy_scope == "validate-search"
     assert result.candidate_evidence.degradation_summary["return_degradation"] == result.test_result.metrics.total_return - result.train_best_result.metrics.total_return
     assert result.candidate_evidence.benchmark_relative_summary["benchmark_total_return"] == summary_payload["candidate_evidence"]["benchmark_relative_summary"]["benchmark_total_return"]
     assert not hasattr(result, "validation_summary_path")
@@ -154,7 +158,10 @@ def test_run_validate_search_uses_train_only_for_search_and_selected_params_for_
     assert tested_strategy.parameters == {"short_window": 2, "long_window": 4}
     assert result.selected_strategy_spec.parameters == {"short_window": 2, "long_window": 4}
     assert result.test_benchmark_summary == {"total_return": 0.0, "max_drawdown": 0.0}
-    assert result.candidate_evidence.verdict == "validated"
+    assert result.candidate_decision is not None
+    assert result.candidate_evidence.verdict == result.candidate_decision.verdict
+    assert result.candidate_decision.verdict == result.candidate_evidence.verdict
+    assert result.candidate_decision.policy_scope == "validate-search"
     assert result.candidate_evidence.search_rank == 1
     assert result.candidate_evidence.search_result_count == 1
 
@@ -224,6 +231,12 @@ def test_cli_validate_search_prints_validation_summary_payload(
             "artifact_paths": {"validation_summary_path": str(tmp_path / "validation_case" / "validation_summary.json")},
             "metadata": {},
         },
+        "candidate_decision": {
+            "policy_name": "post_search_candidate_policy",
+            "policy_scope": "validate-search",
+            "verdict": "validated",
+            "decision_reasons": ["evidence_complete", "out_of_sample_return_positive"],
+        },
     }
 
     with patch(
@@ -251,7 +264,7 @@ def test_cli_validate_search_prints_validation_summary_payload(
     assert payload["selected_strategy_spec"]["parameters"] == {"short_window": 2, "long_window": 3}
     assert Path(payload["train_ranked_results_path"]).name == "train_ranked_results.csv"
     assert Path(payload["validation_summary_path"]).name == "validation_summary.json"
-    assert payload["candidate_evidence"]["verdict"] == "validated"
+    assert payload["candidate_decision"]["verdict"] == payload["candidate_evidence"]["verdict"]
 
 
 def test_run_walk_forward_search_creates_chronological_fold_outputs(sample_market_csv: Path, tmp_path: Path) -> None:
@@ -290,8 +303,12 @@ def test_run_walk_forward_search_creates_chronological_fold_outputs(sample_marke
     assert result.folds[0].train_end < result.folds[0].test_start
     assert "total_return" in result.folds[0].test_benchmark_summary
     assert "mean_benchmark_total_return" in result.aggregate_benchmark_metrics
-    assert result.folds[0].candidate_evidence.verdict == "validated"
-    assert result.walk_forward_evidence.verdict == "validated"
+    assert result.folds[0].candidate_decision is not None
+    assert result.folds[0].candidate_evidence.verdict == result.folds[0].candidate_decision.verdict
+    assert result.folds[0].candidate_decision.verdict == result.folds[0].candidate_evidence.verdict
+    assert result.walk_forward_decision is not None
+    assert result.walk_forward_evidence.verdict == result.walk_forward_decision.verdict
+    assert result.walk_forward_decision.verdict == result.walk_forward_evidence.verdict
     assert result.walk_forward_evidence.fold_count == 2
     assert result.walk_forward_evidence.aggregate_test_metrics["fold_count"] == 2
     assert (fold_root / "train_search" / "ranked_results.csv").exists()
@@ -456,6 +473,18 @@ def test_cli_walk_forward_prints_summary_payload(
             "artifact_paths": {"walk_forward_summary_path": str(tmp_path / "walk_forward_case" / "walk_forward_summary.json"), "fold_results_path": str(tmp_path / "walk_forward_case" / "fold_results.csv")},
             "metadata": {},
         },
+        "walk_forward_decision": {
+            "policy_name": "post_search_candidate_policy",
+            "policy_scope": "walk-forward",
+            "verdict": "validated",
+            "decision_reasons": [
+                "fold_coverage_complete",
+                "aggregate_return_positive",
+                "aggregate_sharpe_positive",
+                "aggregate_return_excess_non_negative",
+                "aggregate_drawdown_non_worsening",
+            ],
+        },
     }
 
     with patch(
@@ -486,4 +515,4 @@ def test_cli_walk_forward_prints_summary_payload(
     assert payload["aggregate_benchmark_metrics"]["mean_benchmark_total_return"] == 0.03
     assert Path(payload["walk_forward_summary_path"]).name == "walk_forward_summary.json"
     assert Path(payload["fold_results_path"]).name == "fold_results.csv"
-    assert payload["walk_forward_evidence"]["verdict"] == "validated"
+    assert payload["walk_forward_decision"]["verdict"] == payload["walk_forward_evidence"]["verdict"]

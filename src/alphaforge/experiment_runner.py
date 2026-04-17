@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 import pandas as pd
@@ -10,6 +10,7 @@ from .backtest import run_backtest
 from .benchmark import build_buy_and_hold_equity_curve, normalize_benchmark_summary, summarize_buy_and_hold
 from .evidence import build_candidate_evidence_summary, build_walk_forward_evidence_summary
 from .data_loader import load_market_data
+from .policy import apply_policy_decision, evaluate_candidate_policy, evaluate_walk_forward_policy
 from .metrics import compute_metrics
 from .report import ExperimentReportInput, build_experiment_report_input
 from .scoring import RANKING_SCORE_FIELD, rank_results, score_metrics, select_best_result, select_top_results
@@ -444,6 +445,8 @@ def _run_validate_search_on_market_data(
         benchmark_summary=normalize_benchmark_summary(test_result.metadata.get("benchmark_summary")),
         artifact_paths=candidate_artifact_paths,
     )
+    candidate_decision = evaluate_candidate_policy(candidate_evidence, policy_scope="validate-search")
+    candidate_evidence = apply_policy_decision(candidate_evidence, candidate_decision)
     validation_result = ValidationResult(
         data_spec=data_spec,
         split_config=ValidationSplitConfig(split_ratio=split_ratio),
@@ -452,6 +455,7 @@ def _run_validate_search_on_market_data(
         test_result=test_result,
         test_benchmark_summary=normalize_benchmark_summary(test_result.metadata.get("benchmark_summary")),
         candidate_evidence=candidate_evidence,
+        candidate_decision=candidate_decision,
         metadata=_build_validation_metadata(train_data, test_data),
     )
     validation_artifact_receipt: ValidationArtifactReceipt | None = None
@@ -601,6 +605,8 @@ def _run_walk_forward_search_on_market_data(
             benchmark_summary=normalize_benchmark_summary(test_result.metadata.get("benchmark_summary")),
             artifact_paths=fold_candidate_artifact_paths,
         )
+        fold_candidate_decision = evaluate_candidate_policy(fold_candidate_evidence, policy_scope="walk-forward")
+        fold_candidate_evidence = apply_policy_decision(fold_candidate_evidence, fold_candidate_decision)
         fold_results.append(
             WalkForwardFoldResult(
                 fold_index=fold_index,
@@ -613,6 +619,7 @@ def _run_walk_forward_search_on_market_data(
                 test_result=test_result,
                 test_benchmark_summary=normalize_benchmark_summary(test_result.metadata.get("benchmark_summary")),
                 candidate_evidence=fold_candidate_evidence,
+                candidate_decision=fold_candidate_decision,
             )
         )
 
@@ -641,7 +648,15 @@ def _run_walk_forward_search_on_market_data(
             aggregate_benchmark_metrics=aggregate_benchmark_metrics,
             artifact_paths=walk_forward_evidence_paths,
         ),
+        walk_forward_decision=None,
         metadata={"fold_count": len(fold_results)},
+    )
+    walk_forward_decision = evaluate_walk_forward_policy(result.walk_forward_evidence)
+    walk_forward_evidence = apply_policy_decision(result.walk_forward_evidence, walk_forward_decision)
+    result = replace(
+        result,
+        walk_forward_evidence=walk_forward_evidence,
+        walk_forward_decision=walk_forward_decision,
     )
     walk_forward_artifact_receipt: WalkForwardArtifactReceipt | None = None
     if walk_forward_root is not None:
