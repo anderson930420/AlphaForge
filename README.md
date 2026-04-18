@@ -127,6 +127,8 @@ Run a permutation/null-comparison diagnostic for a fixed MA candidate:
 .venv\Scripts\python.exe -m alphaforge.cli permutation-test --data .\sample_data\sample_ohlcv.csv --symbol SAMPLE --short-window 2 --long-window 4 --permutations 100 --block-size 5 --target-metric score --seed 42 --experiment-name sample_permutation
 ```
 
+Practical baseline from current MA workflow testing: use the block-based null with `block_size=10` and `target_metric=score` first. In the repo's current runs, that setting separated candidates more clearly than `target_metric=sharpe_ratio`; the `30/40` candidate looked less special under the block-10 null, while `10/40` and `15/40` still sat at the p-value floor. This is an empirical observation for the current MA setup, not a universal statistical rule.
+
 Search output now returns a compact summary payload with:
 
 - `strategy_name`
