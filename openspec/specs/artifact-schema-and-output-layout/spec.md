@@ -128,6 +128,7 @@ Define the canonical persisted artifact schema and output layout for AlphaForge 
 
 - `storage.py` already writes the canonical single-run, search, validation, and walk-forward files, but some path naming is still surfaced or reconstructed elsewhere.
 - `storage.py` also owns the canonical permutation/null-comparison summary and score-list artifacts once that diagnostic is enabled.
+- The permutation summary now records the block-based null semantics explicitly via `permutation_mode` and `block_size`.
 - `experiment_runner.py` currently builds workflow roots such as `search_root`, `validation_root`, and `walk_forward_root`.
 - `search_reporting.py` currently knows `best_report.html` and `search_report.html`.
 - `cli.py` currently surfaces derived presentation refs like `report_path` and `search_report_path`.

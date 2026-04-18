@@ -5,10 +5,12 @@ import sys
 from pathlib import Path
 from unittest.mock import patch
 
+import numpy as np
+import pandas as pd
 import pytest
 
 from alphaforge.cli import main
-from alphaforge.permutation import run_permutation_test_with_details
+from alphaforge.permutation import _permute_market_data_by_blocks, run_permutation_test_with_details
 from alphaforge.schemas import (
     BacktestConfig,
     DataSpec,
@@ -20,6 +22,33 @@ from alphaforge.schemas import (
 from alphaforge.storage import save_permutation_test_result
 
 
+def test_block_permutation_is_deterministic_and_preserves_within_block_order() -> None:
+    market_data = pd.DataFrame(
+        {
+            "datetime": pd.date_range("2024-01-01", periods=5, freq="D"),
+            "open": [10.0, 11.0, 12.0, 13.0, 14.0],
+            "high": [10.0, 11.0, 12.0, 13.0, 14.0],
+            "low": [10.0, 11.0, 12.0, 13.0, 14.0],
+            "close": [10.0, 11.0, 12.0, 13.0, 14.0],
+            "volume": [100.0, 101.0, 102.0, 103.0, 104.0],
+        }
+    )
+
+    first = _permute_market_data_by_blocks(market_data, block_size=2, seed=11)
+    second = _permute_market_data_by_blocks(market_data, block_size=2, seed=11)
+
+    expected_block_order = np.random.default_rng(11).permutation(3).tolist()
+    blocks = [market_data.iloc[start : start + 2] for start in range(0, len(market_data), 2)]
+    expected = pd.concat([blocks[index] for index in expected_block_order], ignore_index=True)
+
+    pd.testing.assert_frame_equal(first, expected)
+    pd.testing.assert_frame_equal(second, expected)
+    assert first["datetime"].tolist()[:2] == expected["datetime"].tolist()[:2]
+    assert first["datetime"].tolist()[0:2] != market_data["datetime"].tolist()[0:2]
+    assert first["datetime"].tolist()[2:4] == expected["datetime"].tolist()[2:4]
+    assert first["datetime"].tolist()[4:] == expected["datetime"].tolist()[4:]
+
+
 def test_permutation_test_is_deterministic_for_a_fixed_seed(sample_market_csv: Path) -> None:
     data_spec = DataSpec(path=sample_market_csv, symbol="TEST")
     strategy_spec = StrategySpec(name="ma_crossover", parameters={"short_window": 2, "long_window": 4})
@@ -28,6 +57,7 @@ def test_permutation_test_is_deterministic_for_a_fixed_seed(sample_market_csv: P
         data_spec=data_spec,
         strategy_spec=strategy_spec,
         permutation_count=5,
+        block_size=2,
         seed=7,
         backtest_config=BacktestConfig(
             initial_capital=1000.0,
@@ -40,6 +70,7 @@ def test_permutation_test_is_deterministic_for_a_fixed_seed(sample_market_csv: P
         data_spec=data_spec,
         strategy_spec=strategy_spec,
         permutation_count=5,
+        block_size=2,
         seed=7,
         backtest_config=BacktestConfig(
             initial_capital=1000.0,
@@ -50,6 +81,8 @@ def test_permutation_test_is_deterministic_for_a_fixed_seed(sample_market_csv: P
     )
 
     assert first.permutation_test_summary.target_metric_name == "score"
+    assert first.permutation_test_summary.permutation_mode == "block"
+    assert first.permutation_test_summary.block_size == 2
     assert first.permutation_test_summary.permutation_scores == second.permutation_test_summary.permutation_scores
     assert first.permutation_test_summary.empirical_p_value == second.permutation_test_summary.empirical_p_value
     assert first.permutation_test_summary.null_ge_count == second.permutation_test_summary.null_ge_count
@@ -61,6 +94,7 @@ def test_permutation_test_summary_uses_the_empirical_p_value_formula(sample_mark
         data_spec=DataSpec(path=sample_market_csv, symbol="TEST"),
         strategy_spec=StrategySpec(name="ma_crossover", parameters={"short_window": 2, "long_window": 4}),
         permutation_count=4,
+        block_size=2,
         seed=11,
         backtest_config=BacktestConfig(
             initial_capital=1000.0,
@@ -75,11 +109,33 @@ def test_permutation_test_summary_uses_the_empirical_p_value_formula(sample_mark
     assert summary.empirical_p_value == pytest.approx((expected_null_ge_count + 1) / (summary.permutation_count + 1))
 
 
+def test_permutation_test_rejects_invalid_block_size(sample_market_csv: Path) -> None:
+    with pytest.raises(ValueError, match="block_size"):
+        run_permutation_test_with_details(
+            data_spec=DataSpec(path=sample_market_csv, symbol="TEST"),
+            strategy_spec=StrategySpec(name="ma_crossover", parameters={"short_window": 2, "long_window": 4}),
+            permutation_count=3,
+            block_size=0,
+        )
+
+
+def test_permutation_test_rejects_block_size_larger_than_dataset(sample_market_csv: Path) -> None:
+    with pytest.raises(ValueError, match="block_size must not exceed"):
+        run_permutation_test_with_details(
+            data_spec=DataSpec(path=sample_market_csv, symbol="TEST"),
+            strategy_spec=StrategySpec(name="ma_crossover", parameters={"short_window": 2, "long_window": 4}),
+            permutation_count=3,
+            block_size=999,
+        )
+
+
 def test_save_permutation_test_result_writes_summary_and_score_list(tmp_path: Path) -> None:
     summary = PermutationTestSummary(
         strategy_name="ma_crossover",
         strategy_parameters={"short_window": 2, "long_window": 4},
         target_metric_name="score",
+        permutation_mode="block",
+        block_size=2,
         real_observed_score=0.42,
         permutation_scores=[0.1, 0.2, 0.3],
         permutation_count=3,
@@ -103,6 +159,10 @@ def test_save_permutation_test_result_writes_summary_and_score_list(tmp_path: Pa
     assert persisted_summary.artifact_paths["permutation_test_summary_path"] == str(summary_path)
     assert persisted_summary.artifact_paths["permutation_scores_path"] == str(scores_path)
     assert payload["strategy_name"] == "ma_crossover"
+    assert payload["permutation_mode"] == "block"
+    assert isinstance(payload["permutation_count"], int)
+    assert isinstance(payload["block_size"], int)
+    assert payload["block_size"] == 2
     assert payload["real_observed_score"] == 0.42
     assert payload["artifact_paths"]["permutation_test_summary_path"] == str(summary_path)
     assert payload["artifact_paths"]["permutation_scores_path"] == str(scores_path)
@@ -134,6 +194,8 @@ def test_cli_permutation_test_prints_canonical_summary_payload(
             "4",
             "--permutations",
             "3",
+            "--block-size",
+            "2",
             "--seed",
             "11",
         ],
@@ -144,6 +206,8 @@ def test_cli_permutation_test_prints_canonical_summary_payload(
             strategy_name="ma_crossover",
             strategy_parameters={"short_window": 2, "long_window": 4},
             target_metric_name="score",
+            permutation_mode="block",
+            block_size=2,
             real_observed_score=0.42,
             permutation_scores=[0.1, 0.2, 0.3],
             permutation_count=3,
@@ -168,6 +232,8 @@ def test_cli_permutation_test_prints_canonical_summary_payload(
     payload = json.loads(capsys.readouterr().out)
     assert payload["strategy_name"] == "ma_crossover"
     assert payload["target_metric_name"] == "score"
+    assert payload["permutation_mode"] == "block"
+    assert payload["block_size"] == 2
     assert payload["real_observed_score"] == 0.42
     assert payload["permutation_scores"] == [0.1, 0.2, 0.3]
     assert payload["empirical_p_value"] == 0.5

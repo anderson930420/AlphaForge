@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 from .backtest import run_backtest
@@ -20,6 +21,7 @@ from .storage import save_permutation_test_result
 from .strategy.ma_crossover import MovingAverageCrossoverStrategy
 
 TARGET_METRIC_NAME = "score"
+PERMUTATION_MODE = "block"
 DEFAULT_PERMUTATION_TEST_EXPERIMENT_NAME = "permutation_test"
 
 
@@ -27,6 +29,7 @@ def run_permutation_test(
     data_spec: DataSpec,
     strategy_spec: StrategySpec,
     permutation_count: int,
+    block_size: int,
     seed: int = 42,
     backtest_config: BacktestConfig | None = None,
     output_dir: Path | None = None,
@@ -36,6 +39,7 @@ def run_permutation_test(
         data_spec=data_spec,
         strategy_spec=strategy_spec,
         permutation_count=permutation_count,
+        block_size=block_size,
         seed=seed,
         backtest_config=backtest_config,
         output_dir=output_dir,
@@ -48,6 +52,7 @@ def run_permutation_test_with_details(
     data_spec: DataSpec,
     strategy_spec: StrategySpec,
     permutation_count: int,
+    block_size: int,
     seed: int = 42,
     backtest_config: BacktestConfig | None = None,
     output_dir: Path | None = None,
@@ -55,9 +60,13 @@ def run_permutation_test_with_details(
 ) -> PermutationTestExecutionOutput:
     if permutation_count <= 0:
         raise ValueError("permutation_count must be a positive integer")
+    if block_size <= 0:
+        raise ValueError("block_size must be a positive integer")
 
     backtest_config = backtest_config or _default_backtest_config()
     market_data = load_market_data(data_spec)
+    if block_size > len(market_data):
+        raise ValueError("block_size must not exceed the number of market data rows")
     real_result = _evaluate_candidate_on_market_data(
         market_data=market_data,
         data_spec=data_spec,
@@ -66,7 +75,11 @@ def run_permutation_test_with_details(
     )
     permutation_scores = [
         _evaluate_candidate_on_market_data(
-            market_data=_permute_market_data(market_data, seed=seed + permutation_index),
+            market_data=_permute_market_data_by_blocks(
+                market_data,
+                block_size=block_size,
+                seed=seed + permutation_index,
+            ),
             data_spec=data_spec,
             strategy_spec=strategy_spec,
             backtest_config=backtest_config,
@@ -79,6 +92,8 @@ def run_permutation_test_with_details(
         strategy_name=strategy_spec.name,
         strategy_parameters=dict(strategy_spec.parameters),
         target_metric_name=TARGET_METRIC_NAME,
+        permutation_mode=PERMUTATION_MODE,
+        block_size=block_size,
         real_observed_score=real_result.score,
         permutation_scores=permutation_scores,
         permutation_count=permutation_count,
@@ -121,8 +136,13 @@ def _evaluate_candidate_on_market_data(
     )
 
 
-def _permute_market_data(market_data: pd.DataFrame, seed: int) -> pd.DataFrame:
-    return market_data.sample(frac=1.0, replace=False, random_state=seed).reset_index(drop=True)
+def _permute_market_data_by_blocks(market_data: pd.DataFrame, block_size: int, seed: int) -> pd.DataFrame:
+    blocks = [market_data.iloc[start : start + block_size].copy() for start in range(0, len(market_data), block_size)]
+    if len(blocks) == 0:
+        return market_data.copy().reset_index(drop=True)
+    block_order = np.random.default_rng(seed).permutation(len(blocks))
+    permuted_blocks = [blocks[index] for index in block_order]
+    return pd.concat(permuted_blocks, ignore_index=True)
 
 
 def _build_strategy(strategy_spec: StrategySpec) -> MovingAverageCrossoverStrategy:

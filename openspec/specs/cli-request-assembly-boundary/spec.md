@@ -95,7 +95,7 @@ Define the canonical CLI request-assembly and dispatch boundary, including comma
 #### Migration notes from current implementation
 
 - `cli.py` already builds `DataSpec`, `BacktestConfig`, `StrategySpec`, and parameter grids from parsed arguments.
-- `cli.py` already dispatches `run`, `search`, `validate-search`, `walk-forward`, `fetch-twse`, and `twse-search`.
+- `cli.py` already dispatches `run`, `search`, `validate-search`, `walk-forward`, `permutation-test`, `fetch-twse`, and `twse-search`.
 - `cli.py` currently formats JSON payloads that include serialized results, artifact refs, and report paths.
 - `cli.py` currently performs a direct report rendering path for `run --generate-report`, which makes the report boundary easy to blur if the report input contract is not explicit.
 - `twse-search` currently combines adapter fetch, data save, and search dispatch in one command, so the CLI must stay careful not to absorb TWSE normalization or storage ownership.

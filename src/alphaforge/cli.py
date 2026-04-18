@@ -73,6 +73,7 @@ def build_parser() -> argparse.ArgumentParser:
     permutation_test.add_argument("--short-window", type=int, required=True)
     permutation_test.add_argument("--long-window", type=int, required=True)
     permutation_test.add_argument("--permutations", type=int, required=True)
+    permutation_test.add_argument("--block-size", type=int, required=True)
     permutation_test.add_argument("--seed", type=int, default=42)
 
     fetch_twse = subparsers.add_parser("fetch-twse", help="Fetch TWSE stock-day data and save standardized CSV")
@@ -248,6 +249,7 @@ def main() -> None:
                     parameters={"short_window": args.short_window, "long_window": args.long_window},
                 ),
                 permutation_count=args.permutations,
+                block_size=args.block_size,
                 seed=args.seed,
                 backtest_config=backtest_config,
                 output_dir=args.output_dir,

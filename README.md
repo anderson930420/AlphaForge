@@ -20,7 +20,7 @@ The current MVP supports:
 - Running everything from a CLI
 - Running a simple train/test validation workflow for parameter search
 - Running a first-pass walk-forward validation workflow for parameter search
-- Running a seed-controlled permutation/null-comparison diagnostic for a fixed MA candidate
+- Running a seed-controlled block-based permutation/null-comparison diagnostic for a fixed MA candidate
 - Comparing strategy results against a buy-and-hold baseline in reports and validation summaries
 
 Deferred capabilities such as paper parsing, formula extraction, genetic algorithms, broker integration, live trading, and web UI remain intentionally out of scope.
@@ -124,7 +124,7 @@ Run a walk-forward validation search from a CSV:
 Run a permutation/null-comparison diagnostic for a fixed MA candidate:
 
 ```powershell
-.venv\Scripts\python.exe -m alphaforge.cli permutation-test --data .\sample_data\sample_ohlcv.csv --symbol SAMPLE --short-window 2 --long-window 4 --permutations 100 --seed 42 --experiment-name sample_permutation
+.venv\Scripts\python.exe -m alphaforge.cli permutation-test --data .\sample_data\sample_ohlcv.csv --symbol SAMPLE --short-window 2 --long-window 4 --permutations 100 --block-size 5 --seed 42 --experiment-name sample_permutation
 ```
 
 Search output now returns a compact summary payload with:
@@ -161,6 +161,8 @@ Permutation diagnostic output now surfaces:
 - `strategy_name`
 - `strategy_parameters`
 - `target_metric_name`
+- `permutation_mode`
+- `block_size`
 - `real_observed_score`
 - `permutation_scores`
 - `permutation_count`

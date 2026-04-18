@@ -185,6 +185,8 @@ class PermutationTestSummary:
     strategy_name: str
     strategy_parameters: dict[str, Any]
     target_metric_name: str
+    permutation_mode: Literal["block"]
+    block_size: int
     real_observed_score: float
     permutation_scores: list[float]
     permutation_count: int

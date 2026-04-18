@@ -337,6 +337,8 @@ def test_save_permutation_test_result_writes_canonical_summary_and_scores(tmp_pa
         strategy_name="ma_crossover",
         strategy_parameters={"short_window": 2, "long_window": 4},
         target_metric_name="score",
+        permutation_mode="block",
+        block_size=2,
         real_observed_score=0.42,
         permutation_scores=[0.1, 0.2, 0.3],
         permutation_count=3,
@@ -356,6 +358,8 @@ def test_save_permutation_test_result_writes_canonical_summary_and_scores(tmp_pa
     assert summary_path.exists()
     assert scores_path.exists()
     assert summary_payload["strategy_name"] == "ma_crossover"
+    assert summary_payload["permutation_mode"] == "block"
+    assert summary_payload["block_size"] == 2
     assert summary_payload["real_observed_score"] == 0.42
     assert summary_payload["null_ge_count"] == 1
     assert summary_payload["empirical_p_value"] == 0.5
