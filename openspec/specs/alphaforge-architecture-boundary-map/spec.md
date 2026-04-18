@@ -102,9 +102,9 @@ AlphaForge SHALL assign each business rule, execution semantic, schema, naming c
 | `report.py` | presentation-authoritative | HTML assembly, report section composition, figure embedding, rendered report persistence |
 | `search.py` | implementation-authoritative | parameter-grid expansion and strategy-spec generation |
 | `policy.py` | implementation-authoritative | post-search candidate promotion/rejection policy evaluation |
-| `permutation.py` | implementation-authoritative | fixed-candidate permutation/null-comparison diagnostic computation |
+| `permutation.py` | implementation-authoritative | fixed-candidate permutation/null-comparison diagnostic computation and target-metric selection |
 | `experiment_runner.py` | orchestration-only | sequence runtime steps, call authoritative owners, assemble workflow-level result objects |
-| `storage.py` | persistence-authoritative | disk schema, filenames, directory paths, JSON/CSV export shape |
+| `storage.py` | persistence-authoritative | disk schema, filenames, directory paths, JSON/CSV export shape, persisted summary type normalization |
 | `cli.py` | orchestration-only | parse command requests, instantiate request contracts, dispatch workflows, print CLI payloads |
 | `PROJECT_BRIEF.md`, `README.md`, docstrings | advisory-only | explain intended behavior; must not redefine authoritative runtime rules |
 | `obsidian_logger.py`, `scripts/read_memory.py` | repo-tooling-only | local memory and logging workflow only |

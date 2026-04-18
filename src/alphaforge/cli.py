@@ -13,6 +13,7 @@ from .experiment_runner import (
     run_walk_forward_search_with_details,
 )
 from .permutation import run_permutation_test_with_details
+from .permutation import DEFAULT_PERMUTATION_TARGET_METRIC_NAME, SUPPORTED_PERMUTATION_TARGET_METRICS
 from .report import render_experiment_report, save_experiment_report
 from .schemas import BacktestConfig, DataSpec, SearchSummary, StrategySpec
 from .storage import (
@@ -74,6 +75,12 @@ def build_parser() -> argparse.ArgumentParser:
     permutation_test.add_argument("--long-window", type=int, required=True)
     permutation_test.add_argument("--permutations", type=int, required=True)
     permutation_test.add_argument("--block-size", type=int, required=True)
+    permutation_test.add_argument(
+        "--target-metric",
+        type=str,
+        choices=SUPPORTED_PERMUTATION_TARGET_METRICS,
+        default=DEFAULT_PERMUTATION_TARGET_METRIC_NAME,
+    )
     permutation_test.add_argument("--seed", type=int, default=42)
 
     fetch_twse = subparsers.add_parser("fetch-twse", help="Fetch TWSE stock-day data and save standardized CSV")
@@ -250,6 +257,7 @@ def main() -> None:
                 ),
                 permutation_count=args.permutations,
                 block_size=args.block_size,
+                target_metric_name=args.target_metric,
                 seed=args.seed,
                 backtest_config=backtest_config,
                 output_dir=args.output_dir,

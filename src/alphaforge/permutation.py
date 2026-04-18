@@ -12,15 +12,18 @@ from .schemas import (
     BacktestConfig,
     DataSpec,
     ExperimentResult,
+    MetricReport,
     PermutationTestExecutionOutput,
     PermutationTestSummary,
     StrategySpec,
+    PermutationTargetMetricName,
 )
 from .scoring import score_metrics
 from .storage import save_permutation_test_result
 from .strategy.ma_crossover import MovingAverageCrossoverStrategy
 
-TARGET_METRIC_NAME = "score"
+SUPPORTED_PERMUTATION_TARGET_METRICS: tuple[PermutationTargetMetricName, ...] = ("score", "sharpe_ratio")
+DEFAULT_PERMUTATION_TARGET_METRIC_NAME: PermutationTargetMetricName = "score"
 PERMUTATION_MODE = "block"
 DEFAULT_PERMUTATION_TEST_EXPERIMENT_NAME = "permutation_test"
 
@@ -30,6 +33,7 @@ def run_permutation_test(
     strategy_spec: StrategySpec,
     permutation_count: int,
     block_size: int,
+    target_metric_name: PermutationTargetMetricName = DEFAULT_PERMUTATION_TARGET_METRIC_NAME,
     seed: int = 42,
     backtest_config: BacktestConfig | None = None,
     output_dir: Path | None = None,
@@ -40,6 +44,7 @@ def run_permutation_test(
         strategy_spec=strategy_spec,
         permutation_count=permutation_count,
         block_size=block_size,
+        target_metric_name=target_metric_name,
         seed=seed,
         backtest_config=backtest_config,
         output_dir=output_dir,
@@ -53,6 +58,7 @@ def run_permutation_test_with_details(
     strategy_spec: StrategySpec,
     permutation_count: int,
     block_size: int,
+    target_metric_name: PermutationTargetMetricName = DEFAULT_PERMUTATION_TARGET_METRIC_NAME,
     seed: int = 42,
     backtest_config: BacktestConfig | None = None,
     output_dir: Path | None = None,
@@ -62,6 +68,9 @@ def run_permutation_test_with_details(
         raise ValueError("permutation_count must be a positive integer")
     if block_size <= 0:
         raise ValueError("block_size must be a positive integer")
+    if target_metric_name not in SUPPORTED_PERMUTATION_TARGET_METRICS:
+        supported = ", ".join(SUPPORTED_PERMUTATION_TARGET_METRICS)
+        raise ValueError(f"Unsupported permutation target metric: {target_metric_name}. Supported metrics: {supported}")
 
     backtest_config = backtest_config or _default_backtest_config()
     market_data = load_market_data(data_spec)
@@ -73,37 +82,44 @@ def run_permutation_test_with_details(
         strategy_spec=strategy_spec,
         backtest_config=backtest_config,
     )
-    permutation_scores = [
-        _evaluate_candidate_on_market_data(
-            market_data=_permute_market_data_by_blocks(
-                market_data,
-                block_size=block_size,
-                seed=seed + permutation_index,
-            ),
-            data_spec=data_spec,
-            strategy_spec=strategy_spec,
-            backtest_config=backtest_config,
-        ).score
+    real_observed_metric_value = _extract_target_metric_value(real_result.metrics, target_metric_name)
+    permutation_metric_values = [
+        _extract_target_metric_value(
+            _evaluate_candidate_on_market_data(
+                market_data=_permute_market_data_by_blocks(
+                    market_data,
+                    block_size=block_size,
+                    seed=seed + permutation_index,
+                ),
+                data_spec=data_spec,
+                strategy_spec=strategy_spec,
+                backtest_config=backtest_config,
+            ).metrics,
+            target_metric_name,
+        )
         for permutation_index in range(permutation_count)
     ]
-    null_ge_count = sum(score >= real_result.score for score in permutation_scores)
+    null_ge_count = sum(metric_value >= real_observed_metric_value for metric_value in permutation_metric_values)
     empirical_p_value = (null_ge_count + 1) / (permutation_count + 1)
     summary = PermutationTestSummary(
         strategy_name=strategy_spec.name,
         strategy_parameters=dict(strategy_spec.parameters),
-        target_metric_name=TARGET_METRIC_NAME,
+        target_metric_name=target_metric_name,
         permutation_mode=PERMUTATION_MODE,
         block_size=block_size,
-        real_observed_score=real_result.score,
-        permutation_scores=permutation_scores,
+        real_observed_metric_value=real_observed_metric_value,
+        permutation_metric_values=permutation_metric_values,
         permutation_count=permutation_count,
         seed=seed,
         null_ge_count=null_ge_count,
         empirical_p_value=empirical_p_value,
         metadata={
             "data_rows": len(market_data),
+            "real_score": real_result.score,
             "real_total_return": real_result.metrics.total_return,
             "real_sharpe_ratio": real_result.metrics.sharpe_ratio,
+            "real_target_metric_name": target_metric_name,
+            "real_target_metric_value": real_observed_metric_value,
         },
     )
 
@@ -134,6 +150,17 @@ def _evaluate_candidate_on_market_data(
         metrics=metrics,
         score=score_metrics(metrics),
     )
+
+
+def _extract_target_metric_value(
+    metrics: MetricReport,
+    target_metric_name: PermutationTargetMetricName,
+) -> float:
+    if target_metric_name == "score":
+        return float(score_metrics(metrics))
+    if target_metric_name == "sharpe_ratio":
+        return float(metrics.sharpe_ratio)
+    raise ValueError(f"Unsupported permutation target metric: {target_metric_name}")
 
 
 def _permute_market_data_by_blocks(market_data: pd.DataFrame, block_size: int, seed: int) -> pd.DataFrame:

@@ -338,12 +338,12 @@ def test_save_permutation_test_result_writes_canonical_summary_and_scores(tmp_pa
         strategy_parameters={"short_window": 2, "long_window": 4},
         target_metric_name="score",
         permutation_mode="block",
-        block_size=2,
-        real_observed_score=0.42,
-        permutation_scores=[0.1, 0.2, 0.3],
-        permutation_count=3,
-        seed=11,
-        null_ge_count=1,
+        block_size="2",  # type: ignore[arg-type]
+        real_observed_metric_value=0.42,
+        permutation_metric_values=[0.1, 0.2, 0.3],
+        permutation_count="3",  # type: ignore[arg-type]
+        seed="11",  # type: ignore[arg-type]
+        null_ge_count="1",  # type: ignore[arg-type]
         empirical_p_value=0.5,
         metadata={"source": "unit-test"},
     )
@@ -360,17 +360,23 @@ def test_save_permutation_test_result_writes_canonical_summary_and_scores(tmp_pa
     assert summary_payload["strategy_name"] == "ma_crossover"
     assert summary_payload["permutation_mode"] == "block"
     assert summary_payload["block_size"] == 2
-    assert summary_payload["real_observed_score"] == 0.42
+    assert isinstance(summary_payload["permutation_count"], int)
+    assert isinstance(summary_payload["seed"], int)
+    assert isinstance(summary_payload["null_ge_count"], int)
+    assert summary_payload["real_observed_metric_value"] == 0.42
     assert summary_payload["null_ge_count"] == 1
     assert summary_payload["empirical_p_value"] == 0.5
+    assert isinstance(persisted_summary.permutation_count, int)
+    assert isinstance(persisted_summary.seed, int)
+    assert isinstance(persisted_summary.null_ge_count, int)
     assert summary_payload["artifact_paths"]["permutation_test_summary_path"] == str(summary_path)
     assert summary_payload["artifact_paths"]["permutation_scores_path"] == str(scores_path)
     assert persisted_summary.artifact_paths["permutation_test_summary_path"] == str(summary_path)
     assert persisted_summary.artifact_paths["permutation_scores_path"] == str(scores_path)
     assert serialized_receipt["permutation_test_summary_path"] == str(summary_path)
     assert serialized_receipt["permutation_scores_path"] == str(scores_path)
-    assert scores_frame.columns.tolist() == ["permutation_index", "score"]
-    assert scores_frame["score"].tolist() == [0.1, 0.2, 0.3]
+    assert scores_frame.columns.tolist() == ["permutation_index", "metric_value"]
+    assert scores_frame["metric_value"].tolist() == [0.1, 0.2, 0.3]
 
 
 def test_serialize_artifact_receipt_separates_persisted_and_presentation_refs(tmp_path: Path) -> None:

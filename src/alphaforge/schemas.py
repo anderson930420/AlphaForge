@@ -18,6 +18,7 @@ BACKTEST_EQUITY_CURVE_REQUIRED_COLUMNS = (
 # The standard backtest artifact is expected to contain at least the columns in
 # BACKTEST_EQUITY_CURVE_REQUIRED_COLUMNS after backtest execution.
 EquityCurveFrame = pd.DataFrame
+PermutationTargetMetricName = Literal["score", "sharpe_ratio"]
 
 
 @dataclass(frozen=True)
@@ -184,11 +185,11 @@ class WalkForwardResult:
 class PermutationTestSummary:
     strategy_name: str
     strategy_parameters: dict[str, Any]
-    target_metric_name: str
+    target_metric_name: PermutationTargetMetricName
     permutation_mode: Literal["block"]
     block_size: int
-    real_observed_score: float
-    permutation_scores: list[float]
+    real_observed_metric_value: float
+    permutation_metric_values: list[float]
     permutation_count: int
     seed: int
     null_ge_count: int

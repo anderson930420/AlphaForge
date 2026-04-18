@@ -204,6 +204,7 @@ Define the canonical CLI request-assembly and dispatch boundary, including comma
 
 - `cli.py` already delegates type conversion to `argparse` and constructs typed DTOs from parsed values.
 - The current CLI also performs command-level branching for `generate-report`, `fetch-twse`, `twse-search`, and `permutation-test`, which is acceptable only if the branch stays syntactic and dispatch-oriented.
+- `permutation-test` now accepts a `--target-metric` option whose allowed values are defined by the diagnostic contract and whose default remains `score`.
 - Some of the current command output is built from serialized runtime objects, which is correct as long as the CLI does not reinterpret those objects as its own truth.
 
 #### Open questions / deferred decisions

@@ -124,7 +124,7 @@ Run a walk-forward validation search from a CSV:
 Run a permutation/null-comparison diagnostic for a fixed MA candidate:
 
 ```powershell
-.venv\Scripts\python.exe -m alphaforge.cli permutation-test --data .\sample_data\sample_ohlcv.csv --symbol SAMPLE --short-window 2 --long-window 4 --permutations 100 --block-size 5 --seed 42 --experiment-name sample_permutation
+.venv\Scripts\python.exe -m alphaforge.cli permutation-test --data .\sample_data\sample_ohlcv.csv --symbol SAMPLE --short-window 2 --long-window 4 --permutations 100 --block-size 5 --target-metric score --seed 42 --experiment-name sample_permutation
 ```
 
 Search output now returns a compact summary payload with:
@@ -163,8 +163,8 @@ Permutation diagnostic output now surfaces:
 - `target_metric_name`
 - `permutation_mode`
 - `block_size`
-- `real_observed_score`
-- `permutation_scores`
+- `real_observed_metric_value`
+- `permutation_metric_values`
 - `permutation_count`
 - `seed`
 - `null_ge_count`
@@ -268,7 +268,7 @@ outputs/<permutation_name>/
   permutation_scores.csv
 ```
 
-`permutation_test_summary.json` records the real observed score, the permutation scores, and the empirical p-value for the fixed candidate.
+`permutation_test_summary.json` records the selected target metric name, the observed metric value, the permutation metric values, and the empirical p-value for the fixed candidate.
 
 ## Verification
 

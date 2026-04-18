@@ -301,12 +301,12 @@ def serialize_permutation_test_summary(
         "strategy_parameters": summary.strategy_parameters,
         "target_metric_name": summary.target_metric_name,
         "permutation_mode": summary.permutation_mode,
-        "block_size": summary.block_size,
-        "real_observed_score": summary.real_observed_score,
-        "permutation_scores": list(summary.permutation_scores),
-        "permutation_count": summary.permutation_count,
-        "seed": summary.seed,
-        "null_ge_count": summary.null_ge_count,
+        "block_size": int(summary.block_size),
+        "real_observed_metric_value": float(summary.real_observed_metric_value),
+        "permutation_metric_values": [float(value) for value in summary.permutation_metric_values],
+        "permutation_count": int(summary.permutation_count),
+        "seed": int(summary.seed),
+        "null_ge_count": int(summary.null_ge_count),
         "empirical_p_value": summary.empirical_p_value,
         "artifact_paths": summary.artifact_paths,
         "metadata": summary.metadata,
@@ -509,6 +509,12 @@ def save_permutation_test_result(
     )
     persisted_summary = replace(
         summary,
+        block_size=int(summary.block_size),
+        real_observed_metric_value=float(summary.real_observed_metric_value),
+        permutation_metric_values=[float(value) for value in summary.permutation_metric_values],
+        permutation_count=int(summary.permutation_count),
+        seed=int(summary.seed),
+        null_ge_count=int(summary.null_ge_count),
         artifact_paths={
             **summary.artifact_paths,
             **serialize_permutation_test_artifact_receipt(receipt),
@@ -563,11 +569,11 @@ def _write_permutation_scores_csv(path: Path, summary: PermutationTestSummary) -
     rows = [
         {
             "permutation_index": index,
-            "score": score,
+            "metric_value": metric_value,
         }
-        for index, score in enumerate(summary.permutation_scores, start=1)
+        for index, metric_value in enumerate(summary.permutation_metric_values, start=1)
     ]
-    pd.DataFrame(rows, columns=["permutation_index", "score"]).to_csv(path, index=False)
+    pd.DataFrame(rows, columns=["permutation_index", "metric_value"]).to_csv(path, index=False)
 
 
 def _materialize_walk_forward_fold_dir(output_dir: Path, fold_index: int) -> Path:
