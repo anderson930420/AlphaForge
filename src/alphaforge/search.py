@@ -5,9 +5,16 @@ from itertools import product
 from typing import Any
 
 from .schemas import StrategySpec
+from .strategy.breakout import validate_candidate_parameters as validate_breakout_candidate_parameters
 from .strategy.ma_crossover import validate_candidate_parameters as validate_ma_crossover_candidate_parameters
 
+SUPPORTED_STRATEGY_FAMILIES = ("ma_crossover", "breakout")
 MA_CROSSOVER_SEARCH_PARAMETER_NAMES = ("short_window", "long_window")
+BREAKOUT_SEARCH_PARAMETER_NAMES = ("lookback_window",)
+SEARCH_PARAMETER_NAMES_BY_STRATEGY = {
+    "ma_crossover": MA_CROSSOVER_SEARCH_PARAMETER_NAMES,
+    "breakout": BREAKOUT_SEARCH_PARAMETER_NAMES,
+}
 
 
 @dataclass(frozen=True)
@@ -63,22 +70,29 @@ def build_strategy_specs(strategy_name: str, parameter_grid: dict[str, list[Any]
 
 
 def _validate_search_parameter_grid(strategy_name: str, parameter_grid: dict[str, list[Any]]) -> None:
-    if strategy_name != "ma_crossover":
-        return
-    expected = set(MA_CROSSOVER_SEARCH_PARAMETER_NAMES)
+    expected_names = SEARCH_PARAMETER_NAMES_BY_STRATEGY.get(strategy_name)
+    if expected_names is None:
+        raise ValueError(f"Unsupported strategy: {strategy_name}")
+    expected = set(expected_names)
     provided = set(parameter_grid)
     missing = sorted(expected - provided)
     unexpected = sorted(provided - expected)
+    family_label = "MA crossover" if strategy_name == "ma_crossover" else "breakout"
     if missing:
-        raise ValueError(f"MA crossover search requires parameter grids for: {', '.join(missing)}")
+        raise ValueError(f"{family_label} search requires parameter grids for: {', '.join(missing)}")
     if unexpected:
-        raise ValueError(f"MA crossover search does not accept parameters: {', '.join(unexpected)}")
+        raise ValueError(f"{family_label} search does not accept parameters: {', '.join(unexpected)}")
 
 
 def _validate_strategy_candidate(strategy_name: str, parameters: dict[str, Any]) -> bool:
-    if strategy_name == "ma_crossover":
-        try:
-            validate_ma_crossover_candidate_parameters(parameters)
-        except ValueError:
-            return False
+    validator = {
+        "ma_crossover": validate_ma_crossover_candidate_parameters,
+        "breakout": validate_breakout_candidate_parameters,
+    }.get(strategy_name)
+    if validator is None:
+        raise ValueError(f"Unsupported strategy: {strategy_name}")
+    try:
+        validator(parameters)
+    except ValueError:
+        return False
     return True

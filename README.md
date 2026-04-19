@@ -12,6 +12,7 @@ The current MVP supports:
 
 - Loading standardized OHLCV CSV data
 - Running a baseline moving average crossover strategy
+- Running a simple breakout strategy
 - Executing a simple single-asset backtest
 - Computing Sharpe, max drawdown, win rate, turnover, trade count, and return metrics
 - Searching multiple MA parameter combinations and ranking them
@@ -20,6 +21,7 @@ The current MVP supports:
 - Running everything from a CLI
 - Running a simple train/test validation workflow for parameter search
 - Running a first-pass walk-forward validation workflow for parameter search
+- Selecting the `ma_crossover` or `breakout` family on `run`, `search`, `validate-search`, and `walk-forward`
 - Running a seed-controlled block-based permutation/null-comparison diagnostic for a fixed MA candidate
 - Comparing strategy results against a buy-and-hold baseline in reports and validation summaries
 
@@ -107,6 +109,12 @@ Run a parameter search from a CSV:
 
 ```powershell
 .venv\Scripts\python.exe -m alphaforge.cli search --data .\sample_data\sample_ohlcv.csv --symbol SAMPLE --short-windows 2 5 10 --long-windows 20 40 60 --experiment-name sample_search
+```
+
+Run a breakout parameter search from a CSV:
+
+```powershell
+.venv\Scripts\python.exe -m alphaforge.cli search --data .\sample_data\sample_ohlcv.csv --symbol SAMPLE --strategy breakout --lookback-windows 5 10 20 --experiment-name sample_breakout_search
 ```
 
 Run a train/test validation search from a CSV:

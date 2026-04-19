@@ -114,7 +114,7 @@
 - Depends on `config.py` only for default value injection when callers omit `BacktestConfig`.
 - Depends on `data_loader.py` for authoritative market-data acceptance and cleaning.
 - Depends on `search.py` for authoritative strategy-spec generation from parameter grids.
-- Depends on `strategy/ma_crossover.py` and `strategy/base.py` for strategy dispatch and signal generation.
+- Depends on `strategy/ma_crossover.py`, `strategy/breakout.py`, and `strategy/base.py` for strategy dispatch and signal generation.
 - Depends on `backtest.py` for execution semantics.
 - Depends on `metrics.py` and `scoring.py` for analytics and ranking.
 - Depends on `benchmark.py` for benchmark summaries attached to workflow results.

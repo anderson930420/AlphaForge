@@ -3,12 +3,16 @@ from __future__ import annotations
 import pandas as pd
 import pytest
 
+from alphaforge.schemas import StrategySpec
 from alphaforge.runner_protocols import (
+    build_strategy,
     build_validation_metadata,
     generate_walk_forward_folds,
     split_market_data_by_ratio,
     validate_train_windows,
 )
+from alphaforge.strategy.breakout import BreakoutStrategy
+from alphaforge.strategy.ma_crossover import MovingAverageCrossoverStrategy
 
 
 def test_split_market_data_by_ratio_returns_chronological_segments() -> None:
@@ -41,7 +45,14 @@ def test_validate_train_windows_rejects_insufficient_history() -> None:
     train_data = pd.DataFrame({"datetime": pd.date_range("2024-01-01", periods=3, freq="D")})
 
     with pytest.raises(ValueError, match="Train segment is too short"):
-        validate_train_windows(train_data, {"long_window": [5]})
+        validate_train_windows("ma_crossover", train_data, {"long_window": [5]})
+
+
+def test_validate_train_windows_rejects_breakout_insufficient_history() -> None:
+    train_data = pd.DataFrame({"datetime": pd.date_range("2024-01-01", periods=3, freq="D")})
+
+    with pytest.raises(ValueError, match="lookback_window"):
+        validate_train_windows("breakout", train_data, {"lookback_window": [5]})
 
 
 def test_generate_walk_forward_folds_returns_expected_boundaries() -> None:
@@ -66,3 +77,15 @@ def test_build_validation_metadata_reports_split_ranges() -> None:
         "test_start": "2024-01-04 00:00:00",
         "test_end": "2024-01-05 00:00:00",
     }
+
+
+def test_build_strategy_dispatches_supported_families() -> None:
+    ma_strategy = build_strategy(
+        StrategySpec(name="ma_crossover", parameters={"short_window": 2, "long_window": 3})
+    )
+    breakout_strategy = build_strategy(
+        StrategySpec(name="breakout", parameters={"lookback_window": 5})
+    )
+
+    assert isinstance(ma_strategy, MovingAverageCrossoverStrategy)
+    assert isinstance(breakout_strategy, BreakoutStrategy)

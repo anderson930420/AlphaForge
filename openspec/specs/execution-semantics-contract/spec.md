@@ -16,7 +16,8 @@ TBD - created by archiving change formalize-execution-semantics-contract. Update
 
 - `src/alphaforge/backtest.py` is the only authoritative owner of execution semantics.
 - `src/alphaforge/strategy/base.py` remains the interface owner for `generate_signals()` shape only.
-- `src/alphaforge/strategy/ma_crossover.py` remains the signal-generation implementation for MA crossover only.
+- `src/alphaforge/strategy/ma_crossover.py` remains the signal-generation implementation for MA crossover.
+- `src/alphaforge/strategy/breakout.py` remains the signal-generation implementation for breakout.
 - `src/alphaforge/experiment_runner.py` remains orchestration-only.
 - `src/alphaforge/metrics.py`, `src/alphaforge/report.py`, `src/alphaforge/visualization.py`, `src/alphaforge/storage.py`, and `src/alphaforge/cli.py` are downstream consumers only.
 - `src/alphaforge/schemas.py` may define containers, but it must not become the semantic owner of execution behavior.
@@ -31,7 +32,7 @@ TBD - created by archiving change formalize-execution-semantics-contract. Update
 #### Explicit non-responsibilities
 
 - `strategy/base.py` MUST NOT own execution timing, lag semantics, clipping or normalization semantics, cost semantics, turnover semantics, or trade extraction semantics.
-- `strategy/ma_crossover.py` MUST NOT own any generic execution rule.
+- `strategy/ma_crossover.py` and `strategy/breakout.py` MUST NOT own any generic execution rule.
 - `experiment_runner.py` MUST NOT define execution law locally, even when it sequences backtest execution.
 - `metrics.py` MUST NOT redefine turnover, trade count, or equity semantics.
 - `report.py`, `visualization.py`, `storage.py`, and `cli.py` MUST NOT recompute or reinterpret executed positions, trades, or costs.
@@ -100,6 +101,7 @@ TBD - created by archiving change formalize-execution-semantics-contract. Update
 - `src/alphaforge/strategy/base.py` owns the interface shape of `generate_signals()` only.
 - `src/alphaforge/backtest.py` owns the interpretation and normalization of that output into executable positions.
 - `src/alphaforge/strategy/ma_crossover.py` owns MA-specific signal generation only.
+- `src/alphaforge/strategy/breakout.py` owns breakout-specific signal generation only.
 
 #### Allowed responsibilities
 
@@ -139,7 +141,7 @@ TBD - created by archiving change formalize-execution-semantics-contract. Update
 #### Cross-module dependencies
 
 - `strategy/base.py` defines the return type contract.
-- `strategy/ma_crossover.py` produces strategy-specific values that enter the execution contract.
+- `strategy/ma_crossover.py` and `strategy/breakout.py` produce strategy-specific values that enter the execution contract.
 - `backtest.py` consumes the series and applies canonical normalization.
 - `experiment_runner.py` passes the series through without redefining its meaning.
 

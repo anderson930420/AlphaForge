@@ -83,6 +83,69 @@ def test_cli_run_exits_with_clear_error_on_invalid_windows(
         main()
 
 
+def test_cli_run_supports_breakout_strategy(
+    sample_market_csv: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "alphaforge",
+            "run",
+            "--data",
+            str(sample_market_csv),
+            "--output-dir",
+            str(tmp_path),
+            "--strategy",
+            "breakout",
+            "--lookback-window",
+            "4",
+        ],
+    )
+
+    sample_result = ExperimentResult(
+        data_spec=DataSpec(path=sample_market_csv, symbol="TEST"),
+        strategy_spec=StrategySpec(name="breakout", parameters={"lookback_window": 4}),
+        backtest_config=BacktestConfig(initial_capital=1000.0, fee_rate=0.0, slippage_rate=0.0, annualization_factor=252),
+        metrics=MetricReport(
+            total_return=0.1,
+            annualized_return=0.1,
+            sharpe_ratio=1.0,
+            max_drawdown=-0.1,
+            win_rate=1.0,
+            turnover=1.0,
+            trade_count=1,
+        ),
+        score=0.5,
+    )
+
+    with patch(
+        "alphaforge.cli.run_experiment_with_artifacts",
+        return_value=ExperimentExecutionOutput(
+            result=sample_result,
+            equity_curve=pd.DataFrame(),
+            trade_log=pd.DataFrame(),
+            report_input=ExperimentReportInput(
+                result=sample_result,
+                equity_curve=pd.DataFrame(),
+                trades=pd.DataFrame(),
+                benchmark_summary={"total_return": 0.0, "max_drawdown": 0.0},
+                benchmark_curve=pd.DataFrame(),
+            ),
+            artifact_receipt=None,
+        ),
+    ):
+        main()
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["strategy_spec"]["name"] == "breakout"
+    assert payload["strategy_spec"]["parameters"] == {"lookback_window": 4}
+    assert "report_path" not in payload
+
+
 def test_cli_fetch_twse_does_not_require_run_arguments(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -158,6 +221,77 @@ def test_cli_search_prints_summary_payload(
     assert len(payload["top_results"]) == 1
     assert "report_path" not in payload
     assert "search_report_path" not in payload
+
+
+def test_cli_search_supports_breakout_strategy(
+    sample_market_csv: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "alphaforge",
+            "search",
+            "--data",
+            str(sample_market_csv),
+            "--output-dir",
+            str(tmp_path),
+            "--strategy",
+            "breakout",
+            "--lookback-windows",
+            "2",
+            "4",
+        ],
+    )
+
+    sample_result = ExperimentResult(
+        data_spec=DataSpec(path=sample_market_csv, symbol="TEST"),
+        strategy_spec=StrategySpec(name="breakout", parameters={"lookback_window": 2}),
+        backtest_config=BacktestConfig(initial_capital=1000.0, fee_rate=0.0, slippage_rate=0.0, annualization_factor=252),
+        metrics=MetricReport(
+            total_return=0.1,
+            annualized_return=0.1,
+            sharpe_ratio=1.0,
+            max_drawdown=-0.1,
+            win_rate=1.0,
+            turnover=1.0,
+            trade_count=1,
+        ),
+        score=0.5,
+    )
+    summary = SearchSummary(
+        strategy_name="breakout",
+        search_parameter_names=["lookback_window"],
+        attempted_combinations=2,
+        valid_combinations=2,
+        invalid_combinations=0,
+        result_count=1,
+        ranking_score="score",
+        best_result=sample_result,
+        top_results=[sample_result],
+    )
+
+    with patch(
+        "alphaforge.cli.run_search_with_details",
+        return_value=SearchExecutionOutput(
+            ranked_results=[sample_result],
+            summary=summary,
+            artifact_receipt=SearchArtifactReceipt(
+                search_root=tmp_path / "breakout_search_case",
+                ranked_results_path=tmp_path / "breakout_search_case" / "ranked_results.csv",
+            ),
+        ),
+    ):
+        main()
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["strategy_name"] == "breakout"
+    assert payload["search_parameter_names"] == ["lookback_window"]
+    assert payload["best_result"]["strategy_spec"]["name"] == "breakout"
+    assert payload["best_result"]["strategy_spec"]["parameters"] == {"lookback_window": 2}
 
 
 def test_cli_run_path_does_not_load_twse_client(

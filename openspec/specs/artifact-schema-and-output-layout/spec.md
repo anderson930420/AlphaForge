@@ -79,7 +79,7 @@ Define the canonical persisted artifact schema and output layout for AlphaForge 
     - `test_selected/metrics_summary.json`
     - `test_selected/trade_log.csv`
     - `test_selected/equity_curve.csv`
-  - walk-forward artifacts:
+- walk-forward artifacts:
     - `walk_forward_summary.json`
     - `fold_results.csv`
     - `folds/fold_###/train_search/ranked_results.csv`
@@ -91,7 +91,7 @@ Define the canonical persisted artifact schema and output layout for AlphaForge 
     - `folds/fold_###/test_selected/metrics_summary.json`
     - `folds/fold_###/test_selected/trade_log.csv`
     - `folds/fold_###/test_selected/equity_curve.csv`
-  - diagnostic artifacts:
+- diagnostic artifacts:
     - `permutation_test_summary.json`
     - `permutation_scores.csv`
 - Canonical output root semantics:
@@ -127,6 +127,7 @@ Define the canonical persisted artifact schema and output layout for AlphaForge 
 #### Migration notes from current implementation
 
 - `storage.py` already writes the canonical single-run, search, validation, and walk-forward files, but some path naming is still surfaced or reconstructed elsewhere.
+- `storage.py` now derives family-specific walk-forward fold-result parameter columns from the selected strategy specs rather than hardcoding MA-only columns.
 - `storage.py` also owns the canonical permutation/null-comparison summary and metric-value-list artifacts once that diagnostic is enabled.
 - The permutation summary now records the block-based null semantics explicitly via `permutation_mode` and `block_size`, plus the selected target metric and metric-value fields.
 - The persisted permutation summary normalizes count-like fields to integers before writing JSON.

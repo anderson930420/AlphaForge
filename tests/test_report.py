@@ -310,6 +310,41 @@ def test_render_search_comparison_report_omits_best_report_link_when_not_provide
     assert "search_case" in report_content
 
 
+def test_render_search_comparison_report_supports_breakout_parameter_labels(tmp_path: Path) -> None:
+    link_base_dir = tmp_path / "breakout_case"
+    link_base_dir.mkdir()
+    ranked_results = [
+        ExperimentResult(
+            data_spec=DataSpec(path=Path("sample_data/a.csv"), symbol="2330"),
+            strategy_spec=StrategySpec(name="breakout", parameters={"lookback_window": 10}),
+            backtest_config=BacktestConfig(100000.0, 0.001, 0.0005, 252),
+            metrics=MetricReport(0.2, 0.3, 1.4, -0.08, 0.6, 1.2, 4),
+            score=0.9,
+        )
+    ]
+    artifact_receipts = [
+        ArtifactReceipt(
+            run_dir=link_base_dir / "runs" / "run_001",
+            equity_curve_path=link_base_dir / "runs" / "run_001" / "equity_curve.csv",
+            trade_log_path=link_base_dir / "runs" / "run_001" / "trade_log.csv",
+            metrics_summary_path=link_base_dir / "runs" / "run_001" / "metrics_summary.json",
+        )
+    ]
+
+    report_content = render_search_comparison_report(
+        link_context=SearchReportLinkContext(
+            link_base_dir=link_base_dir,
+            search_display_name="breakout_case",
+        ),
+        ranked_results=ranked_results,
+        artifact_receipts=artifact_receipts,
+        top_equity_curves={},
+    )
+
+    assert "Lookback Window" in report_content
+    assert "lookback_window" not in report_content
+
+
 def test_render_search_comparison_report_handles_empty_ranked_results(tmp_path: Path) -> None:
     link_base_dir = tmp_path / "empty_search"
     link_base_dir.mkdir()

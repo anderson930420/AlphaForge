@@ -13,6 +13,8 @@ import pandas as pd
 
 from . import config
 from .schemas import BacktestConfig, StrategySpec
+from .strategy.base import Strategy
+from .strategy.breakout import BreakoutStrategy
 from .strategy.ma_crossover import MovingAverageCrossoverStrategy
 
 
@@ -39,11 +41,13 @@ def build_execution_metadata(market_data: pd.DataFrame, benchmark_summary: dict[
     }
 
 
-def build_strategy(strategy_spec: StrategySpec) -> MovingAverageCrossoverStrategy:
-    """Dispatch the current MVP strategy family from a canonical strategy spec."""
-    if strategy_spec.name != "ma_crossover":
-        raise ValueError(f"Unsupported strategy: {strategy_spec.name}")
-    return MovingAverageCrossoverStrategy(strategy_spec)
+def build_strategy(strategy_spec: StrategySpec) -> Strategy:
+    """Dispatch the supported strategy families from a canonical strategy spec."""
+    if strategy_spec.name == "ma_crossover":
+        return MovingAverageCrossoverStrategy(strategy_spec)
+    if strategy_spec.name == "breakout":
+        return BreakoutStrategy(strategy_spec)
+    raise ValueError(f"Unsupported strategy: {strategy_spec.name}")
 
 
 def split_market_data_by_ratio(market_data: pd.DataFrame, split_ratio: float) -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -62,14 +66,15 @@ def split_market_data_by_ratio(market_data: pd.DataFrame, split_ratio: float) ->
     return train_data, test_data
 
 
-def validate_train_windows(train_data: pd.DataFrame, parameter_grid: dict[str, list[int]]) -> None:
-    """Ensure the train segment can support the requested long windows."""
-    long_windows = parameter_grid.get("long_window", [])
-    if not long_windows:
+def validate_train_windows(strategy_name: str, train_data: pd.DataFrame, parameter_grid: dict[str, list[int]]) -> None:
+    """Ensure the train segment can support the requested family-specific history length."""
+    required_parameter_name = _required_history_parameter_name(strategy_name)
+    window_values = parameter_grid.get(required_parameter_name, [])
+    if not window_values:
         return
-    largest_long_window = max(int(window) for window in long_windows)
-    if len(train_data) < largest_long_window:
-        raise ValueError("Train segment is too short for the requested long_window values")
+    largest_window = max(int(window) for window in window_values)
+    if len(train_data) < largest_window:
+        raise ValueError(f"Train segment is too short for the requested {required_parameter_name} values")
 
 
 def build_validation_metadata(train_data: pd.DataFrame, test_data: pd.DataFrame) -> dict[str, object]:
@@ -104,3 +109,11 @@ def generate_walk_forward_folds(
         folds.append((start_index, train_end_idx, test_end_idx))
         start_index += step_size
     return folds
+
+
+def _required_history_parameter_name(strategy_name: str) -> str:
+    if strategy_name == "ma_crossover":
+        return "long_window"
+    if strategy_name == "breakout":
+        return "lookback_window"
+    raise ValueError(f"Unsupported strategy: {strategy_name}")

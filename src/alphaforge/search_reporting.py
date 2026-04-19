@@ -81,6 +81,9 @@ def load_top_search_equity_curves(
 
 def build_search_curve_label(rank: int, result: ExperimentResult) -> str:
     parameters = result.strategy_spec.parameters
-    short_window = parameters.get("short_window", "")
-    long_window = parameters.get("long_window", "")
-    return f"Rank {rank} | SW {short_window} | LW {long_window}"
+    if set(parameters) == {"short_window", "long_window"}:
+        short_window = parameters.get("short_window", "")
+        long_window = parameters.get("long_window", "")
+        return f"Rank {rank} | SW {short_window} | LW {long_window}"
+    parameter_bits = " | ".join(f"{key}={value}" for key, value in parameters.items())
+    return f"Rank {rank}" if not parameter_bits else f"Rank {rank} | {parameter_bits}"

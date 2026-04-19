@@ -16,6 +16,7 @@ from .permutation import run_permutation_test_with_details
 from .permutation import DEFAULT_PERMUTATION_TARGET_METRIC_NAME, SUPPORTED_PERMUTATION_TARGET_METRICS
 from .report import render_experiment_report, save_experiment_report
 from .schemas import BacktestConfig, DataSpec, SearchSummary, StrategySpec
+from .search import SUPPORTED_STRATEGY_FAMILIES
 from .storage import (
     ensure_output_dir,
     serialize_artifact_receipt,
@@ -34,32 +35,40 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="AlphaForge workflow orchestration CLI")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    single = subparsers.add_parser("run", help="Run a single MA crossover experiment")
+    single = subparsers.add_parser("run", help="Run a single strategy experiment")
     _add_common_arguments(single)
-    single.add_argument("--short-window", type=int, required=True)
-    single.add_argument("--long-window", type=int, required=True)
+    single.add_argument("--strategy", type=str, choices=SUPPORTED_STRATEGY_FAMILIES, default="ma_crossover")
+    single.add_argument("--short-window", type=int, default=None)
+    single.add_argument("--long-window", type=int, default=None)
+    single.add_argument("--lookback-window", type=int, default=None)
     single.add_argument("--generate-report", action="store_true")
 
-    search = subparsers.add_parser("search", help="Run grid search over MA windows")
+    search = subparsers.add_parser("search", help="Run grid search over a selected strategy family")
     _add_common_arguments(search)
+    search.add_argument("--strategy", type=str, choices=SUPPORTED_STRATEGY_FAMILIES, default="ma_crossover")
     search.add_argument("--short-windows", type=int, nargs="+", default=config.SHORT_WINDOW_RANGE)
     search.add_argument("--long-windows", type=int, nargs="+", default=config.LONG_WINDOW_RANGE)
+    search.add_argument("--lookback-windows", type=int, nargs="+", default=None)
     search.add_argument("--max-drawdown-cap", type=float, default=None)
     search.add_argument("--min-trade-count", type=int, default=None)
     search.add_argument("--generate-report", action="store_true")
 
-    validate_search = subparsers.add_parser("validate-search", help="Run train/test validation for MA parameter search")
+    validate_search = subparsers.add_parser("validate-search", help="Run train/test validation for a selected strategy family")
     _add_common_arguments(validate_search)
+    validate_search.add_argument("--strategy", type=str, choices=SUPPORTED_STRATEGY_FAMILIES, default="ma_crossover")
     validate_search.add_argument("--short-windows", type=int, nargs="+", default=config.SHORT_WINDOW_RANGE)
     validate_search.add_argument("--long-windows", type=int, nargs="+", default=config.LONG_WINDOW_RANGE)
+    validate_search.add_argument("--lookback-windows", type=int, nargs="+", default=None)
     validate_search.add_argument("--split-ratio", type=float, required=True)
     validate_search.add_argument("--max-drawdown-cap", type=float, default=None)
     validate_search.add_argument("--min-trade-count", type=int, default=None)
 
-    walk_forward = subparsers.add_parser("walk-forward", help="Run walk-forward validation for MA parameter search")
+    walk_forward = subparsers.add_parser("walk-forward", help="Run walk-forward validation for a selected strategy family")
     _add_common_arguments(walk_forward)
+    walk_forward.add_argument("--strategy", type=str, choices=SUPPORTED_STRATEGY_FAMILIES, default="ma_crossover")
     walk_forward.add_argument("--short-windows", type=int, nargs="+", default=config.SHORT_WINDOW_RANGE)
     walk_forward.add_argument("--long-windows", type=int, nargs="+", default=config.LONG_WINDOW_RANGE)
+    walk_forward.add_argument("--lookback-windows", type=int, nargs="+", default=None)
     walk_forward.add_argument("--train-size", type=int, required=True)
     walk_forward.add_argument("--test-size", type=int, required=True)
     walk_forward.add_argument("--step-size", type=int, required=True)
@@ -120,7 +129,8 @@ def _add_common_arguments(parser: argparse.ArgumentParser) -> None:
 
 
 def main() -> None:
-    args = build_parser().parse_args()
+    parser = build_parser()
+    args = parser.parse_args()
 
     try:
         if args.command == "fetch-twse":
@@ -159,6 +169,7 @@ def main() -> None:
                     "short_window": args.short_windows,
                     "long_window": args.long_windows,
                 },
+                strategy_name="ma_crossover",
                 backtest_config=backtest_config,
                 output_dir=args.output_dir,
                 experiment_name=args.experiment_name,
@@ -187,10 +198,7 @@ def main() -> None:
         )
 
         if args.command == "run":
-            strategy_spec = StrategySpec(
-                name="ma_crossover",
-                parameters={"short_window": args.short_window, "long_window": args.long_window},
-            )
+            strategy_spec = _build_strategy_spec_from_args(args, parser)
             execution = run_experiment_with_artifacts(
                 data_spec=data_spec,
                 strategy_spec=strategy_spec,
@@ -211,11 +219,9 @@ def main() -> None:
         if args.command == "validate-search":
             validation_execution = run_validate_search_with_details(
                 data_spec=data_spec,
-                parameter_grid={
-                    "short_window": args.short_windows,
-                    "long_window": args.long_windows,
-                },
+                parameter_grid=_build_strategy_parameter_grid_from_args(args, parser),
                 split_ratio=args.split_ratio,
+                strategy_name=args.strategy,
                 backtest_config=backtest_config,
                 output_dir=args.output_dir,
                 experiment_name=args.experiment_name,
@@ -230,13 +236,11 @@ def main() -> None:
         if args.command == "walk-forward":
             walk_forward_execution = run_walk_forward_search_with_details(
                 data_spec=data_spec,
-                parameter_grid={
-                    "short_window": args.short_windows,
-                    "long_window": args.long_windows,
-                },
+                parameter_grid=_build_strategy_parameter_grid_from_args(args, parser),
                 train_size=args.train_size,
                 test_size=args.test_size,
                 step_size=args.step_size,
+                strategy_name=args.strategy,
                 backtest_config=backtest_config,
                 output_dir=args.output_dir,
                 experiment_name=args.experiment_name,
@@ -270,10 +274,8 @@ def main() -> None:
 
         search_execution = run_search_with_details(
             data_spec=data_spec,
-            parameter_grid={
-                "short_window": args.short_windows,
-                "long_window": args.long_windows,
-            },
+            parameter_grid=_build_strategy_parameter_grid_from_args(args, parser),
+            strategy_name=args.strategy,
             backtest_config=backtest_config,
             output_dir=args.output_dir,
             experiment_name=args.experiment_name,
@@ -297,6 +299,37 @@ def main() -> None:
 def _load_twse_client():
     module = importlib.import_module("alphaforge.twse_client")
     return module.TwseFetchRequest, module.fetch_stock_day_history, module.save_stock_day_history
+
+
+def _build_strategy_spec_from_args(args: argparse.Namespace, parser: argparse.ArgumentParser) -> StrategySpec:
+    if args.strategy == "ma_crossover":
+        if args.short_window is None or args.long_window is None:
+            parser.error("MA crossover run requires --short-window and --long-window")
+        return StrategySpec(
+            name="ma_crossover",
+            parameters={"short_window": args.short_window, "long_window": args.long_window},
+        )
+    if args.strategy == "breakout":
+        if args.lookback_window is None:
+            parser.error("Breakout run requires --lookback-window")
+        return StrategySpec(name="breakout", parameters={"lookback_window": args.lookback_window})
+    parser.error(f"Unsupported strategy: {args.strategy}")
+
+
+def _build_strategy_parameter_grid_from_args(
+    args: argparse.Namespace,
+    parser: argparse.ArgumentParser,
+) -> dict[str, list[int]]:
+    if args.strategy == "ma_crossover":
+        return {
+            "short_window": args.short_windows,
+            "long_window": args.long_windows,
+        }
+    if args.strategy == "breakout":
+        if args.lookback_windows is None:
+            parser.error("Breakout search requires --lookback-windows")
+        return {"lookback_window": args.lookback_windows}
+    parser.error(f"Unsupported strategy: {args.strategy}")
 
 
 def _build_search_summary(

@@ -73,6 +73,24 @@ def _make_result(short_window: int, long_window: int, score: float = 0.5) -> Exp
     )
 
 
+def _make_breakout_result(lookback_window: int, score: float = 0.5) -> ExperimentResult:
+    return ExperimentResult(
+        data_spec=DataSpec(path=Path("sample_data/example.csv"), symbol="2330"),
+        strategy_spec=StrategySpec(name="breakout", parameters={"lookback_window": lookback_window}),
+        backtest_config=BacktestConfig(initial_capital=100000.0, fee_rate=0.001, slippage_rate=0.0005, annualization_factor=252),
+        metrics=MetricReport(
+            total_return=0.18,
+            annualized_return=0.28,
+            sharpe_ratio=1.2,
+            max_drawdown=-0.07,
+            win_rate=0.55,
+            turnover=1.1,
+            trade_count=3,
+        ),
+        score=score,
+    )
+
+
 def _make_equity_curve() -> pd.DataFrame:
     return pd.DataFrame(
         {
@@ -330,6 +348,77 @@ def test_save_walk_forward_result_writes_summary_and_fold_results_contract(tmp_p
     assert "walk_forward_summary_path" not in serialized_walk_forward
     assert serialized_receipt["walk_forward_summary_path"] == str(summary_path)
     assert serialized_receipt["fold_results_path"] == str(fold_results_path)
+
+
+def test_save_walk_forward_result_writes_breakout_parameter_columns(tmp_path: Path) -> None:
+    walk_forward_root = tmp_path / "walk_forward_breakout_case"
+    train_best_result = _make_breakout_result(lookback_window=5, score=0.9)
+    test_result = _make_breakout_result(lookback_window=5, score=0.4)
+    search_summary = _make_search_summary(train_best_result, result_count=1)
+    fold_result = WalkForwardFoldResult(
+        fold_index=1,
+        train_start="2024-01-01",
+        train_end="2024-01-04",
+        test_start="2024-01-05",
+        test_end="2024-01-06",
+        selected_strategy_spec=train_best_result.strategy_spec,
+        train_best_result=train_best_result,
+        test_result=test_result,
+        test_benchmark_summary={"total_return": 0.1, "max_drawdown": -0.05},
+        candidate_evidence=build_candidate_evidence_summary(
+            strategy_spec=train_best_result.strategy_spec,
+            train_result=train_best_result,
+            test_result=test_result,
+            search_summary=search_summary,
+            benchmark_summary={"total_return": 0.1, "max_drawdown": -0.05},
+            artifact_paths={
+                "fold_root": str(walk_forward_root / "folds" / "fold_001"),
+                "train_search_root": str(walk_forward_root / "folds" / "fold_001" / "train_search"),
+                "test_selected_run_dir": str(walk_forward_root / "folds" / "fold_001" / "test_selected"),
+            },
+        ),
+        candidate_decision=CandidatePolicyDecision(
+            policy_name="post_search_candidate_policy",
+            policy_scope="walk-forward",
+            verdict="validated",
+            decision_reasons=["evidence_complete"],
+        ),
+    )
+    walk_forward_result = WalkForwardResult(
+        data_spec=DataSpec(path=Path("sample_data/example.csv"), symbol="2330"),
+        walk_forward_config=WalkForwardConfig(train_size=4, test_size=2, step_size=2),
+        folds=[fold_result],
+        aggregate_test_metrics={"fold_count": 1},
+        aggregate_benchmark_metrics={"fold_count": 1, "mean_benchmark_total_return": 0.1},
+        walk_forward_evidence=build_walk_forward_evidence_summary(
+            fold_count=1,
+            validated_fold_count=1,
+            skipped_fold_count=0,
+            aggregate_test_metrics={"fold_count": 1},
+            aggregate_benchmark_metrics={"fold_count": 1, "mean_benchmark_total_return": 0.1},
+            artifact_paths={
+                "walk_forward_summary_path": str(walk_forward_root / WALK_FORWARD_SUMMARY_FILENAME),
+                "fold_results_path": str(walk_forward_root / FOLD_RESULTS_FILENAME),
+            },
+        ),
+        walk_forward_decision=CandidatePolicyDecision(
+            policy_name="post_search_candidate_policy",
+            policy_scope="walk-forward",
+            verdict="validated",
+            decision_reasons=["fold_coverage_complete"],
+        ),
+        metadata={"fold_count": 1},
+    )
+
+    persisted_result, receipt = save_walk_forward_result(walk_forward_root, walk_forward_result)
+    fold_results_frame = pd.read_csv(walk_forward_root / FOLD_RESULTS_FILENAME)
+    serialized_receipt = serialize_walk_forward_artifact_receipt(receipt)
+
+    assert persisted_result.folds[0].selected_strategy_spec.name == "breakout"
+    assert fold_results_frame.columns.tolist().count("lookback_window") == 1
+    assert "short_window" not in fold_results_frame.columns
+    assert "long_window" not in fold_results_frame.columns
+    assert serialized_receipt["walk_forward_summary_path"] == str(walk_forward_root / WALK_FORWARD_SUMMARY_FILENAME)
 
 
 def test_save_permutation_test_result_writes_canonical_summary_and_scores(tmp_path: Path) -> None:

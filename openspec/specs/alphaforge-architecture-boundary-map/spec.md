@@ -41,6 +41,7 @@ AlphaForge SHALL assign each business rule, execution semantic, schema, naming c
 - Domain implementation layer:
   - `src/alphaforge/data_loader.py` is authoritative for canonical market data schema enforcement after raw data is available locally.
   - `src/alphaforge/strategy/ma_crossover.py` is implementation-only for the MA crossover strategy logic.
+  - `src/alphaforge/strategy/breakout.py` is implementation-only for the breakout strategy logic.
   - `src/alphaforge/backtest.py` is authoritative for execution semantics.
   - `src/alphaforge/metrics.py` is authoritative for performance analytics semantics.
   - `src/alphaforge/benchmark.py` is authoritative for benchmark semantics.
@@ -68,7 +69,8 @@ AlphaForge SHALL assign each business rule, execution semantic, schema, naming c
 | Canonical truth category | Authoritative owner | Layer role | Non-authoritative consumers |
 | --- | --- | --- | --- |
 | Canonical market data schema | `src/alphaforge/data_loader.py` | contract-enforcement + implementation | `twse_client.py`, `backtest.py`, `visualization.py`, `report.py` |
-| Strategy interface contract | `src/alphaforge/strategy/base.py` | contract-only | `strategy/ma_crossover.py`, `experiment_runner.py` |
+| Strategy interface contract | `src/alphaforge/strategy/base.py` | contract-only | `strategy/ma_crossover.py`, `strategy/breakout.py`, `experiment_runner.py` |
+| Strategy implementation families | `src/alphaforge/strategy/ma_crossover.py`, `src/alphaforge/strategy/breakout.py` | implementation-only | `experiment_runner.py`, `search.py` |
 | Execution semantics | `src/alphaforge/backtest.py` | implementation-authoritative | `metrics.py`, `report.py`, `storage.py`, `cli.py` |
 | Search-space generation | `src/alphaforge/search.py` | implementation-authoritative | `cli.py`, `experiment_runner.py` |
 | Post-search candidate promotion/rejection policy | `src/alphaforge/policy.py` | implementation-authoritative | `experiment_runner.py`, `storage.py`, `cli.py` |
@@ -99,6 +101,7 @@ AlphaForge SHALL assign each business rule, execution semantic, schema, naming c
 | `twse_client.py` | adapter-only | remote fetch, remote payload parsing, adapter normalization into loader-consumable frame |
 | `strategy/base.py` | contract-only | strategy construction and signal-generation interface |
 | `strategy/ma_crossover.py` | implementation-only | MA parameter validation specific to MA strategy and MA signal generation |
+| `strategy/breakout.py` | implementation-only | breakout parameter validation specific to breakout strategy and breakout signal generation |
 | `backtest.py` | implementation-authoritative | target-position application, timing semantics, fee/slippage application, trade extraction, equity-curve construction |
 | `metrics.py` | implementation-authoritative | return, drawdown, Sharpe, turnover, trade count, win rate semantics |
 | `benchmark.py` | implementation-authoritative | buy-and-hold benchmark construction and benchmark summary semantics |
@@ -122,7 +125,7 @@ AlphaForge SHALL assign each business rule, execution semantic, schema, naming c
 - `data_loader.py` must not fetch remote data, score results, construct reports, define artifact filenames, or own strategy-specific parameter validation.
 - `twse_client.py` must not own the canonical market data schema after loader validation, missing-data policy, search defaults, or storage layout.
 - `strategy/base.py` must not own parameter ranges, ranking logic, execution timing, benchmark logic, or persistence.
-- `strategy/ma_crossover.py` must not own search-space generation, backtest semantics, metrics semantics, or report-facing schema requirements.
+- `strategy/ma_crossover.py` and `strategy/breakout.py` must not own search-space generation, backtest semantics, metrics semantics, or report-facing schema requirements.
 - `backtest.py` must not own metric formulas, ranking formulas, report rendering, artifact naming, or parameter-grid generation.
 - `metrics.py` must not own benchmark formulas, scoring thresholds, backtest timing, report formatting, or persisted JSON schema.
 - `benchmark.py` must not own report text, figure construction, strategy metrics, or ranking.
@@ -170,7 +173,7 @@ AlphaForge SHALL assign each business rule, execution semantic, schema, naming c
 ## Cross-module dependencies
 
 - `twse_client.py` depends on external TWSE payload structure and produces a loader-consumable frame; `data_loader.py` is authoritative when adapter output conflicts with runtime schema expectations.
-- `strategy/ma_crossover.py` depends on `StrategySpec` from `schemas.py` and the interface contract in `strategy/base.py`.
+- `strategy/ma_crossover.py` and `strategy/breakout.py` depend on `StrategySpec` from `schemas.py` and the interface contract in `strategy/base.py`.
 - `backtest.py` depends on canonical market-data columns validated by `data_loader.py` and on strategy outputs produced through the `Strategy` contract.
 - `metrics.py` depends on the equity-curve and trade-log semantics emitted by `backtest.py`.
 - `benchmark.py` depends on market-data close-price semantics but does not depend on backtest internals.
@@ -190,7 +193,7 @@ AlphaForge SHALL assign each business rule, execution semantic, schema, naming c
 - If `schemas.py` and `storage.py` both own persisted artifact schema, serialized JSON/CSV layout will drift from in-memory result structure and break report or CLI assumptions.
 - If `backtest.py` and `metrics.py` both interpret turnover or trade boundaries, reported analytics will no longer match executed trades.
 - If `report.py` recomputes benchmark or metric semantics instead of consuming authoritative owners, HTML output can disagree with saved summaries and CLI payloads.
-- If `search.py` and `strategy/ma_crossover.py` both own parameter-validity semantics without authoritative priority, invalid combinations may be filtered differently in CLI, search, and direct strategy execution.
+- If `search.py` and the strategy implementation modules both own parameter-validity semantics without authoritative priority, invalid combinations may be filtered differently in CLI, search, and direct strategy execution.
 - If `experiment_runner.py` retains workflow-specific schema assembly that duplicates `storage.py`, new workflows will force changes in multiple files and create god-module growth.
 - If `cli.py` hardcodes output path conventions independently of `storage.py`, command payloads will advertise artifacts that are never actually written.
 - If repo tooling is imported into runtime code, local-machine developer workflow dependencies will contaminate product execution and make reproducibility environment-dependent.

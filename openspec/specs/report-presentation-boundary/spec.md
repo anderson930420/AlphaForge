@@ -38,6 +38,7 @@ User-facing presentation contracts in AlphaForge SHALL be owned explicitly by `s
   - choose which derived fields appear in a command payload,
   - serialize runtime results and storage-owned artifact refs into command-facing JSON/text output,
   - include report paths returned by report owners.
+- `report.py` and `search_reporting.py` MAY derive search-comparison labels from the selected strategy parameters rather than hardcoding MA-only column names.
 
 #### Explicit non-responsibilities
 
@@ -112,6 +113,7 @@ User-facing presentation contracts in AlphaForge SHALL be owned explicitly by `s
 - `report.py` currently renders single-run reports from `ExperimentReportInput` rather than pulling benchmark-derived presentation inputs internally.
 - `visualization.py` currently owns `REPORT_EQUITY_CURVE_REQUIRED_COLUMNS`; this is acceptable only if those columns remain presentation-only requirements.
 - `cli.py` now consumes `SearchExecutionOutput` for search/report path ownership and assembles compact summary payloads documented in `README.md`.
+- `search_reporting.py` and `report.py` now derive search-comparison labels from the selected strategy parameters so breakout can reuse the same presentation path as MA crossover.
 - `README.md` currently documents report artifacts and CLI summary payloads; those descriptions must remain derived from canonical presentation owners rather than becoming a parallel source of truth.
 
 #### Open questions / deferred decisions
@@ -141,4 +143,3 @@ User-facing presentation contracts in AlphaForge SHALL be owned explicitly by `s
 - THEN runtime result fields SHALL come from canonical runtime serializers
 - AND artifact paths SHALL come from storage-owned serializers or report-returned paths
 - AND `cli.py` SHALL NOT invent a parallel artifact or report contract
-

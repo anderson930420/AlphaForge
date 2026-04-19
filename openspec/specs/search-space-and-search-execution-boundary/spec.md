@@ -1,16 +1,16 @@
 # search-space-and-search-execution-boundary Specification
 
 ## Purpose
-Define the canonical MA search-space contract, including parameter enumeration, invalid-combination filtering, ranking handoff, and stable search-summary semantics.
+Define the canonical named strategy-family search-space contract, including parameter enumeration, invalid-combination filtering, ranking handoff, and stable search-summary semantics.
 ## Requirements
 ### Requirement: `search.py` is the canonical owner of search-space generation and candidate construction
 
-`src/alphaforge/search.py` SHALL be the single authoritative owner of AlphaForge search-space generation and candidate construction semantics.
+`src/alphaforge/search.py` SHALL be the single authoritative owner of AlphaForge search-space generation and candidate construction semantics for the supported strategy families.
 
 #### Purpose
 
 - Make it explicit where parameter grids become executable strategy candidates.
-- Prevent the runner, strategy modules, CLI, or presentation layers from inventing their own parameter enumeration rules.
+- Prevent the runner, strategy modules, CLI, or presentation layers from inventing their own family-specific parameter enumeration rules.
 - Keep the search-space contract reusable across plain search, validation, and walk-forward flows.
 
 #### Canonical owner
@@ -115,6 +115,7 @@ Define the canonical MA search-space contract, including parameter enumeration, 
 
 - `src/alphaforge/strategy/base.py` remains the owner of the strategy interface contract.
 - `src/alphaforge/strategy/ma_crossover.py` remains the owner of MA crossover parameter validity and MA-specific strategy semantics.
+- `src/alphaforge/strategy/breakout.py` remains the owner of breakout parameter validity and breakout-specific strategy semantics.
 - `src/alphaforge/search.py` remains the owner of candidate enumeration and search-family-local pruning.
 
 #### Allowed responsibilities
@@ -169,6 +170,8 @@ Define the canonical MA search-space contract, including parameter enumeration, 
 
 - `MovingAverageCrossoverStrategy` currently validates positive windows and `short_window < long_window` during construction.
 - `build_strategy_specs()` currently also filters invalid MA combinations before construction.
+- `BreakoutStrategy` currently validates a positive `lookback_window` during construction.
+- `build_strategy_specs()` currently also filters invalid breakout combinations before construction.
 - The current overlap is acceptable only if `search.py` is treated as the search-space prefilter and the strategy constructor is treated as the semantic guard.
 
 #### Open questions / deferred decisions

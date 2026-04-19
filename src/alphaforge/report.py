@@ -283,17 +283,20 @@ def _build_search_comparison_table(
     if len(artifact_receipts) != len(ranked_results):
         raise ValueError("artifact_receipts must align one-to-one with ranked_results")
 
+    parameter_names = list(ranked_results[0].strategy_spec.parameters)
+    parameter_headers = [_titleize_parameter_name(name) for name in parameter_names]
     rows = []
     for rank, (result, receipt) in enumerate(zip(ranked_results, artifact_receipts, strict=False), start=1):
         parameters = result.strategy_spec.parameters
         artifact_path = _build_relative_artifact_path(link_context, receipt)
         best_report_link = _build_best_report_link(link_context, best_report_path, rank)
+        parameter_cells = "".join(
+            f"  <td>{escape(str(parameters.get(parameter_name, '')))}</td>\n" for parameter_name in parameter_names
+        )
         rows.append(
             f"""<tr>
   <td>{rank}</td>
-  <td>{escape(str(parameters.get("short_window", "")))}</td>
-  <td>{escape(str(parameters.get("long_window", "")))}</td>
-  <td>{escape(f"{result.score:.4f}")}</td>
+{parameter_cells}  <td>{escape(f"{result.score:.4f}")}</td>
   <td>{escape(_format_percent(result.metrics.total_return))}</td>
   <td>{escape(f"{result.metrics.sharpe_ratio:.2f}")}</td>
   <td>{escape(_format_percent(result.metrics.max_drawdown))}</td>
@@ -309,8 +312,7 @@ def _build_search_comparison_table(
   <thead>
     <tr>
       <th>Rank</th>
-      <th>Short Window</th>
-      <th>Long Window</th>
+      {"".join(f"<th>{escape(header)}</th>" for header in parameter_headers)}
       <th>Score</th>
       <th>Total Return</th>
       <th>Sharpe</th>
@@ -351,6 +353,10 @@ def _build_search_chart_sections(top_equity_curves: dict[str, EquityCurveFrame])
       <h2>Top Drawdowns</h2>
       {drawdown_figure_html}
     </section>"""
+
+
+def _titleize_parameter_name(parameter_name: str) -> str:
+    return parameter_name.replace("_", " ").title()
 
 
 def _build_relative_artifact_path(

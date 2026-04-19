@@ -35,6 +35,7 @@ Define the canonical CLI request-assembly and dispatch boundary, including comma
   - parse strings, numbers, booleans, lists, and paths from `argv`,
   - convert parsed values into request DTOs such as `DataSpec`, `BacktestConfig`, `StrategySpec`, `ValidationSplitConfig`, `WalkForwardConfig`, and adapter request bundles,
   - choose which orchestration or adapter entrypoint to call for each subcommand,
+  - expose a `--strategy` selector for `run`, `search`, `validate-search`, and `walk-forward`,
   - call a composite sequence when the CLI surface explicitly exposes a composite command,
   - print derived JSON or text payloads based on authoritative upstream return values,
   - surface storage refs, report refs, and workflow summaries that were returned by upstream owners.
@@ -96,6 +97,7 @@ Define the canonical CLI request-assembly and dispatch boundary, including comma
 
 - `cli.py` already builds `DataSpec`, `BacktestConfig`, `StrategySpec`, and parameter grids from parsed arguments.
 - `cli.py` already dispatches `run`, `search`, `validate-search`, `walk-forward`, `permutation-test`, `fetch-twse`, and `twse-search`.
+- `cli.py` now accepts `--strategy` on `run`, `search`, `validate-search`, and `walk-forward` so callers can select either `ma_crossover` or `breakout` without changing the CLI ownership boundary.
 - `cli.py` currently formats JSON payloads that include serialized results, artifact refs, and report paths.
 - `cli.py` currently performs a direct report rendering path for `run --generate-report`, which makes the report boundary easy to blur if the report input contract is not explicit.
 - `twse-search` currently combines adapter fetch, data save, and search dispatch in one command, so the CLI must stay careful not to absorb TWSE normalization or storage ownership.

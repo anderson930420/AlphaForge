@@ -526,33 +526,60 @@ def _write_json(path: Path, payload: dict[str, Any]) -> None:
 
 
 def _write_walk_forward_fold_results_csv(path: Path, walk_forward_result: WalkForwardResult) -> None:
+    parameter_columns: list[str] = []
+    for fold in walk_forward_result.folds:
+        for parameter_name in fold.selected_strategy_spec.parameters:
+            if parameter_name not in parameter_columns:
+                parameter_columns.append(parameter_name)
+
+    fixed_columns = [
+        "fold_index",
+        "train_start",
+        "train_end",
+        "test_start",
+        "test_end",
+    ]
+    metric_columns = [
+        "train_score",
+        "train_total_return",
+        "train_sharpe_ratio",
+        "test_total_return",
+        "test_annualized_return",
+        "test_sharpe_ratio",
+        "test_max_drawdown",
+        "test_win_rate",
+        "test_turnover",
+        "test_trade_count",
+        "benchmark_total_return",
+        "benchmark_max_drawdown",
+        WALK_FORWARD_FOLD_PATH_COLUMN,
+    ]
     rows = []
     for fold in walk_forward_result.folds:
-        rows.append(
-            {
-                "fold_index": fold.fold_index,
-                "train_start": fold.train_start,
-                "train_end": fold.train_end,
-                "test_start": fold.test_start,
-                "test_end": fold.test_end,
-                "short_window": fold.selected_strategy_spec.parameters.get("short_window"),
-                "long_window": fold.selected_strategy_spec.parameters.get("long_window"),
-                "train_score": fold.train_best_result.score,
-                "train_total_return": fold.train_best_result.metrics.total_return,
-                "train_sharpe_ratio": fold.train_best_result.metrics.sharpe_ratio,
-                "test_total_return": fold.test_result.metrics.total_return,
-                "test_annualized_return": fold.test_result.metrics.annualized_return,
-                "test_sharpe_ratio": fold.test_result.metrics.sharpe_ratio,
-                "test_max_drawdown": fold.test_result.metrics.max_drawdown,
-                "test_win_rate": fold.test_result.metrics.win_rate,
-                "test_turnover": fold.test_result.metrics.turnover,
-                "test_trade_count": fold.test_result.metrics.trade_count,
-                "benchmark_total_return": fold.test_benchmark_summary.get("total_return"),
-                "benchmark_max_drawdown": fold.test_benchmark_summary.get("max_drawdown"),
-                WALK_FORWARD_FOLD_PATH_COLUMN: str(_materialize_walk_forward_fold_dir(path.parent, fold.fold_index)),
-            }
-        )
-    pd.DataFrame(rows).to_csv(path, index=False)
+        row = {
+            "fold_index": fold.fold_index,
+            "train_start": fold.train_start,
+            "train_end": fold.train_end,
+            "test_start": fold.test_start,
+            "test_end": fold.test_end,
+            "train_score": fold.train_best_result.score,
+            "train_total_return": fold.train_best_result.metrics.total_return,
+            "train_sharpe_ratio": fold.train_best_result.metrics.sharpe_ratio,
+            "test_total_return": fold.test_result.metrics.total_return,
+            "test_annualized_return": fold.test_result.metrics.annualized_return,
+            "test_sharpe_ratio": fold.test_result.metrics.sharpe_ratio,
+            "test_max_drawdown": fold.test_result.metrics.max_drawdown,
+            "test_win_rate": fold.test_result.metrics.win_rate,
+            "test_turnover": fold.test_result.metrics.turnover,
+            "test_trade_count": fold.test_result.metrics.trade_count,
+            "benchmark_total_return": fold.test_benchmark_summary.get("total_return"),
+            "benchmark_max_drawdown": fold.test_benchmark_summary.get("max_drawdown"),
+            WALK_FORWARD_FOLD_PATH_COLUMN: str(_materialize_walk_forward_fold_dir(path.parent, fold.fold_index)),
+        }
+        for parameter_name in parameter_columns:
+            row[parameter_name] = fold.selected_strategy_spec.parameters.get(parameter_name)
+        rows.append(row)
+    pd.DataFrame(rows, columns=fixed_columns + parameter_columns + metric_columns).to_csv(path, index=False)
 
 
 def _write_permutation_scores_csv(path: Path, summary: PermutationTestSummary) -> None:

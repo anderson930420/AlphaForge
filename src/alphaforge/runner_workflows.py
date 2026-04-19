@@ -130,6 +130,7 @@ def run_experiment_on_market_data(
 def run_search_with_details_workflow(
     data_spec: DataSpec,
     parameter_grid: dict[str, list[int]],
+    strategy_name: str = "ma_crossover",
     backtest_config: BacktestConfig | None = None,
     output_dir: Path | None = None,
     experiment_name: str = "search_experiment",
@@ -143,6 +144,7 @@ def run_search_with_details_workflow(
         market_data=market_data,
         data_spec=data_spec,
         parameter_grid=parameter_grid,
+        strategy_name=strategy_name,
         backtest_config=backtest_config,
         output_dir=output_dir,
         experiment_name=experiment_name,
@@ -157,6 +159,7 @@ def run_search_on_market_data(
     data_spec: DataSpec,
     parameter_grid: dict[str, list[int]],
     backtest_config: BacktestConfig,
+    strategy_name: str = "ma_crossover",
     output_dir: Path | None = None,
     experiment_name: str = "search_experiment",
     max_drawdown_cap: float | None = None,
@@ -168,7 +171,7 @@ def run_search_on_market_data(
     ranked_results_path: Path | None = None
     best_report_path: Path | None = None
     comparison_report_path: Path | None = None
-    search_space = evaluate_strategy_search_space("ma_crossover", parameter_grid)
+    search_space = evaluate_strategy_search_space(strategy_name, parameter_grid)
     strategy_specs = list(search_space.strategy_specs)
     search_root = workflow_root(output_dir, experiment_name)
     runs_output_dir = (search_root / "runs") if search_root is not None else None
@@ -227,6 +230,7 @@ def run_validate_search_with_details_workflow(
     data_spec: DataSpec,
     parameter_grid: dict[str, list[int]],
     split_ratio: float,
+    strategy_name: str = "ma_crossover",
     backtest_config: BacktestConfig | None = None,
     output_dir: Path | None = None,
     experiment_name: str = "validation_experiment",
@@ -237,6 +241,7 @@ def run_validate_search_with_details_workflow(
         data_spec=data_spec,
         parameter_grid=parameter_grid,
         split_ratio=split_ratio,
+        strategy_name=strategy_name,
         backtest_config=backtest_config,
         output_dir=output_dir,
         experiment_name=experiment_name,
@@ -253,6 +258,7 @@ def run_validate_search_on_market_data(
     data_spec: DataSpec,
     parameter_grid: dict[str, list[int]],
     split_ratio: float,
+    strategy_name: str = "ma_crossover",
     backtest_config: BacktestConfig | None = None,
     output_dir: Path | None = None,
     experiment_name: str = "validation_experiment",
@@ -262,13 +268,14 @@ def run_validate_search_on_market_data(
     backtest_config = resolve_backtest_config(backtest_config)
     market_data = load_market_data(data_spec)
     train_data, test_data = split_market_data_by_ratio(market_data, split_ratio)
-    validate_train_windows(train_data, parameter_grid)
+    validate_train_windows(strategy_name, train_data, parameter_grid)
 
     validation_root = workflow_root(output_dir, experiment_name)
     search_execution = run_search_on_market_data(
         market_data=train_data,
         data_spec=data_spec,
         parameter_grid=parameter_grid,
+        strategy_name=strategy_name,
         backtest_config=backtest_config,
         output_dir=None,
         experiment_name="train_search",
@@ -368,6 +375,7 @@ def run_walk_forward_search_with_details_workflow(
     train_size: int,
     test_size: int,
     step_size: int,
+    strategy_name: str = "ma_crossover",
     backtest_config: BacktestConfig | None = None,
     output_dir: Path | None = None,
     experiment_name: str = "walk_forward_experiment",
@@ -380,6 +388,7 @@ def run_walk_forward_search_with_details_workflow(
         train_size=train_size,
         test_size=test_size,
         step_size=step_size,
+        strategy_name=strategy_name,
         backtest_config=backtest_config,
         output_dir=output_dir,
         experiment_name=experiment_name,
@@ -398,6 +407,7 @@ def run_walk_forward_search_on_market_data(
     train_size: int,
     test_size: int,
     step_size: int,
+    strategy_name: str = "ma_crossover",
     backtest_config: BacktestConfig | None = None,
     output_dir: Path | None = None,
     experiment_name: str = "walk_forward_experiment",
@@ -407,20 +417,21 @@ def run_walk_forward_search_on_market_data(
     backtest_config = resolve_backtest_config(backtest_config)
     market_data = load_market_data(data_spec)
     folds = generate_walk_forward_folds(market_data, train_size=train_size, test_size=test_size, step_size=step_size)
-    validate_train_windows(market_data.iloc[:train_size].reset_index(drop=True), parameter_grid)
+    validate_train_windows(strategy_name, market_data.iloc[:train_size].reset_index(drop=True), parameter_grid)
 
     walk_forward_root = workflow_root(output_dir, experiment_name)
     fold_results: list[WalkForwardFoldResult] = []
     for fold_index, (train_start_idx, train_end_idx, test_end_idx) in enumerate(folds, start=1):
         train_data = market_data.iloc[train_start_idx:train_end_idx].reset_index(drop=True)
         test_data = market_data.iloc[train_end_idx:test_end_idx].reset_index(drop=True)
-        validate_train_windows(train_data, parameter_grid)
+        validate_train_windows(strategy_name, train_data, parameter_grid)
         fold_root = (walk_forward_root / "folds" / f"fold_{fold_index:03d}") if walk_forward_root is not None else None
 
         search_execution = run_search_on_market_data(
             market_data=train_data,
             data_spec=data_spec,
             parameter_grid=parameter_grid,
+            strategy_name=strategy_name,
             backtest_config=backtest_config,
             output_dir=fold_root,
             experiment_name="train_search",

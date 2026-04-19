@@ -17,7 +17,7 @@ TBD - created by archiving change formalize-market-data-schema-and-adapter-bound
 - `src/alphaforge/data_loader.py` is the only authoritative owner of canonical market-data acceptance and validation.
 - `src/alphaforge/config.py` may supply literal alias maps or human-readable policy text as inputs only.
 - `src/alphaforge/twse_client.py` is an external adapter only.
-- `src/alphaforge/strategy/base.py`, `src/alphaforge/strategy/ma_crossover.py`, `src/alphaforge/backtest.py`, `src/alphaforge/metrics.py`, `src/alphaforge/report.py`, `src/alphaforge/visualization.py`, `src/alphaforge/storage.py`, `src/alphaforge/cli.py`, and `src/alphaforge/experiment_runner.py` are downstream consumers only.
+- `src/alphaforge/strategy/base.py`, `src/alphaforge/strategy/ma_crossover.py`, `src/alphaforge/strategy/breakout.py`, `src/alphaforge/backtest.py`, `src/alphaforge/metrics.py`, `src/alphaforge/report.py`, `src/alphaforge/visualization.py`, `src/alphaforge/storage.py`, `src/alphaforge/cli.py`, and `src/alphaforge/experiment_runner.py` are downstream consumers only.
 
 #### Allowed responsibilities
 
@@ -280,4 +280,3 @@ Once `data_loader.py` accepts market data, downstream modules SHALL rely on the 
 - WHEN strategy, backtest, metrics, report, visualization, storage, CLI, or orchestration code consumes it
 - THEN each module SHALL treat the loader contract as authoritative
 - AND no module SHALL redefine the canonical required columns or duplicate policy locally
-

@@ -553,6 +553,7 @@ The runner SHALL route to strategy implementations by canonical strategy spec wi
 - `src/alphaforge/experiment_runner.py` owns strategy dispatch as protocol routing.
 - `src/alphaforge/strategy/base.py` owns the interface contract.
 - `src/alphaforge/strategy/ma_crossover.py` owns MA-specific behavior and parameter validity.
+- `src/alphaforge/strategy/breakout.py` owns breakout-specific behavior and parameter validity.
 
 #### Allowed responsibilities
 

@@ -13,6 +13,8 @@ from alphaforge.experiment_runner import (
     run_experiment_with_artifacts,
     run_search,
     run_search_with_details,
+    run_validate_search,
+    run_walk_forward_search,
 )
 from alphaforge.search_reporting import save_best_search_report
 from alphaforge.schemas import BacktestConfig, DataSpec, ExperimentResult, MetricReport, SearchSummary, StrategySpec
@@ -181,6 +183,71 @@ def test_run_search_summary_counts_invalid_combinations_and_top_results_prefix(
     assert search_execution.summary.result_count == len(search_execution.ranked_results)
     assert search_execution.summary.best_result == search_execution.ranked_results[0]
     assert search_execution.summary.top_results == search_execution.ranked_results[:3]
+
+
+def test_run_search_with_details_supports_breakout_family(sample_market_csv: Path, tmp_path: Path) -> None:
+    search_execution = run_search_with_details(
+        data_spec=DataSpec(path=sample_market_csv, symbol="TEST"),
+        parameter_grid={"lookback_window": [2, 4]},
+        strategy_name="breakout",
+        backtest_config=BacktestConfig(
+            initial_capital=1000,
+            fee_rate=0.0,
+            slippage_rate=0.0,
+            annualization_factor=252,
+        ),
+        output_dir=tmp_path,
+        experiment_name="breakout_search_case",
+    )
+
+    assert search_execution.summary.strategy_name == "breakout"
+    assert search_execution.summary.search_parameter_names == ["lookback_window"]
+    assert all(result.strategy_spec.name == "breakout" for result in search_execution.ranked_results)
+
+
+def test_run_validate_search_supports_breakout_family(sample_market_csv: Path, tmp_path: Path) -> None:
+    validation_result = run_validate_search(
+        data_spec=DataSpec(path=sample_market_csv, symbol="TEST"),
+        parameter_grid={"lookback_window": [2, 4]},
+        split_ratio=0.5,
+        strategy_name="breakout",
+        backtest_config=BacktestConfig(
+            initial_capital=1000,
+            fee_rate=0.0,
+            slippage_rate=0.0,
+            annualization_factor=252,
+        ),
+        output_dir=tmp_path,
+        experiment_name="breakout_validation_case",
+    )
+
+    assert validation_result.selected_strategy_spec.name == "breakout"
+    assert "lookback_window" in validation_result.selected_strategy_spec.parameters
+    assert validation_result.candidate_evidence.strategy_name == "breakout"
+
+
+def test_run_walk_forward_search_supports_breakout_family(sample_market_csv: Path, tmp_path: Path) -> None:
+    walk_forward_result = run_walk_forward_search(
+        data_spec=DataSpec(path=sample_market_csv, symbol="TEST"),
+        parameter_grid={"lookback_window": [2, 4]},
+        train_size=4,
+        test_size=2,
+        step_size=2,
+        strategy_name="breakout",
+        backtest_config=BacktestConfig(
+            initial_capital=1000,
+            fee_rate=0.0,
+            slippage_rate=0.0,
+            annualization_factor=252,
+        ),
+        output_dir=tmp_path,
+        experiment_name="breakout_walk_forward_case",
+    )
+
+    assert walk_forward_result.folds
+    assert all(fold.selected_strategy_spec.name == "breakout" for fold in walk_forward_result.folds)
+    assert walk_forward_result.walk_forward_evidence is not None
+    assert walk_forward_result.walk_forward_decision is not None
 
 
 def test_run_search_saves_empty_ranked_results_with_headers(sample_market_csv: Path, tmp_path: Path) -> None:

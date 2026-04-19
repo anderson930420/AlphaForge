@@ -51,6 +51,29 @@ def test_evaluate_strategy_search_space_rejects_missing_ma_parameter_grid_keys()
         evaluate_strategy_search_space("ma_crossover", {"short_window": [2, 3]})
 
 
+def test_build_strategy_specs_supports_breakout_candidates() -> None:
+    specs = build_strategy_specs("breakout", {"lookback_window": [2, 4]})
+
+    assert [spec.parameters for spec in specs] == [
+        {"lookback_window": 2},
+        {"lookback_window": 4},
+    ]
+
+
+def test_evaluate_strategy_search_space_reports_attempted_valid_and_invalid_counts_for_breakout() -> None:
+    evaluation = evaluate_strategy_search_space("breakout", {"lookback_window": [2, 0]})
+
+    assert evaluation.attempted_combination_count == 2
+    assert evaluation.valid_combination_count == 1
+    assert evaluation.invalid_combination_count == 1
+    assert list(evaluation.invalid_combinations) == [{"lookback_window": 0}]
+
+
+def test_evaluate_strategy_search_space_rejects_unsupported_strategy_family() -> None:
+    with pytest.raises(ValueError, match="Unsupported strategy"):
+        evaluate_strategy_search_space("unknown_strategy", {"lookback_window": [2]})
+
+
 def test_passes_thresholds_allows_boundary_values() -> None:
     metrics = MetricReport(
         total_return=0.1,
