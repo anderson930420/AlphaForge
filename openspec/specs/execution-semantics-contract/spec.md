@@ -105,8 +105,7 @@ TBD - created by archiving change formalize-execution-semantics-contract. Update
 
 - `generate_signals()` MAY return a `pd.Series` aligned to the input market-data index.
 - The series MAY contain numeric values or values coercible to numeric form by `backtest.py`.
-- `backtest.py` MAY normalize raw strategy output by coercing to float, filling missing values with `0.0`, and mapping values into the long-flat domain.
-- `backtest.py` MAY treat values greater than `0.0` as active long exposure and values less than or equal to `0.0` as flat exposure.
+- `backtest.py` MAY normalize raw strategy output by coercing to float, filling missing values with `0.0`, and clipping values into the supported long-flat domain.
 
 #### Explicit non-responsibilities
 
@@ -121,14 +120,14 @@ TBD - created by archiving change formalize-execution-semantics-contract. Update
   - the output is interpreted as target position for the next tradable interval
 - Normalization contract:
   - missing values are filled to `0.0`
-  - values greater than `0.0` normalize to `1.0`
-  - values less than or equal to `0.0` normalize to `0.0`
+  - values below `0.0` normalize to `0.0`
+  - values above `1.0` normalize to `1.0`
 - Supported execution domain:
   - `0.0` means flat
-  - `1.0` means long
+  - values between `0.0` and `1.0` inclusive remain long-only target exposure states
 - Unsupported values:
   - negative weights are forbidden for the current execution contract
-  - fractional long exposure is not preserved as a separate execution state
+  - leverage above `1.0` is forbidden for the current execution contract
 
 #### Invariants
 
@@ -147,7 +146,7 @@ TBD - created by archiving change formalize-execution-semantics-contract. Update
 #### Failure modes if this boundary is violated
 
 - If strategy output is treated as an order instruction, same-bar or quantity-based assumptions can leak into execution.
-- If downstream code assumes fractional weights are preserved, backtest results and reports will disagree.
+- If downstream code assumes unsupported negative or leveraged weights are preserved, backtest results and reports will disagree.
 - If the interface wording implies hidden timing semantics, future strategies will inherit the wrong contract.
 
 #### Migration notes from current implementation
@@ -160,15 +159,15 @@ TBD - created by archiving change formalize-execution-semantics-contract. Update
 
 - Whether upstream validation should fail fast on out-of-domain values before execution or whether `backtest.py` should remain the only normalization authority.
   - Recommended default: keep `backtest.py` as the normalization authority and add fail-fast validation only where it does not create a second semantic owner.
-- Whether future fractional long exposure should be admitted in the same execution mode or require a separate execution spec.
-  - Recommended default: require a separate spec revision before fractional or short exposure is supported.
+- Whether future short exposure should be admitted in the same execution mode or require a separate execution spec.
+  - Recommended default: require a separate spec revision before short exposure is supported.
 
 #### Scenario: a strategy emits NaNs and fractional values
 
 - GIVEN a strategy returns a series containing NaNs and positive fractional values
 - WHEN `backtest.py` normalizes the series
 - THEN NaNs SHALL become flat exposure
-- AND positive values SHALL normalize to long exposure
+- AND positive fractional values up to `1.0` SHALL be preserved as long-only target exposure
 - AND the resulting execution state SHALL remain long-flat only
 
 #### Scenario: same-bar execution remains forbidden
@@ -289,4 +288,3 @@ TBD - created by archiving change formalize-execution-semantics-contract. Update
 - WHEN the backtest reaches the last bar
 - THEN the trade log SHALL force-close the open trade at the final close price
 - AND equity SHALL reflect the full executed path through the final bar
-

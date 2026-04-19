@@ -3,7 +3,7 @@ from __future__ import annotations
 """Benchmark helpers for AlphaForge evaluation windows.
 
 This module owns simple benchmark construction for already-loaded market data.
-It does not run strategies, compute strategy metrics, or assemble reports.
+It does not run strategies, define strategy metrics, or assemble reports.
 """
 
 from collections.abc import Mapping

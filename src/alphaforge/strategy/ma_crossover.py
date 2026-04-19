@@ -18,13 +18,20 @@ def validate_candidate_parameters(parameters: dict[str, Any]) -> None:
 
 
 class MovingAverageCrossoverStrategy(Strategy):
-    """Long-flat moving average crossover baseline."""
+    """Canonical MVP moving-average crossover strategy.
+
+    This strategy emits long-flat target positions only: ``1.0`` when the
+    short moving average is above the long moving average, otherwise ``0.0``.
+    The emitted values target the next tradable interval rather than the
+    current bar.
+    """
 
     def __init__(self, spec: StrategySpec) -> None:
         super().__init__(spec)
         validate_candidate_parameters(spec.parameters)
 
     def generate_signals(self, market_data: pd.DataFrame) -> pd.Series:
+        """Return next-bar long-flat targets from the close-price crossover."""
         close = market_data["close"].astype(float)
         short_window = int(self.spec.parameters["short_window"])
         long_window = int(self.spec.parameters["long_window"])

@@ -54,7 +54,9 @@ AlphaForge SHALL assign each business rule, execution semantic, schema, naming c
 - Persistence layer:
   - `src/alphaforge/storage.py` is authoritative for persisted artifact schemas, artifact naming, and output directory layout.
 - Orchestration layer:
-  - `src/alphaforge/experiment_runner.py` is orchestration-only for search execution, validation execution, walk-forward execution, and report workflow orchestration.
+  - `src/alphaforge/experiment_runner.py` is orchestration-only as the public runner façade and compatibility surface.
+  - `src/alphaforge/runner_workflows.py` is orchestration-only for workflow-specific runner sequencing.
+  - `src/alphaforge/runner_protocols.py` is orchestration-only for shared runner-only helper logic.
   - `src/alphaforge/cli.py` is orchestration-only for CLI request assembly and process-level command dispatch.
 - Documentation layer:
   - `PROJECT_BRIEF.md`, `README.md`, and module docstrings are advisory-only descriptions of the intended architecture and user-facing behavior.
@@ -70,9 +72,11 @@ AlphaForge SHALL assign each business rule, execution semantic, schema, naming c
 | Execution semantics | `src/alphaforge/backtest.py` | implementation-authoritative | `metrics.py`, `report.py`, `storage.py`, `cli.py` |
 | Search-space generation | `src/alphaforge/search.py` | implementation-authoritative | `cli.py`, `experiment_runner.py` |
 | Post-search candidate promotion/rejection policy | `src/alphaforge/policy.py` | implementation-authoritative | `experiment_runner.py`, `storage.py`, `cli.py` |
-| Search execution | `src/alphaforge/experiment_runner.py` | orchestration-only | `cli.py` |
-| Validation protocol | `src/alphaforge/experiment_runner.py` | orchestration-only | `cli.py`, `storage.py` |
-| Walk-forward protocol | `src/alphaforge/experiment_runner.py` | orchestration-only | `cli.py`, `storage.py` |
+| Public runner facade | `src/alphaforge/experiment_runner.py` | orchestration-only | `cli.py` |
+| Search execution | `src/alphaforge/runner_workflows.py` | orchestration-only | `experiment_runner.py`, `cli.py` |
+| Validation protocol | `src/alphaforge/runner_workflows.py` | orchestration-only | `experiment_runner.py`, `cli.py`, `storage.py` |
+| Walk-forward protocol | `src/alphaforge/runner_workflows.py` | orchestration-only | `experiment_runner.py`, `cli.py`, `storage.py` |
+| Runner shared protocol helpers | `src/alphaforge/runner_protocols.py` | orchestration-only | `runner_workflows.py` |
 | Performance analytics semantics | `src/alphaforge/metrics.py` | implementation-authoritative | `scoring.py`, `report.py`, `storage.py` |
 | Benchmark semantics | `src/alphaforge/benchmark.py` | implementation-authoritative | `report.py`, `experiment_runner.py` |
 | visualization generation | `src/alphaforge/visualization.py` | presentation-only | `report.py` |
@@ -90,7 +94,7 @@ AlphaForge SHALL assign each business rule, execution semantic, schema, naming c
 | Module | Classification | Allowed ownership |
 | --- | --- | --- |
 | `config.py` | configuration-only | defaults, parameter ranges, output root defaults, static loader constants |
-| `schemas.py` | contract-only | dataclasses, typed result structures, canonical in-memory column contracts shared across runtime modules |
+| `schemas.py` | contract-only | dataclasses and typed result structures shared across runtime modules |
 | `data_loader.py` | contract-enforcement + implementation | market-data column normalization, missing-data policy, schema validation for locally available OHLCV data |
 | `twse_client.py` | adapter-only | remote fetch, remote payload parsing, adapter normalization into loader-consumable frame |
 | `strategy/base.py` | contract-only | strategy construction and signal-generation interface |
@@ -103,7 +107,9 @@ AlphaForge SHALL assign each business rule, execution semantic, schema, naming c
 | `search.py` | implementation-authoritative | parameter-grid expansion and strategy-spec generation |
 | `policy.py` | implementation-authoritative | post-search candidate promotion/rejection policy evaluation |
 | `permutation.py` | implementation-authoritative | fixed-candidate permutation/null-comparison diagnostic computation and target-metric selection |
-| `experiment_runner.py` | orchestration-only | sequence runtime steps, call authoritative owners, assemble workflow-level result objects |
+| `experiment_runner.py` | orchestration-only | expose stable public runner entry points and compatibility bundles |
+| `runner_workflows.py` | orchestration-only | sequence workflow-specific runtime steps, call authoritative owners, assemble workflow-level result objects |
+| `runner_protocols.py` | orchestration-only | shared runner-only helpers for config resolution, strategy dispatch, split/fold generation, and workflow metadata assembly |
 | `storage.py` | persistence-authoritative | disk schema, filenames, directory paths, JSON/CSV export shape, persisted summary type normalization |
 | `cli.py` | orchestration-only | parse command requests, instantiate request contracts, dispatch workflows, print CLI payloads |
 | `PROJECT_BRIEF.md`, `README.md`, docstrings | advisory-only | explain intended behavior; must not redefine authoritative runtime rules |
@@ -125,7 +131,7 @@ AlphaForge SHALL assign each business rule, execution semantic, schema, naming c
 - `search.py` must not run backtests, compute metrics, save artifacts, or decide validation or walk-forward scheduling.
 - `policy.py` must not run backtests, generate candidates, save artifacts, or define report/view-model semantics.
 - `permutation.py` must not generate candidates, decide promotion policy, or define report/view-model semantics.
-- `experiment_runner.py` must not redefine schemas already owned by `schemas.py` or `storage.py`, and must not embed business rules that belong to `backtest.py`, `metrics.py`, `benchmark.py`, `search.py`, or `data_loader.py`.
+- `experiment_runner.py`, `runner_workflows.py`, and `runner_protocols.py` must not redefine schemas already owned by `schemas.py` or `storage.py`, and must not embed business rules that belong to `backtest.py`, `metrics.py`, `benchmark.py`, `search.py`, or `data_loader.py`.
 - `storage.py` must not compute metrics, decide ranking, generate figures, or decide validation protocol semantics.
 - `cli.py` must not validate business rules beyond request-shape checks, and must not redefine workflow semantics that belong to `experiment_runner.py` or domain rules that belong elsewhere.
 - `README.md`, `PROJECT_BRIEF.md`, and docstrings must not become the only place a runtime rule is defined.
@@ -156,7 +162,7 @@ AlphaForge SHALL assign each business rule, execution semantic, schema, naming c
 - Each canonical truth category listed in this spec has exactly one authoritative owner.
 - Any duplicated validation rule must be labeled as either authoritative or advisory-only; advisory validation may reject obviously malformed inputs but must not redefine authoritative semantics.
 - Any duplicated schema representation must be labeled as authoritative or derived; derived representations must be generated from the authoritative contract owner.
-- `experiment_runner.py` and `cli.py` remain orchestration-only even when they temporarily contain helper functions; those helpers must not encode domain rules already owned elsewhere.
+- `experiment_runner.py`, `runner_workflows.py`, `runner_protocols.py`, and `cli.py` remain orchestration-only; they must not encode domain rules already owned elsewhere.
 - Persisted artifact naming and directory layout remain authoritative in `storage.py` even if README examples or CLI payloads display those paths.
 - Documentation remains advisory-only and must be updated to match authoritative owners rather than define parallel truths.
 - Repo tooling stays outside product runtime and must not alter AlphaForge domain behavior.
@@ -169,9 +175,10 @@ AlphaForge SHALL assign each business rule, execution semantic, schema, naming c
 - `metrics.py` depends on the equity-curve and trade-log semantics emitted by `backtest.py`.
 - `benchmark.py` depends on market-data close-price semantics but does not depend on backtest internals.
 - `search.py` depends on `StrategySpec` contract shape from `schemas.py`.
-- `policy.py` depends on evidence contracts from `schemas.py` and on workflow evidence assembled by `experiment_runner.py`.
-- `experiment_runner.py` depends on all authoritative domain owners and is downstream of them.
-- `storage.py` depends on in-memory result contracts from `schemas.py` and on runtime outputs from `backtest.py`, `metrics.py`, and `experiment_runner.py`.
+- `policy.py` depends on evidence contracts from `schemas.py` and on workflow evidence assembled by the runner layer.
+- `experiment_runner.py` depends on `runner_workflows.py` for internal implementation and remains downstream of authoritative domain owners.
+- `runner_workflows.py` depends on all authoritative domain owners and on `runner_protocols.py`.
+- `storage.py` depends on in-memory result contracts from `schemas.py` and on runtime outputs from `backtest.py`, `metrics.py`, and the runner layer.
 - `visualization.py` depends on report-facing frame shapes and trade-log data, but those inputs are derived from authoritative runtime and persistence owners.
 - `report.py` depends on `benchmark.py` for benchmark semantics and on `visualization.py` for figure generation.
 - `cli.py` depends on `schemas.py` for runtime request object construction and on `experiment_runner.py` for workflow execution.
@@ -194,18 +201,14 @@ AlphaForge SHALL assign each business rule, execution semantic, schema, naming c
 
 - `config.py` currently holds `REQUIRED_COLUMNS`, `CSV_COLUMN_ALIASES`, and `MISSING_DATA_POLICY` constants while `data_loader.py` executes those rules.
   - Migration direction: keep `data_loader.py` authoritative for canonical market-data schema and validation behavior; treat `config.py` constants as implementation inputs only if still needed.
-- `schemas.py` currently owns both dataclass contracts and multiple CSV/report column lists.
-  - Migration direction: keep `schemas.py` authoritative for in-memory runtime contracts; keep only cross-runtime shared column contracts here; move persistence-only column ownership to `storage.py` and presentation-only column ownership to the module that consumes them if they are not general runtime contracts.
+- `schemas.py` no longer owns backtest runtime column lists; runtime artifact column ownership now lives with `backtest.py`, while persistence and presentation column ownership live with their respective modules.
 - `twse_client.py` currently normalizes directly into the same OHLCV column names enforced by `data_loader.py`.
   - Migration direction: keep `twse_client.py` authoritative only for adapter normalization; `data_loader.py` remains authoritative when remote normalization and local validation disagree.
-- `experiment_runner.py` currently owns:
-  - search execution,
-  - validation protocol,
-  - walk-forward protocol,
-  - strategy construction,
-  - report workflow orchestration,
-  - partial result metadata assembly.
-  - Migration direction: keep these as separately named orchestration jobs even if they temporarily remain in one file; do not allow the file to become authoritative for domain rules already owned elsewhere.
+- The runner layer now splits ownership between:
+  - `experiment_runner.py` for public façade and compatibility bundles,
+  - `runner_workflows.py` for search, validation, walk-forward, and report workflow orchestration,
+  - `runner_protocols.py` for shared runner-only helper logic.
+  - Migration direction: keep orchestration split across these modules and do not collapse them back into one file as second-family work begins.
 - `report.py` currently calls `benchmark.py` directly and saves reports.
   - Migration direction: keep report rendering and report-file persistence in `report.py`; do not move benchmark semantics or output directory naming into the report layer.
 - `storage.py` currently derives ranked-results columns from runtime result objects and also serializes workflow summaries.
@@ -226,8 +229,8 @@ AlphaForge SHALL assign each business rule, execution semantic, schema, naming c
 ## Open questions / deferred decisions
 
 - Whether report HTML file persistence should remain in `report.py` or move into `storage.py` as long as `report.py` remains the authoritative rendering owner.
-- Whether `schemas.py` should continue to own `REPORT_EQUITY_CURVE_REQUIRED_COLUMNS`, or whether that contract should move to `visualization.py` if it is presentation-only rather than shared runtime schema.
-- Whether `experiment_runner.build_strategy()` should remain a temporary orchestration helper or move into a dedicated strategy registry only when more than one strategy family exists.
+- Whether any future cross-family report-only column contract should live in `visualization.py` or a narrower presentation helper if it stops being runtime-shared.
+- Whether `runner_protocols.build_strategy()` should remain a temporary orchestration helper or move into a dedicated strategy registry only when more than one strategy family exists.
 - Whether `save_experiment_report()` should be classified as report rendering support or persistence support once multiple report formats exist.
 
 ## Boundary violations that would create long-term maintenance debt

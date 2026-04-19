@@ -1,11 +1,13 @@
 # experiment-runner-orchestration Specification
 
 ## Purpose
-TBD - created by archiving change refactor-experiment-runner-boundary. Update Purpose after archive.
+- Define the stable public runner boundary for AlphaForge.
+- Keep workflow sequencing public and compatible while ensuring workflow bodies and shared runner helpers can evolve in narrower internal modules.
+
 ## Requirements
 ### Requirement: Experiment runner owns workflow orchestration only
 
-`src/alphaforge/experiment_runner.py` SHALL own runtime workflow orchestration semantics and SHALL NOT become the authoritative owner of schemas, persistence shape, analytics formulas, benchmark semantics, or report content.
+`src/alphaforge/experiment_runner.py` SHALL remain the public runner façade for runtime workflow orchestration and SHALL NOT become the authoritative owner of schemas, persistence shape, analytics formulas, benchmark semantics, or report content.
 
 #### Purpose
 
@@ -14,25 +16,23 @@ TBD - created by archiving change refactor-experiment-runner-boundary. Update Pu
 
 #### Canonical owner
 
-- `src/alphaforge/experiment_runner.py` is the single authoritative owner of runtime workflow orchestration semantics.
-- The orchestration jobs canonically owned here are:
+- `src/alphaforge/experiment_runner.py` is the single authoritative owner of the public runner API and compatibility bundles.
+- `src/alphaforge/runner_workflows.py` is the canonical owner of workflow-specific orchestration implementations.
+- `src/alphaforge/runner_protocols.py` is the canonical owner of shared runner-only helpers such as default config assembly, strategy dispatch, split/fold generation, and validation metadata assembly.
+- The orchestration jobs exposed publicly through the façade are:
   - single experiment workflow,
   - ranked search workflow,
   - validation workflow,
   - walk-forward workflow,
-  - search-report workflow,
-  - strategy dispatch from `StrategySpec.name`.
+  - search-report workflow.
 
 #### Allowed responsibilities
 
-- Materialize default `BacktestConfig` values when callers omit them.
-- Sequence calls to authoritative lower-layer owners in runtime order.
-- Own workflow-local protocol rules for:
-  - train/test split ratio,
-  - walk-forward fold generation,
-  - train-window sufficiency checks.
-- Attach workflow-scoped metadata to result objects only under `metadata`.
-- Decide whether persistence or report-generation side effects run based on workflow inputs.
+- `experiment_runner.py` MAY expose public runner functions and compatibility bundles used by CLI and tests.
+- `runner_workflows.py` MAY sequence calls to authoritative lower-layer owners in runtime order.
+- `runner_protocols.py` MAY materialize default `BacktestConfig` values, strategy dispatch, train/test split helpers, walk-forward fold generation, train-window sufficiency checks, and validation metadata assembly.
+- `runner_workflows.py` MAY attach workflow-scoped metadata to result objects only under `metadata`.
+- `runner_workflows.py` MAY decide whether persistence or report-generation side effects run based on workflow inputs.
 
 #### Explicit non-responsibilities
 
@@ -96,13 +96,11 @@ TBD - created by archiving change refactor-experiment-runner-boundary. Update Pu
 
 #### Migration notes from current implementation
 
-- `build_strategy()` currently remains inside `experiment_runner.py` as temporary orchestration-owned dispatch.
-- `_split_market_data_by_ratio()` and `_generate_walk_forward_folds()` remain here as protocol helpers.
-- Search-report preparation now flows through `search_reporting.py`, while runner keeps only the sequencing decision of whether report generation runs.
-- Walk-forward aggregate-result policy now flows through `walk_forward_aggregation.py`.
-- Benchmark summary normalization now flows through `benchmark.py`.
-- Single-run execution output pairing now uses runner-local `ExperimentExecutionOutput` rather than an anonymous tuple contract.
-- Any persistence details inferred locally in orchestration code must be moved to explicit storage-owned helpers or constants during implementation.
+- `experiment_runner.py` now acts as a thin compatibility façade and delegates internal orchestration bodies to `runner_workflows.py`.
+- Shared runner helpers such as strategy dispatch, default config resolution, split-by-ratio, train-window validation, validation metadata, and fold generation now live in `runner_protocols.py`.
+- Search-report preparation continues to flow through `search_reporting.py`, while the runner layer keeps only the sequencing decision of whether report generation runs.
+- Walk-forward aggregate-result policy continues to flow through `walk_forward_aggregation.py`.
+- Single-run execution output pairing continues to use runner-local compatibility bundles rather than anonymous tuples.
 
 #### Open questions / deferred decisions
 
@@ -111,12 +109,13 @@ TBD - created by archiving change refactor-experiment-runner-boundary. Update Pu
 - Whether strategy dispatch should move out of orchestration once multiple strategy families exist.
 - Whether workflow-scoped naming such as `train_search`, `train_best`, `test_selected`, and `fold_{index:03d}` should remain runner-owned sequencing labels or be promoted into a narrower orchestration contract later.
 
-#### Scenario: Single-run workflow delegates all non-orchestration semantics
+#### Scenario: public runner facade delegates all non-orchestration semantics
 
 - GIVEN a caller provides `DataSpec`, `StrategySpec`, and optional `BacktestConfig`
 - WHEN `run_experiment()` executes
-- THEN `experiment_runner.py` SHALL call authoritative lower-layer owners for data loading, strategy execution, backtest execution, metric computation, scoring, benchmark summary creation, and optional persistence
-- AND `experiment_runner.py` SHALL NOT define metric formulas, trade semantics, persisted artifact schemas, or report content locally
+- THEN `experiment_runner.py` SHALL delegate to internal runner workflow implementations
+- AND the workflow implementation SHALL call authoritative lower-layer owners for data loading, strategy execution, backtest execution, metric computation, scoring, benchmark summary creation, and optional persistence
+- AND the public façade SHALL NOT define metric formulas, trade semantics, persisted artifact schemas, or report content locally
 
 #### Scenario: Search workflow uses storage-owned artifact persistence
 
@@ -132,4 +131,3 @@ TBD - created by archiving change refactor-experiment-runner-boundary. Update Pu
 - WHEN `experiment_runner.py` splits market data and generates evaluation windows
 - THEN those segmentation rules SHALL be treated as workflow protocol semantics owned by orchestration
 - AND those rules SHALL NOT be treated as market-data schema rules, strategy semantics, or persisted artifact schema rules
-

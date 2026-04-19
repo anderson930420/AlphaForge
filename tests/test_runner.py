@@ -6,9 +6,16 @@ from unittest.mock import patch
 
 import pandas as pd
 
-from alphaforge.experiment_runner import run_experiment, run_experiment_with_artifacts, run_search, run_search_with_details
+from alphaforge.experiment_runner import (
+    ExperimentExecutionOutput,
+    SearchExecutionOutput,
+    run_experiment,
+    run_experiment_with_artifacts,
+    run_search,
+    run_search_with_details,
+)
 from alphaforge.search_reporting import save_best_search_report
-from alphaforge.schemas import BacktestConfig, DataSpec, ExperimentResult, MetricReport, StrategySpec
+from alphaforge.schemas import BacktestConfig, DataSpec, ExperimentResult, MetricReport, SearchSummary, StrategySpec
 from alphaforge.storage import ArtifactReceipt, serialize_experiment_result
 
 
@@ -213,8 +220,8 @@ def test_run_search_saves_empty_ranked_results_with_headers(sample_market_csv: P
 
 
 def test_run_search_generates_exactly_one_best_report(sample_market_csv: Path, tmp_path: Path) -> None:
-    with patch("alphaforge.experiment_runner.save_best_search_report", side_effect=lambda search_root, best_result, artifact_receipt: search_root / "best_report.html") as save_best_report, patch(
-        "alphaforge.experiment_runner.save_search_comparison_report",
+    with patch("alphaforge.runner_workflows.save_best_search_report", side_effect=lambda search_root, best_result, artifact_receipt: search_root / "best_report.html") as save_best_report, patch(
+        "alphaforge.runner_workflows.save_search_comparison_report",
         side_effect=lambda search_root, ranked_results, artifact_receipts, best_report_path, top_n=5: search_root / "search_report.html",
     ) as save_search_report:
         ranked = run_search(
@@ -239,8 +246,8 @@ def test_run_search_generates_exactly_one_best_report(sample_market_csv: Path, t
 
 
 def test_run_search_generates_empty_search_report_without_best_report(sample_market_csv: Path, tmp_path: Path) -> None:
-    with patch("alphaforge.experiment_runner.save_best_search_report") as save_best_report, patch(
-        "alphaforge.experiment_runner.save_search_comparison_report",
+    with patch("alphaforge.runner_workflows.save_best_search_report") as save_best_report, patch(
+        "alphaforge.runner_workflows.save_search_comparison_report",
         side_effect=lambda search_root, ranked_results, artifact_receipts, best_report_path, top_n=5: search_root / "search_report.html",
     ) as save_search_report:
         ranked = run_search(
@@ -262,6 +269,81 @@ def test_run_search_generates_empty_search_report_without_best_report(sample_mar
     assert save_best_report.call_count == 0
     assert save_search_report.call_count == 1
     assert save_search_report.call_args.kwargs["search_root"] == tmp_path / "empty_search_report_case"
+
+
+def test_run_experiment_with_artifacts_delegates_to_runner_workflows(sample_market_csv: Path) -> None:
+    sample_result = ExperimentResult(
+        data_spec=DataSpec(path=sample_market_csv, symbol="TEST"),
+        strategy_spec=StrategySpec(name="ma_crossover", parameters={"short_window": 2, "long_window": 3}),
+        backtest_config=BacktestConfig(1000.0, 0.0, 0.0, 252),
+        metrics=MetricReport(0.1, 0.1, 1.0, -0.1, 1.0, 1.0, 1),
+        score=0.5,
+    )
+    bundled = ExperimentExecutionOutput(
+        result=sample_result,
+        equity_curve=pd.DataFrame(),
+        trade_log=pd.DataFrame(),
+        report_input=object(),
+        artifact_receipt=ArtifactReceipt(
+            run_dir=Path("run_dir"),
+            equity_curve_path=Path("run_dir/equity_curve.csv"),
+            trade_log_path=Path("run_dir/trade_log.csv"),
+            metrics_summary_path=Path("run_dir/metrics_summary.json"),
+        ),
+    )
+
+    with patch(
+        "alphaforge.runner_workflows.run_experiment_with_artifacts_workflow",
+        return_value=bundled,
+    ) as workflow_mock:
+        delegated = run_experiment_with_artifacts(
+            data_spec=DataSpec(path=sample_market_csv, symbol="TEST"),
+            strategy_spec=StrategySpec(name="ma_crossover", parameters={"short_window": 2, "long_window": 3}),
+            backtest_config=BacktestConfig(1000.0, 0.0, 0.0, 252),
+        )
+
+    assert delegated == bundled
+    assert workflow_mock.call_count == 1
+    assert workflow_mock.call_args.kwargs["strategy_spec"].parameters == {"short_window": 2, "long_window": 3}
+
+
+def test_run_search_with_details_delegates_to_runner_workflows(sample_market_csv: Path) -> None:
+    sample_result = ExperimentResult(
+        data_spec=DataSpec(path=sample_market_csv, symbol="TEST"),
+        strategy_spec=StrategySpec(name="ma_crossover", parameters={"short_window": 2, "long_window": 4}),
+        backtest_config=BacktestConfig(1000.0, 0.0, 0.0, 252),
+        metrics=MetricReport(0.1, 0.1, 1.0, -0.1, 1.0, 1.0, 1),
+        score=0.5,
+    )
+    expected = SearchExecutionOutput(
+        ranked_results=[sample_result],
+        summary=SearchSummary(
+            strategy_name="ma_crossover",
+            search_parameter_names=["short_window", "long_window"],
+            attempted_combinations=1,
+            valid_combinations=1,
+            invalid_combinations=0,
+            result_count=1,
+            ranking_score="score",
+            best_result=sample_result,
+            top_results=[sample_result],
+        ),
+        artifact_receipt=None,
+    )
+
+    with patch(
+        "alphaforge.runner_workflows.run_search_with_details_workflow",
+        return_value=expected,
+    ) as workflow_mock:
+        delegated = run_search_with_details(
+            data_spec=DataSpec(path=sample_market_csv, symbol="TEST"),
+            parameter_grid={"short_window": [2], "long_window": [4]},
+            backtest_config=BacktestConfig(1000.0, 0.0, 0.0, 252),
+        )
+
+    assert delegated == expected
+    assert workflow_mock.call_count == 1
+    assert workflow_mock.call_args.kwargs["parameter_grid"] == {"short_window": [2], "long_window": [4]}
 
 
 def test_best_search_report_reads_artifacts_from_receipt_not_runtime_result(tmp_path: Path) -> None:

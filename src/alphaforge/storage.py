@@ -14,6 +14,7 @@ from typing import Any
 
 import pandas as pd
 
+from .backtest import BACKTEST_TRADE_LOG_COLUMNS
 from .schemas import (
     CandidateEvidenceSummary,
     CandidatePolicyDecision,
@@ -30,17 +31,6 @@ from .schemas import (
     WalkForwardFoldResult,
     WalkForwardResult,
 )
-
-TRADE_LOG_COLUMNS = [
-    "entry_time",
-    "exit_time",
-    "side",
-    "quantity",
-    "entry_price",
-    "exit_price",
-    "gross_return",
-    "net_pnl",
-]
 
 REPORT_FILENAME = "report.html"
 BEST_REPORT_FILENAME = "best_report.html"
@@ -365,7 +355,7 @@ def save_single_experiment(
 
     _write_json(config_path, serialize_experiment_config(result))
     _write_json(metrics_path, serialize_metric_report(result.metrics))
-    trades.reindex(columns=TRADE_LOG_COLUMNS).to_csv(trade_log_path, index=False)
+    trades.reindex(columns=BACKTEST_TRADE_LOG_COLUMNS).to_csv(trade_log_path, index=False)
     equity_curve.to_csv(equity_curve_path, index=False)
 
     persisted_result = ExperimentResult(

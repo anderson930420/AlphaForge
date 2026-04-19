@@ -6,17 +6,8 @@ from typing import Any, Literal
 
 import pandas as pd
 
-BACKTEST_EQUITY_CURVE_REQUIRED_COLUMNS = (
-    "datetime",
-    "position",
-    "turnover",
-    "strategy_return",
-    "equity",
-)
-
-# AlphaForge intentionally uses pandas.DataFrame as the equity-curve interface.
-# The standard backtest artifact is expected to contain at least the columns in
-# BACKTEST_EQUITY_CURVE_REQUIRED_COLUMNS after backtest execution.
+# AlphaForge intentionally uses pandas.DataFrame as the shared in-memory
+# equity-curve interface. Runtime-owned column contracts live in backtest.py.
 EquityCurveFrame = pd.DataFrame
 PermutationTargetMetricName = Literal["score", "sharpe_ratio"]
 

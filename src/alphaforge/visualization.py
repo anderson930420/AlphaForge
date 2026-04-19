@@ -4,7 +4,8 @@ from __future__ import annotations
 
 This module is the single place for turning backtest artifacts into visual
 representations. It should consume computed data such as equity curves and
-trade logs, but it should not run backtests, compute metrics, or persist files.
+trade logs, but it should not run backtests, define canonical metric formulas,
+or persist files.
 """
 
 from typing import TYPE_CHECKING, Any

@@ -1,8 +1,32 @@
 from __future__ import annotations
 
+"""Canonical execution semantics and runtime artifact contracts.
+
+This module owns the MVP long-flat execution law for AlphaForge. Strategies
+emit next-bar target positions, while this module decides how those targets
+become realized positions, turnover, costs, equity, and trade records.
+"""
+
 import pandas as pd
 
 from .schemas import EquityCurveFrame, BacktestConfig, TradeRecord
+
+BACKTEST_EQUITY_CURVE_COLUMNS = (
+    "datetime",
+    "open",
+    "high",
+    "low",
+    "close",
+    "volume",
+    "target_position",
+    "position",
+    "close_return",
+    "turnover",
+    "strategy_return",
+    "equity",
+)
+
+BACKTEST_TRADE_LOG_COLUMNS = tuple(TradeRecord.__annotations__.keys())
 
 
 def run_backtest(
@@ -10,7 +34,13 @@ def run_backtest(
     target_positions: pd.Series,
     config: BacktestConfig,
 ) -> tuple[EquityCurveFrame, pd.DataFrame]:
-    """Run a simple long-flat backtest on close-to-close returns."""
+    """Run the canonical MVP long-flat backtest on validated market data.
+
+    Strategy outputs are interpreted as target positions for the next tradable
+    interval. This execution layer applies a one-bar lag, computes
+    close-to-close returns, charges turnover-based fee and slippage costs, and
+    compounds equity multiplicatively from the configured initial capital.
+    """
     frame = market_data.copy()
     frame["target_position"] = target_positions.astype(float).fillna(0.0).clip(lower=0.0, upper=1.0)
     frame["position"] = frame["target_position"].shift(1).fillna(0.0)
@@ -21,11 +51,17 @@ def run_backtest(
     frame["equity"] = config.initial_capital * (1.0 + frame["strategy_return"]).cumprod()
 
     trades = _extract_trades(frame)
-    trade_frame = pd.DataFrame([trade.__dict__ for trade in trades], columns=list(TradeRecord.__annotations__.keys()))
-    return frame, trade_frame
+    trade_frame = pd.DataFrame([trade.__dict__ for trade in trades], columns=list(BACKTEST_TRADE_LOG_COLUMNS))
+    return frame.reindex(columns=BACKTEST_EQUITY_CURVE_COLUMNS), trade_frame
 
 
 def _extract_trades(frame: pd.DataFrame) -> list[TradeRecord]:
+    """Extract runtime trade records from realized positions.
+
+    A trade starts when realized position changes from flat to long, and ends
+    when realized position changes from long to flat. Any open position is
+    closed on the final sample bar so the runtime trade log has explicit exits.
+    """
     trades: list[TradeRecord] = []
     in_trade = False
     entry_index = -1

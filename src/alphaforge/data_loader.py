@@ -11,22 +11,14 @@ from pathlib import Path
 
 import pandas as pd
 
+from .config import CSV_COLUMN_ALIASES, MISSING_DATA_POLICY, REQUIRED_COLUMNS
 from .schemas import DataSpec
 
-MARKET_DATA_REQUIRED_COLUMNS = ("datetime", "open", "high", "low", "close", "volume")
 MARKET_DATA_PRICE_COLUMNS = ("open", "high", "low", "close")
-MARKET_DATA_COLUMN_ALIASES = {
-    "date": "datetime",
-    "timestamp": "datetime",
-}
-MARKET_DATA_MISSING_DATA_POLICY = (
-    "Drop rows with missing datetime or close values, forward-fill open/high/low/close,"
-    " and fill missing volume with 0 after sorting."
-)
 
 
 def load_market_data(data_spec: DataSpec) -> pd.DataFrame:
-    """Load and standardize OHLCV data from CSV."""
+    """Load, normalize, and validate the canonical OHLCV runtime frame."""
     frame = pd.read_csv(data_spec.path)
     frame = _standardize_columns(frame, data_spec.datetime_column)
     frame["datetime"] = pd.to_datetime(frame["datetime"], utc=False, errors="coerce")
@@ -41,11 +33,11 @@ def _standardize_columns(frame: pd.DataFrame, datetime_column: str) -> pd.DataFr
     declared_datetime = datetime_column.strip().lower()
     if declared_datetime in renamed.columns and declared_datetime != "datetime":
         renamed = renamed.rename(columns={declared_datetime: "datetime"})
-    renamed = renamed.rename(columns=MARKET_DATA_COLUMN_ALIASES)
-    missing = [column for column in MARKET_DATA_REQUIRED_COLUMNS if column not in renamed.columns]
+    renamed = renamed.rename(columns=CSV_COLUMN_ALIASES)
+    missing = [column for column in REQUIRED_COLUMNS if column not in renamed.columns]
     if missing:
         raise ValueError(f"Missing required columns: {missing}")
-    return renamed[list(MARKET_DATA_REQUIRED_COLUMNS)].copy()
+    return renamed[list(REQUIRED_COLUMNS)].copy()
 
 
 def _apply_missing_data_policy(frame: pd.DataFrame) -> pd.DataFrame:
@@ -53,7 +45,7 @@ def _apply_missing_data_policy(frame: pd.DataFrame) -> pd.DataFrame:
     cleaned[list(MARKET_DATA_PRICE_COLUMNS)] = cleaned[list(MARKET_DATA_PRICE_COLUMNS)].ffill()
     cleaned["volume"] = cleaned["volume"].fillna(0.0)
     cleaned = cleaned.dropna(subset=list(MARKET_DATA_PRICE_COLUMNS))
-    cleaned.attrs["missing_data_policy"] = MARKET_DATA_MISSING_DATA_POLICY
+    cleaned.attrs["missing_data_policy"] = MISSING_DATA_POLICY
     return cleaned
 
 

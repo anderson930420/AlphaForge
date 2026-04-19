@@ -1,11 +1,12 @@
 # experiment-runner-subprotocol-boundary Specification
 
 ## Purpose
-TBD - created by archiving change formalize-experiment-runner-subprotocol-boundary. Update Purpose after archive.
+- Define the internal orchestration seams inside the runner layer so AlphaForge can keep a stable public runner API without growing a new god module.
+- Make the distinction explicit between the public runner façade, workflow-specific orchestration bodies, and shared runner-only helpers.
 ## Requirements
-### Requirement: `experiment_runner.py` is the canonical owner of workflow protocol orchestration only
+### Requirement: the runner layer is split into a public façade, workflow owner, and shared protocol owner
 
-`src/alphaforge/experiment_runner.py` SHALL be the single authoritative owner of AlphaForge workflow protocol orchestration, including the internal subprotocols for single-run, search execution, validate-search, walk-forward, and optional persistence/report triggering.
+`src/alphaforge/experiment_runner.py`, `src/alphaforge/runner_workflows.py`, and `src/alphaforge/runner_protocols.py` SHALL split runner responsibilities into public façade, workflow-specific orchestration, and shared runner-only helper ownership respectively.
 
 #### Purpose
 
@@ -15,8 +16,10 @@ TBD - created by archiving change formalize-experiment-runner-subprotocol-bounda
 
 #### Canonical owner
 
-- `src/alphaforge/experiment_runner.py` is the only authoritative owner of workflow protocol orchestration.
-- The runner is authoritative for protocol sequencing, not for the business meaning of the data it passes through.
+- `src/alphaforge/experiment_runner.py` is the authoritative owner of the public runner-facing façade and compatibility bundles.
+- `src/alphaforge/runner_workflows.py` is the authoritative owner of workflow protocol sequencing for single-run, search execution, validate-search, walk-forward, and optional persistence/report triggering.
+- `src/alphaforge/runner_protocols.py` is the authoritative owner of shared runner-only helper logic reused across workflow paths.
+- The runner layer is authoritative for protocol sequencing, not for the business meaning of the data it passes through.
 - `src/alphaforge/search.py` remains authoritative for search-space generation.
 - `src/alphaforge.scoring.py` remains authoritative for ranking and best-candidate semantics.
 - `src/alphaforge/policy.py` remains authoritative for post-search candidate promotion/rejection policy evaluation.
@@ -27,19 +30,23 @@ TBD - created by archiving change formalize-experiment-runner-subprotocol-bounda
 #### Allowed responsibilities
 
 - `experiment_runner.py` MAY:
-  - accept request DTOs assembled by CLI or other callers,
+  - expose public runner entry points and compatibility bundles for CLI or other callers.
+- `runner_workflows.py` MAY:
   - load market data through the canonical loader,
-  - instantiate or route to strategy implementations from canonical strategy specs,
   - sequence candidate generation, execution, scoring, persistence, and reporting in the correct order for each workflow,
   - aggregate authoritative outputs into runner-local protocol receipts or result bundles,
   - decide whether a workflow branch persists artifacts or triggers reporting based on runtime flags and output directory presence.
+- `runner_protocols.py` MAY:
+  - materialize default configs,
+  - instantiate or route to strategy implementations from canonical strategy specs,
+  - own split/fold generation and validation metadata helpers reused across workflows.
 
 #### Explicit non-responsibilities
 
-- `experiment_runner.py` MUST NOT own execution semantics, market-data acceptance semantics, search-space generation, ranking semantics, storage layout truth, report-view-model semantics, metrics semantics, benchmark semantics, or CLI request parsing.
-- `experiment_runner.py` MUST NOT redefine what a candidate is, what the best candidate is, or how scores are computed.
-- `experiment_runner.py` MUST NOT redefine artifact filenames, report input meaning, or downstream presentation semantics.
-- `experiment_runner.py` MUST NOT become the hidden owner of workflow business truth just because it coordinates multiple subprotocols.
+- No runner-layer module MAY own execution semantics, market-data acceptance semantics, search-space generation, ranking semantics, storage layout truth, report-view-model semantics, metrics semantics, benchmark semantics, or CLI request parsing.
+- `experiment_runner.py` MUST NOT continue to contain workflow implementation bodies once those bodies live in `runner_workflows.py`.
+- `runner_protocols.py` MUST NOT become a general-purpose utility layer for unrelated application code.
+- The runner layer MUST NOT become the hidden owner of workflow business truth just because it coordinates multiple subprotocols.
 
 #### Inputs / outputs / contracts
 
@@ -85,10 +92,9 @@ TBD - created by archiving change formalize-experiment-runner-subprotocol-bounda
 
 #### Migration notes from current implementation
 
-- `experiment_runner.py` already sequences load → strategy dispatch → execution → metrics → score → benchmark → persistence/report triggering.
-- The current module also already exposes distinct public entry points for run, search, validate-search, and walk-forward.
-- The current implementation is operationally healthy, but the internal protocol boundaries are still implicit enough that the file can continue to accumulate meaning.
-- This spec freezes the separation so future changes do not blur protocol orchestration with domain ownership.
+- `experiment_runner.py` now preserves the public entry points while delegating implementation to `runner_workflows.py`.
+- Shared protocol helpers that used to live in the monolithic runner now live in `runner_protocols.py`.
+- This spec freezes the separated runner structure so future changes do not blur public compatibility, workflow sequencing, and shared protocol plumbing.
 
 #### Open questions / deferred decisions
 
@@ -99,7 +105,7 @@ TBD - created by archiving change formalize-experiment-runner-subprotocol-bounda
 - Whether strategy dispatch should remain runner-owned or move into a dedicated registry when more strategy families exist is deferred.
   - Recommended default: keep dispatch in the runner for now because it is protocol coordination, not strategy semantics ownership.
 
-#### Scenario: runner outputs remain protocol receipts
+#### Scenario: runner outputs remain protocol receipts after internal delegation
 
 - GIVEN a workflow completes through the runner
 - WHEN the runner returns its workflow bundle
@@ -108,7 +114,7 @@ TBD - created by archiving change formalize-experiment-runner-subprotocol-bounda
 
 ### Requirement: the runner SHALL expose distinct subprotocols for single-run, search, validate-search, and walk-forward workflows
 
-`src/alphaforge/experiment_runner.py` SHALL decompose its orchestration into distinct subprotocols for single-run, search-execution, validate-search, and walk-forward behavior.
+`src/alphaforge/runner_workflows.py` SHALL expose distinct workflow implementations for single-run, search-execution, validate-search, and walk-forward behavior, while `src/alphaforge/experiment_runner.py` continues to expose the public entry points for those workflows.
 
 #### Purpose
 
@@ -117,7 +123,8 @@ TBD - created by archiving change formalize-experiment-runner-subprotocol-bounda
 
 #### Canonical owner
 
-- `src/alphaforge/experiment_runner.py` is authoritative for the existence and sequencing of these subprotocols.
+- `src/alphaforge/runner_workflows.py` is authoritative for the existence and sequencing of these subprotocols.
+- `src/alphaforge/experiment_runner.py` is authoritative for the public entry points that delegate into them.
 - The semantics used inside each subprotocol remain owned by the canonical upstream modules they call.
 
 #### Allowed responsibilities
@@ -182,7 +189,7 @@ TBD - created by archiving change formalize-experiment-runner-subprotocol-bounda
 
 ### Requirement: single-run protocol coordinates one end-to-end execution without owning downstream truth
 
-The runner’s single-run protocol SHALL coordinate a single authoritative execution chain while treating all downstream facts as upstream-owned outputs.
+The runner layer’s single-run protocol SHALL coordinate a single authoritative execution chain while treating all downstream facts as upstream-owned outputs.
 
 #### Purpose
 
@@ -190,7 +197,8 @@ The runner’s single-run protocol SHALL coordinate a single authoritative execu
 
 #### Canonical owner
 
-- `src/alphaforge/experiment_runner.py` owns the single-run protocol sequencing only.
+- `src/alphaforge/runner_workflows.py` owns the single-run protocol sequencing only.
+- `src/alphaforge/experiment_runner.py` owns only the public entry point that delegates into that sequencing.
 - `data_loader.py`, `strategy/base.py`, `backtest.py`, `metrics.py`, `benchmark.py`, `storage.py`, and `report.py` own the meanings of the facts the protocol passes through.
 
 #### Allowed responsibilities

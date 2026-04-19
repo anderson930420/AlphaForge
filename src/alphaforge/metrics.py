@@ -1,5 +1,12 @@
 from __future__ import annotations
 
+"""Canonical strategy-metric formulas for AlphaForge runtime outputs.
+
+This module consumes backtest-owned runtime artifacts and turns them into the
+strategy metric summary. It does not define execution timing, benchmark logic,
+plotting semantics, or persisted artifact layout.
+"""
+
 import math
 
 import numpy as np
