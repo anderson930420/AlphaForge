@@ -121,9 +121,12 @@ def _extract_trades(frame: pd.DataFrame) -> list[TradeRecord]:
     trade_frame["exit_time"] = trade_frame["exit_time"].map(str)
     trade_frame["entry_price"] = trade_frame["entry_price"].astype(float)
     trade_frame["exit_price"] = trade_frame["exit_price"].astype(float)
-    trade_frame["gross_return"] = trade_frame.apply(
-        lambda row: (row["exit_price"] / row["entry_price"]) - 1.0 if row["entry_price"] else 0.0,
-        axis=1,
+    trade_frame["gross_return"] = (
+        trade_frame["exit_price"]
+        .div(trade_frame["entry_price"].replace(0.0, float("nan")))
+        .sub(1.0)
+        .fillna(0.0)
+        .astype(float)
     )
 
     return [
