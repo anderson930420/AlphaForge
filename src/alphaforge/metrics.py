@@ -19,12 +19,13 @@ def compute_metrics(
     equity_curve: pd.DataFrame,
     trades: pd.DataFrame,
     annualization_factor: int,
+    risk_free_rate: float = 0.0,
 ) -> MetricReport:
     returns = equity_curve["strategy_return"].astype(float)
     total_return = (equity_curve["equity"].iloc[-1] / equity_curve["equity"].iloc[0]) - 1.0
     periods = max(len(equity_curve) - 1, 1)
     annualized_return = (1.0 + total_return) ** (annualization_factor / periods) - 1.0
-    sharpe_ratio = _compute_sharpe_ratio(returns, annualization_factor)
+    sharpe_ratio = _compute_sharpe_ratio(returns, annualization_factor, risk_free_rate=risk_free_rate)
     max_drawdown = _compute_max_drawdown(equity_curve["equity"])
     trade_count = int(len(trades))
     win_rate = float((trades["net_pnl"] > 0).mean()) if trade_count else 0.0
@@ -40,11 +41,12 @@ def compute_metrics(
     )
 
 
-def _compute_sharpe_ratio(returns: pd.Series, annualization_factor: int) -> float:
-    std = float(returns.std(ddof=0))
+def _compute_sharpe_ratio(returns: pd.Series, annualization_factor: int, risk_free_rate: float = 0.0) -> float:
+    excess_returns = returns.astype(float) - float(risk_free_rate)
+    std = float(excess_returns.std(ddof=0))
     if math.isclose(std, 0.0):
         return 0.0
-    return float((returns.mean() / std) * math.sqrt(annualization_factor))
+    return float((excess_returns.mean() / std) * math.sqrt(annualization_factor))
 
 
 def _compute_max_drawdown(equity: pd.Series) -> float:

@@ -62,58 +62,80 @@ def _extract_trades(frame: pd.DataFrame) -> list[TradeRecord]:
     when realized position changes from long to flat. Any open position is
     closed on the final sample bar so the runtime trade log has explicit exits.
     """
-    trades: list[TradeRecord] = []
-    in_trade = False
-    entry_index = -1
-    entry_price = 0.0
+    if frame.empty:
+        return []
 
-    for idx in range(len(frame)):
-        current_position = float(frame.iloc[idx]["position"])
-        previous_position = float(frame.iloc[idx - 1]["position"]) if idx > 0 else 0.0
+    position = frame["position"].astype(float)
+    previous_position = position.shift(1, fill_value=0.0)
+    entry_mask = previous_position.eq(0.0) & position.gt(0.0)
+    exit_mask = previous_position.gt(0.0) & position.eq(0.0)
 
-        if not in_trade and previous_position == 0.0 and current_position > 0.0:
-            in_trade = True
-            entry_index = idx
-            entry_price = float(frame.iloc[idx]["close"])
-            continue
+    if not bool(entry_mask.any()):
+        return []
 
-        if in_trade and previous_position > 0.0 and current_position == 0.0:
-            exit_index = idx
-            exit_price = float(frame.iloc[idx]["close"])
-            quantity = previous_position
-            gross_return = (exit_price / entry_price) - 1.0 if entry_price else 0.0
-            net_pnl = float(frame.iloc[entry_index: exit_index + 1]["strategy_return"].sum())
-            trades.append(
-                TradeRecord(
-                    entry_time=str(frame.iloc[entry_index]["datetime"]),
-                    exit_time=str(frame.iloc[exit_index]["datetime"]),
-                    side="long",
-                    quantity=quantity,
-                    entry_price=entry_price,
-                    exit_price=exit_price,
-                    gross_return=gross_return,
-                    net_pnl=net_pnl,
-                )
-            )
-            in_trade = False
+    trade_ids = entry_mask.cumsum().astype(int)
+    active_trade_ids = trade_ids.where(position.gt(0.0) | exit_mask, 0)
 
-    if in_trade:
-        exit_index = len(frame) - 1
-        exit_price = float(frame.iloc[exit_index]["close"])
-        quantity = float(frame.iloc[exit_index]["position"])
-        gross_return = (exit_price / entry_price) - 1.0 if entry_price else 0.0
-        net_pnl = float(frame.iloc[entry_index: exit_index + 1]["strategy_return"].sum())
-        trades.append(
-            TradeRecord(
-                entry_time=str(frame.iloc[entry_index]["datetime"]),
-                exit_time=str(frame.iloc[exit_index]["datetime"]),
-                side="long",
-                quantity=quantity,
-                entry_price=entry_price,
-                exit_price=exit_price,
-                gross_return=gross_return,
-                net_pnl=net_pnl,
-            )
+    entry_rows = frame.loc[entry_mask, ["datetime", "close"]].copy()
+    entry_rows["trade_id"] = trade_ids.loc[entry_mask].to_numpy()
+    entry_rows.rename(columns={"datetime": "entry_time", "close": "entry_price"}, inplace=True)
+
+    exit_rows = frame.loc[exit_mask, ["datetime", "close"]].copy()
+    exit_rows["trade_id"] = trade_ids.loc[exit_mask].to_numpy()
+    exit_rows["quantity"] = previous_position.loc[exit_mask].astype(float).to_numpy()
+    exit_rows.rename(columns={"datetime": "exit_time", "close": "exit_price"}, inplace=True)
+
+    final_trade_id = int(trade_ids.max())
+    if float(position.iloc[-1]) > 0.0 and final_trade_id not in set(exit_rows["trade_id"].tolist()):
+        exit_rows = pd.concat(
+            [
+                exit_rows,
+                pd.DataFrame(
+                    {
+                        "exit_time": [frame.iloc[-1]["datetime"]],
+                        "exit_price": [frame.iloc[-1]["close"]],
+                        "trade_id": [final_trade_id],
+                        "quantity": [float(position.iloc[-1])],
+                    }
+                ),
+            ],
+            ignore_index=True,
         )
 
-    return trades
+    net_pnl_by_trade = (
+        frame.assign(trade_id=active_trade_ids)
+        .loc[lambda df: df["trade_id"] > 0]
+        .groupby("trade_id", sort=True)["strategy_return"]
+        .sum()
+    )
+
+    trade_frame = (
+        entry_rows.merge(exit_rows, on="trade_id", how="inner")
+        .sort_values("trade_id")
+        .assign(
+            side="long",
+            net_pnl=lambda df: df["trade_id"].map(net_pnl_by_trade).astype(float),
+        )
+    )
+    trade_frame["entry_time"] = trade_frame["entry_time"].map(str)
+    trade_frame["exit_time"] = trade_frame["exit_time"].map(str)
+    trade_frame["entry_price"] = trade_frame["entry_price"].astype(float)
+    trade_frame["exit_price"] = trade_frame["exit_price"].astype(float)
+    trade_frame["gross_return"] = trade_frame.apply(
+        lambda row: (row["exit_price"] / row["entry_price"]) - 1.0 if row["entry_price"] else 0.0,
+        axis=1,
+    )
+
+    return [
+        TradeRecord(
+            entry_time=row.entry_time,
+            exit_time=row.exit_time,
+            side=row.side,
+            quantity=float(row.quantity),
+            entry_price=float(row.entry_price),
+            exit_price=float(row.exit_price),
+            gross_return=float(row.gross_return),
+            net_pnl=float(row.net_pnl),
+        )
+        for row in trade_frame.itertuples(index=False)
+    ]

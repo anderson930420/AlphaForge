@@ -114,6 +114,26 @@ def test_permutation_test_supports_sharpe_ratio_target_metric(sample_market_csv:
     assert summary.empirical_p_value == pytest.approx((expected_null_ge_count + 1) / (summary.permutation_count + 1))
 
 
+def test_permutation_test_supports_breakout_strategy(sample_market_csv: Path) -> None:
+    summary = run_permutation_test_with_details(
+        data_spec=DataSpec(path=sample_market_csv, symbol="TEST"),
+        strategy_spec=StrategySpec(name="breakout", parameters={"lookback_window": 3}),
+        permutation_count=4,
+        block_size=2,
+        seed=11,
+        backtest_config=BacktestConfig(
+            initial_capital=1000.0,
+            fee_rate=0.0,
+            slippage_rate=0.0,
+            annualization_factor=252,
+        ),
+    ).permutation_test_summary
+
+    assert summary.strategy_name == "breakout"
+    assert summary.strategy_parameters == {"lookback_window": 3}
+    assert len(summary.permutation_metric_values) == 4
+
+
 def test_permutation_test_summary_uses_the_empirical_p_value_formula(sample_market_csv: Path) -> None:
     summary = run_permutation_test_with_details(
         data_spec=DataSpec(path=sample_market_csv, symbol="TEST"),
@@ -314,3 +334,60 @@ def test_cli_permutation_test_rejects_invalid_target_metric(
 
     with pytest.raises(SystemExit):
         main()
+
+
+def test_cli_permutation_test_passes_selected_breakout_strategy(
+    sample_market_csv: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "alphaforge",
+            "permutation-test",
+            "--data",
+            str(sample_market_csv),
+            "--output-dir",
+            str(tmp_path),
+            "--strategy",
+            "breakout",
+            "--lookback-window",
+            "3",
+            "--permutations",
+            "3",
+            "--block-size",
+            "2",
+        ],
+    )
+
+    execution_output = PermutationTestExecutionOutput(
+        permutation_test_summary=PermutationTestSummary(
+            strategy_name="breakout",
+            strategy_parameters={"lookback_window": 3},
+            target_metric_name="score",
+            permutation_mode="block",
+            block_size=2,
+            real_observed_metric_value=0.42,
+            permutation_metric_values=[0.1, 0.2, 0.3],
+            permutation_count=3,
+            seed=42,
+            null_ge_count=1,
+            empirical_p_value=0.5,
+            metadata={"source": "unit-test"},
+        ),
+        artifact_receipt=None,
+    )
+
+    with patch("alphaforge.cli.run_permutation_test_with_details", return_value=execution_output) as mocked_run:
+        main()
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["strategy_name"] == "breakout"
+    assert payload["strategy_parameters"] == {"lookback_window": 3}
+    assert mocked_run.call_args.kwargs["strategy_spec"] == StrategySpec(
+        name="breakout",
+        parameters={"lookback_window": 3},
+    )

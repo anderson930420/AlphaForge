@@ -8,6 +8,7 @@ import pandas as pd
 from .backtest import run_backtest
 from .data_loader import load_market_data
 from .metrics import compute_metrics
+from .search import SUPPORTED_STRATEGY_FAMILIES
 from .schemas import (
     BacktestConfig,
     DataSpec,
@@ -20,6 +21,8 @@ from .schemas import (
 )
 from .scoring import score_metrics
 from .storage import save_permutation_test_result
+from .strategy.base import Strategy
+from .strategy.breakout import BreakoutStrategy
 from .strategy.ma_crossover import MovingAverageCrossoverStrategy
 
 SUPPORTED_PERMUTATION_TARGET_METRICS: tuple[PermutationTargetMetricName, ...] = ("score", "sharpe_ratio")
@@ -172,10 +175,13 @@ def _permute_market_data_by_blocks(market_data: pd.DataFrame, block_size: int, s
     return pd.concat(permuted_blocks, ignore_index=True)
 
 
-def _build_strategy(strategy_spec: StrategySpec) -> MovingAverageCrossoverStrategy:
-    if strategy_spec.name != "ma_crossover":
-        raise ValueError(f"Unsupported strategy: {strategy_spec.name}")
-    return MovingAverageCrossoverStrategy(strategy_spec)
+def _build_strategy(strategy_spec: StrategySpec) -> Strategy:
+    if strategy_spec.name == "ma_crossover":
+        return MovingAverageCrossoverStrategy(strategy_spec)
+    if strategy_spec.name == "breakout":
+        return BreakoutStrategy(strategy_spec)
+    supported = ", ".join(SUPPORTED_STRATEGY_FAMILIES)
+    raise ValueError(f"Unsupported strategy: {strategy_spec.name}. Supported strategies: {supported}")
 
 
 def _default_backtest_config() -> BacktestConfig:

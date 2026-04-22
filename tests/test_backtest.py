@@ -6,64 +6,78 @@ from alphaforge.backtest import BACKTEST_EQUITY_CURVE_COLUMNS, BACKTEST_TRADE_LO
 from alphaforge.schemas import BacktestConfig
 
 
-def test_backtest_produces_equity_curve_and_trade_log() -> None:
-    market_data = pd.DataFrame(
+def _make_market_data(closes: list[float]) -> pd.DataFrame:
+    return pd.DataFrame(
         {
-            "datetime": pd.date_range("2024-01-01", periods=5, freq="D"),
-            "open": [100, 102, 104, 103, 105],
-            "high": [100, 102, 104, 103, 105],
-            "low": [100, 102, 104, 103, 105],
-            "close": [100, 102, 104, 103, 105],
-            "volume": [10, 11, 12, 13, 14],
+            "datetime": pd.date_range("2024-01-01", periods=len(closes), freq="D"),
+            "open": closes,
+            "high": closes,
+            "low": closes,
+            "close": closes,
+            "volume": [10 + index for index in range(len(closes))],
         }
     )
-    target_positions = pd.Series([0.0, 1.0, 1.0, 0.0, 0.0])
-    config = BacktestConfig(initial_capital=1000, fee_rate=0.0, slippage_rate=0.0, annualization_factor=252)
 
-    equity_curve, trades = run_backtest(market_data, target_positions, config)
+
+def _make_config() -> BacktestConfig:
+    return BacktestConfig(initial_capital=1000, fee_rate=0.0, slippage_rate=0.0, annualization_factor=252)
+
+
+def test_backtest_handles_empty_frame_with_stable_trade_log_columns() -> None:
+    market_data = _make_market_data([])
+    target_positions = pd.Series(dtype=float)
+
+    equity_curve, trades = run_backtest(market_data, target_positions, _make_config())
 
     assert equity_curve.columns.tolist() == list(BACKTEST_EQUITY_CURVE_COLUMNS)
-    assert trades.shape[0] == 1
-    assert trades.iloc[0]["entry_price"] == 104
-    assert trades.iloc[0]["exit_price"] == 105
-    assert equity_curve.iloc[-1]["equity"] > config.initial_capital
+    assert equity_curve.empty
+    assert trades.empty
+    assert trades.columns.tolist() == list(BACKTEST_TRADE_LOG_COLUMNS)
 
 
-def test_backtest_returns_empty_trade_log_with_stable_columns() -> None:
-    market_data = pd.DataFrame(
-        {
-            "datetime": pd.date_range("2024-01-01", periods=4, freq="D"),
-            "open": [100, 101, 102, 103],
-            "high": [100, 101, 102, 103],
-            "low": [100, 101, 102, 103],
-            "close": [100, 101, 102, 103],
-            "volume": [10, 11, 12, 13],
-        }
-    )
+def test_backtest_returns_empty_trade_log_when_always_flat() -> None:
+    market_data = _make_market_data([100, 101, 102, 103])
     target_positions = pd.Series([0.0, 0.0, 0.0, 0.0])
-    config = BacktestConfig(initial_capital=1000, fee_rate=0.0, slippage_rate=0.0, annualization_factor=252)
 
-    _, trades = run_backtest(market_data, target_positions, config)
+    _, trades = run_backtest(market_data, target_positions, _make_config())
 
     assert trades.empty
     assert trades.columns.tolist() == list(BACKTEST_TRADE_LOG_COLUMNS)
 
 
-def test_backtest_applies_target_positions_on_next_bar() -> None:
-    market_data = pd.DataFrame(
-        {
-            "datetime": pd.date_range("2024-01-01", periods=4, freq="D"),
-            "open": [100, 101, 102, 103],
-            "high": [100, 101, 102, 103],
-            "low": [100, 101, 102, 103],
-            "close": [100, 101, 102, 103],
-            "volume": [10, 11, 12, 13],
-        }
-    )
-    target_positions = pd.Series([0.0, 1.0, 0.0, 0.0])
-    config = BacktestConfig(initial_capital=1000, fee_rate=0.0, slippage_rate=0.0, annualization_factor=252)
+def test_backtest_forces_a_final_exit_when_always_in_position() -> None:
+    market_data = _make_market_data([100, 102, 104, 105])
+    target_positions = pd.Series([1.0, 1.0, 1.0, 1.0])
 
-    equity_curve, trades = run_backtest(market_data, target_positions, config)
+    equity_curve, trades = run_backtest(market_data, target_positions, _make_config())
+
+    assert equity_curve.columns.tolist() == list(BACKTEST_EQUITY_CURVE_COLUMNS)
+    assert trades.shape[0] == 1
+    assert trades.iloc[0]["entry_time"] == "2024-01-02 00:00:00"
+    assert trades.iloc[0]["exit_time"] == "2024-01-04 00:00:00"
+    assert trades.iloc[0]["entry_price"] == 102
+    assert trades.iloc[0]["exit_price"] == 105
+    assert trades.iloc[0]["quantity"] == 1.0
+
+
+def test_backtest_forces_a_final_exit_for_an_open_trade() -> None:
+    market_data = _make_market_data([100, 101, 103, 106, 108])
+    target_positions = pd.Series([0.0, 1.0, 1.0, 1.0, 1.0])
+
+    equity_curve, trades = run_backtest(market_data, target_positions, _make_config())
+
+    assert equity_curve["position"].tolist() == [0.0, 0.0, 1.0, 1.0, 1.0]
+    assert trades.shape[0] == 1
+    assert trades.iloc[0]["entry_time"] == "2024-01-03 00:00:00"
+    assert trades.iloc[0]["exit_time"] == "2024-01-05 00:00:00"
+    assert trades.iloc[0]["exit_price"] == 108
+
+
+def test_backtest_extracts_standard_entry_and_exit_transitions() -> None:
+    market_data = _make_market_data([100, 101, 102, 103])
+    target_positions = pd.Series([0.0, 1.0, 0.0, 0.0])
+
+    equity_curve, trades = run_backtest(market_data, target_positions, _make_config())
 
     assert equity_curve["target_position"].tolist() == [0.0, 1.0, 0.0, 0.0]
     assert equity_curve["position"].tolist() == [0.0, 0.0, 1.0, 0.0]

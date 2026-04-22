@@ -77,11 +77,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     permutation_test = subparsers.add_parser(
         "permutation-test",
-        help="Run a permutation/null-comparison diagnostic for a fixed MA candidate",
+        help="Run a permutation/null-comparison diagnostic for a fixed strategy candidate",
     )
     _add_common_arguments(permutation_test)
-    permutation_test.add_argument("--short-window", type=int, required=True)
-    permutation_test.add_argument("--long-window", type=int, required=True)
+    permutation_test.add_argument("--strategy", type=str, choices=SUPPORTED_STRATEGY_FAMILIES, default="ma_crossover")
+    permutation_test.add_argument("--short-window", type=int, default=None)
+    permutation_test.add_argument("--long-window", type=int, default=None)
+    permutation_test.add_argument("--lookback-window", type=int, default=None)
     permutation_test.add_argument("--permutations", type=int, required=True)
     permutation_test.add_argument("--block-size", type=int, required=True)
     permutation_test.add_argument(
@@ -255,10 +257,7 @@ def main() -> None:
         if args.command == "permutation-test":
             permutation_execution = run_permutation_test_with_details(
                 data_spec=data_spec,
-                strategy_spec=StrategySpec(
-                    name="ma_crossover",
-                    parameters={"short_window": args.short_window, "long_window": args.long_window},
-                ),
+                strategy_spec=_build_permutation_strategy_spec_from_args(args, parser),
                 permutation_count=args.permutations,
                 block_size=args.block_size,
                 target_metric_name=args.target_metric,
@@ -329,6 +328,24 @@ def _build_strategy_parameter_grid_from_args(
         if args.lookback_windows is None:
             parser.error("Breakout search requires --lookback-windows")
         return {"lookback_window": args.lookback_windows}
+    parser.error(f"Unsupported strategy: {args.strategy}")
+
+
+def _build_permutation_strategy_spec_from_args(
+    args: argparse.Namespace,
+    parser: argparse.ArgumentParser,
+) -> StrategySpec:
+    if args.strategy == "ma_crossover":
+        if args.short_window is None or args.long_window is None:
+            parser.error("MA crossover permutation-test requires --short-window and --long-window")
+        return StrategySpec(
+            name="ma_crossover",
+            parameters={"short_window": args.short_window, "long_window": args.long_window},
+        )
+    if args.strategy == "breakout":
+        if args.lookback_window is None:
+            parser.error("Breakout permutation-test requires --lookback-window")
+        return StrategySpec(name="breakout", parameters={"lookback_window": args.lookback_window})
     parser.error(f"Unsupported strategy: {args.strategy}")
 
 
