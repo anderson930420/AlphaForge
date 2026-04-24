@@ -23,6 +23,7 @@ from .experiment_runner import (
     WalkForwardExecutionOutput,
 )
 from .metrics import compute_metrics
+from .permutation import run_permutation_test_with_details
 from .policy import apply_policy_decision, evaluate_candidate_policy, evaluate_walk_forward_policy
 from .report import build_experiment_report_input
 from .research_policy import ResearchPolicyConfig, evaluate_candidate_policy as evaluate_research_policy
@@ -45,9 +46,13 @@ from .schemas import (
     StrategySpec,
     ValidationResult,
     ValidationSplitConfig,
+    PermutationTestArtifactReceipt,
+    PermutationTestSummary,
     WalkForwardConfig,
     WalkForwardFoldResult,
     WalkForwardResult,
+    ValidationPermutationConfig,
+    ValidationPermutationStatus,
 )
 from .scoring import RANKING_SCORE_FIELD, rank_results, score_metrics, select_best_result, select_top_results
 from .search import SearchSpaceEvaluation, evaluate_strategy_search_space
@@ -244,6 +249,7 @@ def run_validate_search_with_details_workflow(
     min_trade_count: int | None = None,
     holdout_cutoff_date: str | None = None,
     policy_config: ResearchPolicyConfig | None = None,
+    permutation_config: ValidationPermutationConfig | None = None,
 ) -> ValidationExecutionOutput:
     validation_result, validation_artifact_receipt = run_validate_search_on_market_data(
         data_spec=data_spec,
@@ -257,6 +263,7 @@ def run_validate_search_with_details_workflow(
         min_trade_count=min_trade_count,
         holdout_cutoff_date=holdout_cutoff_date,
         policy_config=policy_config,
+        permutation_config=permutation_config,
     )
     return ValidationExecutionOutput(
         validation_result=validation_result,
@@ -276,6 +283,7 @@ def run_validate_search_on_market_data(
     min_trade_count: int | None = None,
     holdout_cutoff_date: str | None = None,
     policy_config: ResearchPolicyConfig | None = None,
+    permutation_config: ValidationPermutationConfig | None = None,
 ) -> tuple[ValidationResult, ValidationArtifactReceipt | None]:
     backtest_config = resolve_backtest_config(backtest_config)
     market_data = load_market_data(data_spec)
@@ -334,6 +342,18 @@ def run_validate_search_on_market_data(
     )
     test_result = test_execution.result
     test_receipt = test_execution.artifact_receipt
+    validation_permutation_config = permutation_config or ValidationPermutationConfig()
+    permutation_summary = None
+    permutation_artifact_receipt = None
+    if validation_permutation_config.enabled:
+        permutation_summary, permutation_artifact_receipt = _run_validation_permutation_diagnostic(
+            data_spec=data_spec,
+            selected_strategy_spec=selected_strategy_spec,
+            backtest_config=backtest_config,
+            test_data=test_data,
+            validation_root=validation_root,
+            permutation_config=validation_permutation_config,
+        )
 
     candidate_artifact_paths: dict[str, str] = {}
     if validation_root is not None:
@@ -350,23 +370,35 @@ def run_validate_search_on_market_data(
             candidate_artifact_paths["test_selected_equity_curve_path"] = str(test_receipt.equity_curve_path)
             candidate_artifact_paths["test_selected_trade_log_path"] = str(test_receipt.trade_log_path)
             candidate_artifact_paths["test_selected_metrics_summary_path"] = str(test_receipt.metrics_summary_path)
+        if permutation_artifact_receipt is not None:
+            candidate_artifact_paths["permutation_test_summary_path"] = str(permutation_artifact_receipt.permutation_test_summary_path)
+            candidate_artifact_paths["permutation_scores_path"] = str(permutation_artifact_receipt.permutation_scores_path)
 
+    research_policy_config = _resolve_research_policy_config(
+        policy_config=policy_config,
+        max_drawdown_cap=max_drawdown_cap,
+        min_trade_count=min_trade_count,
+        permutation_config=validation_permutation_config,
+    )
+    permutation_status = _classify_validation_permutation_status(
+        permutation_summary=permutation_summary,
+        permutation_config=validation_permutation_config,
+        research_policy_config=research_policy_config,
+    )
     candidate_evidence = build_candidate_evidence_summary(
         strategy_spec=selected_strategy_spec,
         train_result=train_best_result,
         test_result=test_result,
         search_summary=search_execution.summary,
         benchmark_summary=normalize_benchmark_summary(test_result.metadata.get("benchmark_summary")),
+        permutation_summary=permutation_summary,
+        permutation_status=permutation_status,
         artifact_paths=candidate_artifact_paths,
         metadata=build_holdout_metadata(train_data),
     )
-    research_policy_config = _resolve_research_policy_config(
-        policy_config=policy_config,
-        max_drawdown_cap=max_drawdown_cap,
-        min_trade_count=min_trade_count,
-    )
     research_policy_decision = evaluate_research_policy(
         candidate_evidence,
+        permutation_summary=permutation_summary,
         config=research_policy_config,
         candidate_id=_build_research_policy_candidate_id(selected_strategy_spec, train_data, test_data),
     )
@@ -379,6 +411,7 @@ def run_validate_search_on_market_data(
         train_best_result=train_best_result,
         test_result=test_result,
         test_benchmark_summary=normalize_benchmark_summary(test_result.metadata.get("benchmark_summary")),
+        permutation_config=validation_permutation_config,
         candidate_evidence=candidate_evidence,
         candidate_decision=candidate_decision,
         research_policy_decision=research_policy_decision,
@@ -391,6 +424,7 @@ def run_validate_search_on_market_data(
             validation_root,
             validation_result,
             train_ranked_results_path=train_ranked_results_path,
+            permutation_artifact_receipt=permutation_artifact_receipt,
         )
     return validation_result, validation_artifact_receipt
 
@@ -594,9 +628,19 @@ def _resolve_research_policy_config(
     policy_config: ResearchPolicyConfig | None,
     max_drawdown_cap: float | None,
     min_trade_count: int | None,
+    permutation_config: ValidationPermutationConfig,
 ) -> ResearchPolicyConfig:
     if policy_config is not None:
         return policy_config
+    if permutation_config.enabled:
+        return ResearchPolicyConfig(
+            max_reruns=0,
+            min_trade_count=min_trade_count if min_trade_count is not None else 1,
+            max_drawdown_cap=max_drawdown_cap,
+            min_return_degradation=0.0,
+            required_permutation_null_model=permutation_config.null_model,
+            required_permutation_scope=permutation_config.scope,
+        )
     return ResearchPolicyConfig(
         max_reruns=0,
         min_trade_count=min_trade_count if min_trade_count is not None else 1,
@@ -618,6 +662,62 @@ def _serialize_research_policy_config(config: ResearchPolicyConfig) -> dict[str,
         "required_permutation_null_model": config.required_permutation_null_model,
         "required_permutation_scope": config.required_permutation_scope,
     }
+
+
+def _run_validation_permutation_diagnostic(
+    *,
+    data_spec: DataSpec,
+    selected_strategy_spec: StrategySpec,
+    backtest_config: BacktestConfig,
+    test_data: pd.DataFrame,
+    validation_root: Path | None,
+    permutation_config: ValidationPermutationConfig,
+) -> tuple[PermutationTestSummary | None, PermutationTestArtifactReceipt | None]:
+    try:
+        execution = run_permutation_test_with_details(
+            data_spec=data_spec,
+            strategy_spec=selected_strategy_spec,
+            permutation_count=permutation_config.permutations,
+            block_size=permutation_config.block_size,
+            target_metric_name=permutation_config.target_metric_name,
+            seed=permutation_config.seed,
+            backtest_config=backtest_config,
+            output_dir=validation_root,
+            experiment_name="permutation_test",
+            market_data=test_data,
+            permutation_scope=permutation_config.scope,
+        )
+    except Exception:
+        return None, None
+    return execution.permutation_test_summary, execution.artifact_receipt
+
+
+def _classify_validation_permutation_status(
+    *,
+    permutation_summary: PermutationTestSummary | None,
+    permutation_config: ValidationPermutationConfig,
+    research_policy_config: ResearchPolicyConfig,
+) -> ValidationPermutationStatus:
+    if not permutation_config.enabled:
+        return "skipped_opt_out"
+    if permutation_summary is None:
+        return "unavailable_rejected"
+    empirical_p_value = permutation_summary.empirical_p_value
+    if empirical_p_value is None:
+        return "unavailable_rejected"
+    if research_policy_config.max_permutation_p_value is not None and empirical_p_value > research_policy_config.max_permutation_p_value:
+        return "run_failed"
+    if (
+        research_policy_config.required_permutation_null_model is not None
+        and permutation_summary.null_model != research_policy_config.required_permutation_null_model
+    ):
+        return "run_failed"
+    if (
+        research_policy_config.required_permutation_scope is not None
+        and permutation_summary.metadata.get("permutation_scope", "candidate_fixed") != research_policy_config.required_permutation_scope
+    ):
+        return "run_failed"
+    return "run_passed"
 
 
 def _build_research_policy_candidate_id(

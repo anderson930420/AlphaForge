@@ -15,7 +15,7 @@ from .experiment_runner import (
 from .permutation import run_permutation_test_with_details
 from .permutation import DEFAULT_PERMUTATION_TARGET_METRIC_NAME, SUPPORTED_PERMUTATION_TARGET_METRICS
 from .report import render_experiment_report, save_experiment_report
-from .schemas import BacktestConfig, DataSpec, SearchSummary, StrategySpec
+from .schemas import BacktestConfig, DataSpec, SearchSummary, StrategySpec, ValidationPermutationConfig
 from .search import SUPPORTED_STRATEGY_FAMILIES
 from .storage import (
     ensure_output_dir,
@@ -65,6 +65,16 @@ def build_parser() -> argparse.ArgumentParser:
     validate_search.add_argument("--max-drawdown-cap", type=float, default=None)
     validate_search.add_argument("--min-trade-count", type=int, default=None)
     validate_search.add_argument("--holdout-cutoff-date", type=str, default=None)
+    validate_search.add_argument("--permutation-test", action="store_true")
+    validate_search.add_argument("--permutations", type=int, default=25)
+    validate_search.add_argument("--permutation-seed", type=int, default=42)
+    validate_search.add_argument("--permutation-block-size", type=int, default=2)
+    validate_search.add_argument(
+        "--permutation-null-model",
+        type=str,
+        default="return_block_reconstruction",
+    )
+    validate_search.add_argument("--permutation-scope", type=str, default="test")
 
     walk_forward = subparsers.add_parser("walk-forward", help="Run walk-forward validation for a selected strategy family")
     _add_common_arguments(walk_forward)
@@ -238,6 +248,7 @@ def main() -> None:
                 max_drawdown_cap=args.max_drawdown_cap,
                 min_trade_count=args.min_trade_count,
                 holdout_cutoff_date=args.holdout_cutoff_date,
+                permutation_config=_build_validation_permutation_config_from_args(args),
             )
             payload = serialize_validation_result(validation_execution.validation_result)
             payload.update(serialize_validation_artifact_receipt(validation_execution.artifact_receipt) or {})
@@ -359,6 +370,19 @@ def _build_permutation_strategy_spec_from_args(
             parser.error("Breakout permutation-test requires --lookback-window")
         return StrategySpec(name="breakout", parameters={"lookback_window": args.lookback_window})
     parser.error(f"Unsupported strategy: {args.strategy}")
+
+
+def _build_validation_permutation_config_from_args(args: argparse.Namespace) -> ValidationPermutationConfig | None:
+    if not args.permutation_test:
+        return None
+    return ValidationPermutationConfig(
+        enabled=True,
+        permutations=args.permutations,
+        seed=args.permutation_seed,
+        block_size=args.permutation_block_size,
+        null_model=args.permutation_null_model,
+        scope=args.permutation_scope,
+    )
 
 
 def _build_search_summary(

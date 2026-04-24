@@ -8,8 +8,10 @@ from .schemas import (
     CandidateVerdict,
     ExperimentResult,
     MetricReport,
+    PermutationTestSummary,
     SearchSummary,
     StrategySpec,
+    ValidationPermutationStatus,
     WalkForwardEvidenceSummary,
 )
 
@@ -40,6 +42,8 @@ def build_candidate_evidence_summary(
     test_result: ExperimentResult | None,
     search_summary: SearchSummary | None = None,
     benchmark_summary: dict[str, float] | None = None,
+    permutation_summary: PermutationTestSummary | None = None,
+    permutation_status: ValidationPermutationStatus = "not_run",
     artifact_paths: dict[str, str] | None = None,
     metadata: dict[str, Any] | None = None,
     is_rejected: bool = False,
@@ -65,6 +69,8 @@ def build_candidate_evidence_summary(
         search_score=search_score,
         train_metrics=train_metrics,
         test_metrics=test_metrics,
+        permutation_summary=permutation_summary,
+        permutation_status=permutation_status,
         benchmark_relative_summary=benchmark_relative_summary,
         degradation_summary=degradation_summary,
         artifact_paths=dict(artifact_paths or {}),

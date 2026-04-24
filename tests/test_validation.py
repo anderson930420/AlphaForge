@@ -20,7 +20,18 @@ from alphaforge.experiment_runner import (
 )
 from alphaforge.research_policy import ResearchPolicyConfig
 from alphaforge.report import ExperimentReportInput
-from alphaforge.schemas import BacktestConfig, DataSpec, ExperimentResult, MetricReport, SearchSummary, StrategySpec
+from alphaforge.schemas import (
+    BacktestConfig,
+    DataSpec,
+    ExperimentResult,
+    MetricReport,
+    PermutationTestArtifactReceipt,
+    PermutationTestExecutionOutput,
+    PermutationTestSummary,
+    SearchSummary,
+    StrategySpec,
+    ValidationPermutationConfig,
+)
 from alphaforge.storage import (
     ValidationArtifactReceipt,
     WalkForwardArtifactReceipt,
@@ -40,6 +51,29 @@ def _make_search_summary(results: list[ExperimentResult]) -> SearchSummary:
         ranking_score="score",
         best_result=results[0] if results else None,
         top_results=results[:3],
+    )
+
+
+def _make_validation_permutation_summary(
+    *,
+    strategy_spec: StrategySpec,
+    empirical_p_value: float | None,
+    permutation_scope: str = "test",
+) -> PermutationTestSummary:
+    return PermutationTestSummary(
+        strategy_name=strategy_spec.name,
+        strategy_parameters=dict(strategy_spec.parameters),
+        target_metric_name="score",
+        permutation_mode="block",
+        block_size=2,
+        real_observed_metric_value=0.25,
+        permutation_metric_values=[0.1, 0.2, 0.3],
+        permutation_count=3,
+        seed=7,
+        null_ge_count=1,
+        empirical_p_value=empirical_p_value,
+        null_model="return_block_reconstruction",
+        metadata={"permutation_scope": permutation_scope},
     )
 
 
@@ -87,6 +121,12 @@ def test_run_validate_search_splits_data_chronologically_and_saves_outputs(sampl
     assert result.research_policy_decision.reasons
     assert result.research_policy_decision.checks
     assert result.research_policy_config["required_permutation_null_model"] is None
+    assert result.permutation_config is not None
+    assert result.permutation_config.enabled is False
+    assert result.candidate_evidence.permutation_summary is None
+    assert result.candidate_evidence.permutation_status == "skipped_opt_out"
+    assert summary_payload["permutation_config"]["enabled"] is False
+    assert summary_payload["candidate_evidence"]["permutation_status"] == "skipped_opt_out"
     assert (
         result.candidate_evidence.degradation_summary["return_degradation"]
         == result.test_result.metrics.annualized_return - result.train_best_result.metrics.annualized_return
@@ -174,6 +214,167 @@ def test_run_validate_search_uses_train_only_for_search_and_selected_params_for_
     assert result.candidate_decision.policy_scope == "validate-search"
     assert result.candidate_evidence.search_rank == 1
     assert result.candidate_evidence.search_result_count == 1
+
+
+@pytest.mark.parametrize(
+    "strategy_name,parameter_grid,selected_parameters",
+    [
+        ("ma_crossover", {"short_window": [2], "long_window": [4]}, {"short_window": 2, "long_window": 4}),
+        ("breakout", {"lookback_window": [3]}, {"lookback_window": 3}),
+    ],
+)
+def test_run_validate_search_runs_permutation_diagnostic_for_selected_candidate(
+    sample_market_csv: Path,
+    strategy_name: str,
+    parameter_grid: dict[str, list[int]],
+    selected_parameters: dict[str, int],
+) -> None:
+    train_best = ExperimentResult(
+        data_spec=DataSpec(path=sample_market_csv, symbol="TEST"),
+        strategy_spec=StrategySpec(name=strategy_name, parameters=selected_parameters),
+        backtest_config=BacktestConfig(1000.0, 0.0, 0.0, 252),
+        metrics=MetricReport(0.1, 0.1, 1.0, -0.1, 1.0, 1.0, 2),
+        score=0.9,
+    )
+    test_result = ExperimentResult(
+        data_spec=DataSpec(path=sample_market_csv, symbol="TEST"),
+        strategy_spec=train_best.strategy_spec,
+        backtest_config=train_best.backtest_config,
+        metrics=MetricReport(0.05, 0.12, 0.8, -0.08, 0.5, 0.7, 2),
+        score=0.4,
+    )
+    market_data = pd.DataFrame(
+        {
+            "datetime": pd.date_range("2024-01-01", periods=8, freq="D"),
+            "open": range(1, 9),
+            "high": range(1, 9),
+            "low": range(1, 9),
+            "close": range(1, 9),
+            "volume": [1.0] * 8,
+        }
+    )
+    permutation_summary = _make_validation_permutation_summary(
+        strategy_spec=train_best.strategy_spec,
+        empirical_p_value=0.04,
+    )
+    permutation_receipt = PermutationTestArtifactReceipt(
+        permutation_test_summary_path=Path("/tmp/permutation_test_summary.json"),
+        permutation_scores_path=Path("/tmp/permutation_scores.csv"),
+    )
+
+    with patch("alphaforge.runner_workflows.load_market_data", return_value=market_data), patch(
+        "alphaforge.runner_workflows.run_search_on_market_data",
+        return_value=SearchExecutionOutput(ranked_results=[train_best], summary=_make_search_summary([train_best])),
+    ), patch(
+        "alphaforge.runner_workflows.run_experiment_on_market_data",
+        return_value=ExperimentExecutionOutput(
+            result=test_result,
+            equity_curve=pd.DataFrame(),
+            trade_log=pd.DataFrame(),
+            report_input=ExperimentReportInput(
+                result=test_result,
+                equity_curve=pd.DataFrame(),
+                trades=pd.DataFrame(),
+                benchmark_summary={"total_return": 0.0, "max_drawdown": 0.0},
+                benchmark_curve=pd.DataFrame(),
+            ),
+            artifact_receipt=None,
+        ),
+    ), patch(
+        "alphaforge.runner_workflows.run_permutation_test_with_details",
+        return_value=PermutationTestExecutionOutput(
+            permutation_test_summary=permutation_summary,
+            artifact_receipt=permutation_receipt,
+        ),
+    ) as run_permutation_mock:
+        result = run_validate_search(
+            data_spec=DataSpec(path=sample_market_csv, symbol="TEST"),
+            parameter_grid=parameter_grid,
+            split_ratio=0.5,
+            permutation_config=ValidationPermutationConfig(enabled=True, permutations=3, seed=7, block_size=2),
+        )
+
+    permutation_call = run_permutation_mock.call_args.kwargs
+    expected_test_data = market_data.iloc[4:].reset_index(drop=True)
+    assert permutation_call["strategy_spec"].parameters == selected_parameters
+    assert permutation_call["market_data"].reset_index(drop=True).equals(expected_test_data)
+    assert permutation_call["permutation_scope"] == "test"
+    assert result.candidate_evidence.permutation_summary is not None
+    assert result.candidate_evidence.permutation_summary.strategy_parameters == selected_parameters
+    assert result.candidate_evidence.permutation_status == "run_passed"
+    assert result.research_policy_decision is not None
+    assert result.research_policy_decision.verdict == "promote"
+    assert result.research_policy_decision.checks["max_permutation_p_value"] is True
+
+
+def test_run_validate_search_rejects_when_permutation_p_value_is_above_default_threshold(sample_market_csv: Path) -> None:
+    train_best = ExperimentResult(
+        data_spec=DataSpec(path=sample_market_csv, symbol="TEST"),
+        strategy_spec=StrategySpec(name="ma_crossover", parameters={"short_window": 2, "long_window": 4}),
+        backtest_config=BacktestConfig(1000.0, 0.0, 0.0, 252),
+        metrics=MetricReport(0.1, 0.1, 1.0, -0.1, 1.0, 1.0, 2),
+        score=0.9,
+    )
+    test_result = ExperimentResult(
+        data_spec=DataSpec(path=sample_market_csv, symbol="TEST"),
+        strategy_spec=train_best.strategy_spec,
+        backtest_config=train_best.backtest_config,
+        metrics=MetricReport(0.05, 0.12, 0.8, -0.08, 0.5, 0.7, 2),
+        score=0.4,
+    )
+    market_data = pd.DataFrame(
+        {
+            "datetime": pd.date_range("2024-01-01", periods=8, freq="D"),
+            "open": range(1, 9),
+            "high": range(1, 9),
+            "low": range(1, 9),
+            "close": range(1, 9),
+            "volume": [1.0] * 8,
+        }
+    )
+
+    with patch("alphaforge.runner_workflows.load_market_data", return_value=market_data), patch(
+        "alphaforge.runner_workflows.run_search_on_market_data",
+        return_value=SearchExecutionOutput(ranked_results=[train_best], summary=_make_search_summary([train_best])),
+    ), patch(
+        "alphaforge.runner_workflows.run_experiment_on_market_data",
+        return_value=ExperimentExecutionOutput(
+            result=test_result,
+            equity_curve=pd.DataFrame(),
+            trade_log=pd.DataFrame(),
+            report_input=ExperimentReportInput(
+                result=test_result,
+                equity_curve=pd.DataFrame(),
+                trades=pd.DataFrame(),
+                benchmark_summary={"total_return": 0.0, "max_drawdown": 0.0},
+                benchmark_curve=pd.DataFrame(),
+            ),
+            artifact_receipt=None,
+        ),
+    ), patch(
+        "alphaforge.runner_workflows.run_permutation_test_with_details",
+        return_value=PermutationTestExecutionOutput(
+            permutation_test_summary=_make_validation_permutation_summary(
+                strategy_spec=train_best.strategy_spec,
+                empirical_p_value=0.2,
+            ),
+            artifact_receipt=PermutationTestArtifactReceipt(
+                permutation_test_summary_path=Path("/tmp/permutation_test_summary.json"),
+                permutation_scores_path=Path("/tmp/permutation_scores.csv"),
+            ),
+        ),
+    ):
+        result = run_validate_search(
+            data_spec=DataSpec(path=sample_market_csv, symbol="TEST"),
+            parameter_grid={"short_window": [2], "long_window": [4]},
+            split_ratio=0.5,
+            permutation_config=ValidationPermutationConfig(enabled=True, permutations=3, seed=7, block_size=2),
+        )
+
+    assert result.candidate_evidence.permutation_status == "run_failed"
+    assert result.research_policy_decision is not None
+    assert result.research_policy_decision.verdict == "reject"
+    assert result.research_policy_decision.checks["max_permutation_p_value"] is False
 
 
 def test_run_validate_search_with_research_policy_threshold_rejects_weak_trade_count(
@@ -420,6 +621,90 @@ def test_cli_validate_search_prints_validation_summary_payload(
     assert Path(payload["validation_summary_path"]).name == "validation_summary.json"
     assert Path(payload["policy_decision_path"]).name == "policy_decision.json"
     assert payload["candidate_decision"]["verdict"] == payload["candidate_evidence"]["verdict"]
+
+
+def test_cli_validate_search_without_permutation_flag_preserves_existing_behavior(
+    sample_market_csv: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "alphaforge",
+            "validate-search",
+            "--data",
+            str(sample_market_csv),
+            "--output-dir",
+            str(tmp_path),
+            "--short-windows",
+            "2",
+            "--long-windows",
+            "3",
+            "--split-ratio",
+            "0.5",
+        ],
+    )
+
+    with patch("alphaforge.cli.run_validate_search_with_details") as run_validate_mock, patch(
+        "alphaforge.cli.serialize_validation_result", return_value={"ok": True}
+    ), patch("alphaforge.cli.serialize_validation_artifact_receipt", return_value=None):
+        run_validate_mock.return_value = ValidationExecutionOutput(validation_result=object(), artifact_receipt=None)  # type: ignore[arg-type]
+        main()
+
+    assert run_validate_mock.call_args.kwargs["permutation_config"] is None
+
+
+def test_cli_validate_search_with_permutation_flag_passes_config_into_workflow(
+    sample_market_csv: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "alphaforge",
+            "validate-search",
+            "--data",
+            str(sample_market_csv),
+            "--output-dir",
+            str(tmp_path),
+            "--short-windows",
+            "2",
+            "--long-windows",
+            "3",
+            "--split-ratio",
+            "0.5",
+            "--permutation-test",
+            "--permutations",
+            "7",
+            "--permutation-seed",
+            "99",
+            "--permutation-block-size",
+            "3",
+            "--permutation-null-model",
+            "return_block_reconstruction",
+            "--permutation-scope",
+            "test",
+        ],
+    )
+
+    with patch("alphaforge.cli.run_validate_search_with_details") as run_validate_mock, patch(
+        "alphaforge.cli.serialize_validation_result", return_value={"ok": True}
+    ), patch("alphaforge.cli.serialize_validation_artifact_receipt", return_value=None):
+        run_validate_mock.return_value = ValidationExecutionOutput(validation_result=object(), artifact_receipt=None)  # type: ignore[arg-type]
+        main()
+
+    permutation_config = run_validate_mock.call_args.kwargs["permutation_config"]
+    assert isinstance(permutation_config, ValidationPermutationConfig)
+    assert permutation_config.enabled is True
+    assert permutation_config.permutations == 7
+    assert permutation_config.seed == 99
+    assert permutation_config.block_size == 3
+    assert permutation_config.null_model == "return_block_reconstruction"
+    assert permutation_config.scope == "test"
 
 
 def test_run_walk_forward_search_creates_chronological_fold_outputs(sample_market_csv: Path, tmp_path: Path) -> None:

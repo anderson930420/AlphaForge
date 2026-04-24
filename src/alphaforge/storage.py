@@ -109,6 +109,8 @@ class ValidationArtifactReceipt:
     validation_summary_path: Path
     train_ranked_results_path: Path | None = None
     policy_decision_path: Path | None = None
+    permutation_test_summary_path: Path | None = None
+    permutation_scores_path: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -176,6 +178,8 @@ def serialize_candidate_evidence_summary(summary: CandidateEvidenceSummary | Non
         "search_score": summary.search_score,
         "train_metrics": serialize_metric_report(summary.train_metrics) if summary.train_metrics is not None else None,
         "test_metrics": serialize_metric_report(summary.test_metrics) if summary.test_metrics is not None else None,
+        "permutation_summary": serialize_permutation_test_summary(summary.permutation_summary),
+        "permutation_status": summary.permutation_status,
         "benchmark_relative_summary": summary.benchmark_relative_summary,
         "degradation_summary": summary.degradation_summary,
         "artifact_paths": summary.artifact_paths,
@@ -235,6 +239,7 @@ def serialize_validation_result(result: ValidationResult) -> dict[str, Any]:
         "train_best_result": serialize_experiment_result(result.train_best_result),
         "test_result": serialize_experiment_result(result.test_result),
         "test_benchmark_summary": result.test_benchmark_summary,
+        "permutation_config": asdict(result.permutation_config) if result.permutation_config is not None else None,
         "candidate_evidence": serialize_candidate_evidence_summary(result.candidate_evidence),
         "candidate_decision": serialize_candidate_policy_decision(result.candidate_decision),
         "research_policy_decision": serialize_research_policy_decision(result.research_policy_decision),
@@ -250,6 +255,8 @@ def serialize_validation_artifact_receipt(receipt: ValidationArtifactReceipt | N
         "validation_summary_path": str(receipt.validation_summary_path),
         "train_ranked_results_path": _serialize_path(receipt.train_ranked_results_path),
         "policy_decision_path": _serialize_path(receipt.policy_decision_path),
+        "permutation_test_summary_path": _serialize_path(receipt.permutation_test_summary_path),
+        "permutation_scores_path": _serialize_path(receipt.permutation_scores_path),
     }
 
 
@@ -460,6 +467,7 @@ def save_validation_result(
     output_dir: Path,
     validation_result: ValidationResult,
     train_ranked_results_path: Path | None = None,
+    permutation_artifact_receipt: PermutationTestArtifactReceipt | None = None,
 ) -> tuple[ValidationResult, ValidationArtifactReceipt]:
     """Write the canonical persisted validation summary artifact.
 
@@ -473,6 +481,8 @@ def save_validation_result(
         validation_summary_path=summary_path,
         train_ranked_results_path=train_ranked_results_path,
         policy_decision_path=policy_decision_path,
+        permutation_test_summary_path=permutation_artifact_receipt.permutation_test_summary_path if permutation_artifact_receipt else None,
+        permutation_scores_path=permutation_artifact_receipt.permutation_scores_path if permutation_artifact_receipt else None,
     )
     receipt_payload = serialize_validation_artifact_receipt(receipt) or {}
     _write_json(

@@ -13,10 +13,12 @@ from alphaforge.schemas import (
     ExperimentResult,
     MetricReport,
     CandidatePolicyDecision,
+    PermutationTestArtifactReceipt,
     PermutationTestSummary,
     SearchSummary,
     StrategySpec,
     ValidationResult,
+    ValidationPermutationConfig,
     ValidationSplitConfig,
     WalkForwardConfig,
     WalkForwardFoldResult,
@@ -206,6 +208,21 @@ def test_save_validation_result_writes_summary_and_train_ranked_reference(tmp_pa
     validation_root = tmp_path / "validation_case"
     train_best_result = _make_result(short_window=2, long_window=4, score=0.9)
     test_result = _make_result(short_window=2, long_window=4, score=0.4)
+    permutation_summary = PermutationTestSummary(
+        strategy_name="ma_crossover",
+        strategy_parameters={"short_window": 2, "long_window": 4},
+        target_metric_name="score",
+        permutation_mode="block",
+        block_size=2,
+        real_observed_metric_value=0.42,
+        permutation_metric_values=[0.1, 0.2, 0.3],
+        permutation_count=3,
+        seed=11,
+        null_ge_count=1,
+        empirical_p_value=0.04,
+        null_model="return_block_reconstruction",
+        metadata={"permutation_scope": "test"},
+    )
     search_summary = _make_search_summary(train_best_result)
     train_ranked_results_path = save_ranked_results_artifact(
         output_dir=validation_root,
@@ -213,6 +230,7 @@ def test_save_validation_result_writes_summary_and_train_ranked_reference(tmp_pa
         parameter_columns=["short_window", "long_window"],
         filename=TRAIN_RANKED_RESULTS_FILENAME,
     )
+    persisted_permutation_summary, permutation_receipt = save_permutation_test_result(validation_root, permutation_summary)
     validation_result = ValidationResult(
         data_spec=DataSpec(path=Path("sample_data/example.csv"), symbol="2330"),
         split_config=ValidationSplitConfig(split_ratio=0.5),
@@ -220,6 +238,7 @@ def test_save_validation_result_writes_summary_and_train_ranked_reference(tmp_pa
         train_best_result=train_best_result,
         test_result=test_result,
         test_benchmark_summary={"total_return": 0.1, "max_drawdown": -0.05},
+        permutation_config=ValidationPermutationConfig(enabled=True, permutations=3, seed=11, block_size=2),
         research_policy_decision=PolicyDecision(
             candidate_id="ma_crossover:{'short_window': 2, 'long_window': 4}",
             verdict="promote",
@@ -243,9 +262,13 @@ def test_save_validation_result_writes_summary_and_train_ranked_reference(tmp_pa
             test_result=test_result,
             search_summary=search_summary,
             benchmark_summary={"total_return": 0.1, "max_drawdown": -0.05},
+            permutation_summary=persisted_permutation_summary,
+            permutation_status="run_passed",
             artifact_paths={
                 "validation_summary_path": str(validation_root / VALIDATION_SUMMARY_FILENAME),
                 "train_ranked_results_path": str(train_ranked_results_path),
+                "permutation_test_summary_path": str(permutation_receipt.permutation_test_summary_path),
+                "permutation_scores_path": str(permutation_receipt.permutation_scores_path),
             },
         ),
         candidate_decision=CandidatePolicyDecision(
@@ -261,6 +284,7 @@ def test_save_validation_result_writes_summary_and_train_ranked_reference(tmp_pa
         validation_root,
         validation_result,
         train_ranked_results_path=train_ranked_results_path,
+        permutation_artifact_receipt=permutation_receipt,
     )
     summary_path = validation_root / VALIDATION_SUMMARY_FILENAME
     summary_payload = json.loads(summary_path.read_text(encoding="utf-8"))
@@ -272,16 +296,28 @@ def test_save_validation_result_writes_summary_and_train_ranked_reference(tmp_pa
         assert (validation_root / filename).exists()
     assert summary_payload["train_ranked_results_path"] == str(train_ranked_results_path)
     assert summary_payload["validation_summary_path"] == str(summary_path)
+    assert summary_payload["permutation_test_summary_path"] == str(permutation_receipt.permutation_test_summary_path)
+    assert summary_payload["permutation_scores_path"] == str(permutation_receipt.permutation_scores_path)
     assert summary_payload["candidate_evidence"]["verdict"] == "validated"
+    assert summary_payload["candidate_evidence"]["permutation_status"] == "run_passed"
+    assert summary_payload["candidate_evidence"]["permutation_summary"]["empirical_p_value"] == 0.04
     assert summary_payload["candidate_decision"]["verdict"] == "validated"
     assert summary_payload["research_policy_decision"]["verdict"] == "promote"
     assert summary_payload["policy_decision_path"] == str(validation_root / POLICY_DECISION_FILENAME)
     assert summary_payload["candidate_evidence"]["search_rank"] == 1
     assert summary_payload["candidate_evidence"]["artifact_paths"]["validation_summary_path"] == str(summary_path)
+    assert summary_payload["candidate_evidence"]["artifact_paths"]["permutation_test_summary_path"] == str(
+        permutation_receipt.permutation_test_summary_path
+    )
+    assert summary_payload["candidate_evidence"]["artifact_paths"]["permutation_scores_path"] == str(permutation_receipt.permutation_scores_path)
     assert "train_ranked_results_path" not in serialized_validation
     assert serialized_receipt["train_ranked_results_path"] == str(train_ranked_results_path)
     assert serialized_receipt["validation_summary_path"] == str(summary_path)
     assert serialized_receipt["policy_decision_path"] == str(validation_root / POLICY_DECISION_FILENAME)
+    assert serialized_receipt["permutation_test_summary_path"] == str(permutation_receipt.permutation_test_summary_path)
+    assert serialized_receipt["permutation_scores_path"] == str(permutation_receipt.permutation_scores_path)
+    assert (validation_root / "permutation_test_summary.json").exists()
+    assert (validation_root / "permutation_scores.csv").exists()
 
 
 def test_save_validation_result_writes_policy_decision_artifact(tmp_path: Path) -> None:

@@ -20,6 +20,7 @@ from .schemas import (
     SearchSummary,
     StrategySpec,
     ValidationResult,
+    ValidationPermutationConfig,
     WalkForwardResult,
 )
 from .storage import ArtifactReceipt, SearchArtifactReceipt, ValidationArtifactReceipt, WalkForwardArtifactReceipt
@@ -167,6 +168,7 @@ def run_validate_search(
     min_trade_count: int | None = None,
     holdout_cutoff_date: str | None = None,
     policy_config: ResearchPolicyConfig | None = None,
+    permutation_config: ValidationPermutationConfig | None = None,
 ) -> ValidationResult:
     return run_validate_search_with_details(
         data_spec=data_spec,
@@ -180,6 +182,7 @@ def run_validate_search(
         min_trade_count=min_trade_count,
         holdout_cutoff_date=holdout_cutoff_date,
         policy_config=policy_config,
+        permutation_config=permutation_config,
     ).validation_result
 
 
@@ -195,6 +198,7 @@ def run_validate_search_with_details(
     min_trade_count: int | None = None,
     holdout_cutoff_date: str | None = None,
     policy_config: ResearchPolicyConfig | None = None,
+    permutation_config: ValidationPermutationConfig | None = None,
 ) -> ValidationExecutionOutput:
     from .runner_workflows import run_validate_search_with_details_workflow
 
@@ -210,6 +214,7 @@ def run_validate_search_with_details(
         min_trade_count=min_trade_count,
         holdout_cutoff_date=holdout_cutoff_date,
         policy_config=policy_config,
+        permutation_config=permutation_config,
     )
 
 

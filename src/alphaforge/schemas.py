@@ -69,6 +69,7 @@ class ExperimentResult:
 
 CandidateVerdict = Literal["candidate", "validated", "rejected", "inconclusive"]
 PolicyScope = Literal["validate-search", "walk-forward"]
+ValidationPermutationStatus = Literal["not_run", "run_passed", "run_failed", "skipped_opt_out", "unavailable_rejected"]
 
 
 @dataclass(frozen=True)
@@ -103,6 +104,8 @@ class CandidateEvidenceSummary:
     search_score: float | None = None
     train_metrics: MetricReport | None = None
     test_metrics: MetricReport | None = None
+    permutation_summary: PermutationTestSummary | None = None
+    permutation_status: ValidationPermutationStatus = "not_run"
     benchmark_relative_summary: dict[str, float] = field(default_factory=dict)
     degradation_summary: dict[str, float] = field(default_factory=dict)
     artifact_paths: dict[str, str] = field(default_factory=dict)
@@ -127,6 +130,17 @@ class ValidationSplitConfig:
 
 
 @dataclass(frozen=True)
+class ValidationPermutationConfig:
+    enabled: bool = False
+    permutations: int = 25
+    seed: int = 42
+    block_size: int = 2
+    null_model: str = "return_block_reconstruction"
+    scope: str = "test"
+    target_metric_name: PermutationTargetMetricName = "score"
+
+
+@dataclass(frozen=True)
 class ValidationResult:
     data_spec: DataSpec
     split_config: ValidationSplitConfig
@@ -134,6 +148,7 @@ class ValidationResult:
     train_best_result: ExperimentResult
     test_result: ExperimentResult
     test_benchmark_summary: dict[str, float] = field(default_factory=dict)
+    permutation_config: ValidationPermutationConfig | None = None
     candidate_evidence: CandidateEvidenceSummary | None = None
     candidate_decision: CandidatePolicyDecision | None = None
     research_policy_decision: Any | None = None

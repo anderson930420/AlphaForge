@@ -44,6 +44,8 @@ def run_permutation_test(
     backtest_config: BacktestConfig | None = None,
     output_dir: Path | None = None,
     experiment_name: str = DEFAULT_PERMUTATION_TEST_EXPERIMENT_NAME,
+    market_data: pd.DataFrame | None = None,
+    permutation_scope: str = "candidate_fixed",
     holdout_cutoff_date: str | None = None,
 ) -> PermutationTestSummary:
     execution = run_permutation_test_with_details(
@@ -56,6 +58,8 @@ def run_permutation_test(
         backtest_config=backtest_config,
         output_dir=output_dir,
         experiment_name=experiment_name,
+        market_data=market_data,
+        permutation_scope=permutation_scope,
         holdout_cutoff_date=holdout_cutoff_date,
     )
     return execution.permutation_test_summary
@@ -71,6 +75,8 @@ def run_permutation_test_with_details(
     backtest_config: BacktestConfig | None = None,
     output_dir: Path | None = None,
     experiment_name: str = DEFAULT_PERMUTATION_TEST_EXPERIMENT_NAME,
+    market_data: pd.DataFrame | None = None,
+    permutation_scope: str = "candidate_fixed",
     holdout_cutoff_date: str | None = None,
 ) -> PermutationTestExecutionOutput:
     if permutation_count <= 0:
@@ -82,8 +88,9 @@ def run_permutation_test_with_details(
         raise ValueError(f"Unsupported permutation target metric: {target_metric_name}. Supported metrics: {supported}")
 
     backtest_config = backtest_config or _default_backtest_config()
-    market_data = load_market_data(data_spec)
-    market_data = _apply_holdout_cutoff_if_requested(market_data, holdout_cutoff_date)
+    if market_data is None:
+        market_data = load_market_data(data_spec)
+        market_data = _apply_holdout_cutoff_if_requested(market_data, holdout_cutoff_date)
     if block_size > len(market_data):
         raise ValueError("block_size must not exceed the number of market data rows")
     real_result = _evaluate_candidate_on_market_data(
@@ -131,6 +138,7 @@ def run_permutation_test_with_details(
             "real_sharpe_ratio": real_result.metrics.sharpe_ratio,
             "real_target_metric_name": target_metric_name,
             "real_target_metric_value": real_observed_metric_value,
+            "permutation_scope": permutation_scope,
             **_build_holdout_metadata(market_data),
         },
     )
