@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import numpy as np
 import pandas as pd
+import pytest
 
 from alphaforge.backtest import BACKTEST_EQUITY_CURVE_COLUMNS, BACKTEST_TRADE_LOG_COLUMNS, run_backtest
 from alphaforge.schemas import BacktestConfig
@@ -43,6 +45,41 @@ def test_backtest_returns_empty_trade_log_when_always_flat() -> None:
 
     assert trades.empty
     assert trades.columns.tolist() == list(BACKTEST_TRADE_LOG_COLUMNS)
+
+
+def test_backtest_rejects_same_length_series_with_mismatched_index() -> None:
+    market_data = _make_market_data([100, 101, 102, 103])
+    target_positions = pd.Series([0.0, 1.0, 0.0, 0.0], index=[10, 11, 12, 13])
+
+    with pytest.raises(ValueError, match="target_positions index alignment"):
+        run_backtest(market_data, target_positions, _make_config())
+
+
+def test_backtest_accepts_series_with_matching_index() -> None:
+    market_data = _make_market_data([100, 101, 102, 103])
+    target_positions = pd.Series([0.0, 1.0, 0.0, 0.0], index=market_data.index)
+
+    equity_curve, trades = run_backtest(market_data, target_positions, _make_config())
+
+    assert equity_curve["target_position"].tolist() == [0.0, 1.0, 0.0, 0.0]
+    assert trades.shape[0] == 1
+
+
+@pytest.mark.parametrize("target_positions", [[0.0, 1.0, 0.0, 0.0], np.array([0.0, 1.0, 0.0, 0.0])])
+def test_backtest_accepts_list_like_target_positions_positionally(target_positions) -> None:
+    market_data = _make_market_data([100, 101, 102, 103])
+
+    equity_curve, trades = run_backtest(market_data, target_positions, _make_config())
+
+    assert equity_curve["target_position"].tolist() == [0.0, 1.0, 0.0, 0.0]
+    assert trades.shape[0] == 1
+
+
+def test_backtest_rejects_target_position_length_mismatch() -> None:
+    market_data = _make_market_data([100, 101, 102, 103])
+
+    with pytest.raises(ValueError, match="target_positions length"):
+        run_backtest(market_data, [0.0, 1.0, 0.0], _make_config())
 
 
 def test_backtest_forces_a_final_exit_when_always_in_position() -> None:

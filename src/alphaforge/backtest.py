@@ -7,6 +7,8 @@ emit next-bar target positions, while this module decides how those targets
 become realized positions, turnover, costs, equity, and trade records.
 """
 
+from collections.abc import Sequence
+
 import pandas as pd
 
 from .schemas import EquityCurveFrame, BacktestConfig, TradeRecord
@@ -31,7 +33,7 @@ BACKTEST_TRADE_LOG_COLUMNS = tuple(TradeRecord.__annotations__.keys())
 
 def run_backtest(
     market_data: pd.DataFrame,
-    target_positions: pd.Series,
+    target_positions: pd.Series | Sequence[float],
     config: BacktestConfig,
 ) -> tuple[EquityCurveFrame, pd.DataFrame]:
     """Run the canonical MVP long-flat backtest on validated market data.
@@ -42,7 +44,8 @@ def run_backtest(
     compounds equity multiplicatively from the configured initial capital.
     """
     frame = market_data.copy()
-    frame["target_position"] = target_positions.astype(float).fillna(0.0).clip(lower=0.0, upper=1.0)
+    coerced_target_positions = _coerce_target_positions(target_positions, frame.index)
+    frame["target_position"] = coerced_target_positions.astype(float).fillna(0.0).clip(lower=0.0, upper=1.0)
     frame["position"] = frame["target_position"].shift(1).fillna(0.0)
     frame["close_return"] = frame["close"].pct_change().fillna(0.0)
     frame["turnover"] = frame["position"].diff().abs().fillna(frame["position"].abs())
@@ -53,6 +56,25 @@ def run_backtest(
     trades = _extract_trades(frame)
     trade_frame = pd.DataFrame([trade.__dict__ for trade in trades], columns=list(BACKTEST_TRADE_LOG_COLUMNS))
     return frame.reindex(columns=BACKTEST_EQUITY_CURVE_COLUMNS), trade_frame
+
+
+def _coerce_target_positions(target_positions: pd.Series | Sequence[float], data_index: pd.Index) -> pd.Series:
+    """Validate target-position row mapping before execution normalization."""
+    expected_length = len(data_index)
+    if isinstance(target_positions, pd.Series):
+        if len(target_positions) != expected_length:
+            raise ValueError("target_positions length must match market data row count")
+        if not target_positions.index.equals(data_index):
+            raise ValueError("target_positions index alignment must exactly match market data index")
+        return pd.Series(target_positions.to_numpy(), index=data_index, name="target_position")
+
+    try:
+        actual_length = len(target_positions)
+    except TypeError as exc:
+        raise ValueError("target_positions length must match market data row count") from exc
+    if actual_length != expected_length:
+        raise ValueError("target_positions length must match market data row count")
+    return pd.Series(target_positions, index=data_index, name="target_position")
 
 
 def _extract_trades(frame: pd.DataFrame) -> list[TradeRecord]:
