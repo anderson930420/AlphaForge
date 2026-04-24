@@ -263,7 +263,7 @@ def test_save_validation_result_writes_summary_and_train_ranked_reference(tmp_pa
             search_summary=search_summary,
             benchmark_summary={"total_return": 0.1, "max_drawdown": -0.05},
             permutation_summary=persisted_permutation_summary,
-            permutation_status="run_passed",
+            permutation_status="completed_passed",
             artifact_paths={
                 "validation_summary_path": str(validation_root / VALIDATION_SUMMARY_FILENAME),
                 "train_ranked_results_path": str(train_ranked_results_path),
@@ -299,7 +299,7 @@ def test_save_validation_result_writes_summary_and_train_ranked_reference(tmp_pa
     assert summary_payload["permutation_test_summary_path"] == str(permutation_receipt.permutation_test_summary_path)
     assert summary_payload["permutation_scores_path"] == str(permutation_receipt.permutation_scores_path)
     assert summary_payload["candidate_evidence"]["verdict"] == "validated"
-    assert summary_payload["candidate_evidence"]["permutation_status"] == "run_passed"
+    assert summary_payload["candidate_evidence"]["permutation_status"] == "completed_passed"
     assert summary_payload["candidate_evidence"]["permutation_summary"]["empirical_p_value"] == 0.04
     assert summary_payload["candidate_decision"]["verdict"] == "validated"
     assert summary_payload["research_policy_decision"]["verdict"] == "promote"

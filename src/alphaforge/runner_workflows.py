@@ -345,8 +345,9 @@ def run_validate_search_on_market_data(
     validation_permutation_config = permutation_config or ValidationPermutationConfig()
     permutation_summary = None
     permutation_artifact_receipt = None
+    permutation_execution_error = False
     if validation_permutation_config.enabled:
-        permutation_summary, permutation_artifact_receipt = _run_validation_permutation_diagnostic(
+        permutation_summary, permutation_artifact_receipt, permutation_execution_error = _run_validation_permutation_diagnostic(
             data_spec=data_spec,
             selected_strategy_spec=selected_strategy_spec,
             backtest_config=backtest_config,
@@ -384,6 +385,7 @@ def run_validate_search_on_market_data(
         permutation_summary=permutation_summary,
         permutation_config=validation_permutation_config,
         research_policy_config=research_policy_config,
+        execution_error=permutation_execution_error,
     )
     candidate_evidence = build_candidate_evidence_summary(
         strategy_spec=selected_strategy_spec,
@@ -672,7 +674,7 @@ def _run_validation_permutation_diagnostic(
     test_data: pd.DataFrame,
     validation_root: Path | None,
     permutation_config: ValidationPermutationConfig,
-) -> tuple[PermutationTestSummary | None, PermutationTestArtifactReceipt | None]:
+) -> tuple[PermutationTestSummary | None, PermutationTestArtifactReceipt | None, bool]:
     try:
         execution = run_permutation_test_with_details(
             data_spec=data_spec,
@@ -688,8 +690,8 @@ def _run_validation_permutation_diagnostic(
             permutation_scope=permutation_config.scope,
         )
     except Exception:
-        return None, None
-    return execution.permutation_test_summary, execution.artifact_receipt
+        return None, None, True
+    return execution.permutation_test_summary, execution.artifact_receipt, False
 
 
 def _classify_validation_permutation_status(
@@ -697,27 +699,28 @@ def _classify_validation_permutation_status(
     permutation_summary: PermutationTestSummary | None,
     permutation_config: ValidationPermutationConfig,
     research_policy_config: ResearchPolicyConfig,
+    execution_error: bool,
 ) -> ValidationPermutationStatus:
     if not permutation_config.enabled:
-        return "skipped_opt_out"
-    if permutation_summary is None:
-        return "unavailable_rejected"
+        return "skipped"
+    if execution_error or permutation_summary is None:
+        return "error"
     empirical_p_value = permutation_summary.empirical_p_value
     if empirical_p_value is None:
-        return "unavailable_rejected"
+        return "error"
     if research_policy_config.max_permutation_p_value is not None and empirical_p_value > research_policy_config.max_permutation_p_value:
-        return "run_failed"
+        return "completed_failed"
     if (
         research_policy_config.required_permutation_null_model is not None
         and permutation_summary.null_model != research_policy_config.required_permutation_null_model
     ):
-        return "run_failed"
+        return "error"
     if (
         research_policy_config.required_permutation_scope is not None
         and permutation_summary.metadata.get("permutation_scope", "candidate_fixed") != research_policy_config.required_permutation_scope
     ):
-        return "run_failed"
-    return "run_passed"
+        return "error"
+    return "completed_passed"
 
 
 def _build_research_policy_candidate_id(

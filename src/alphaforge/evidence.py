@@ -43,7 +43,7 @@ def build_candidate_evidence_summary(
     search_summary: SearchSummary | None = None,
     benchmark_summary: dict[str, float] | None = None,
     permutation_summary: PermutationTestSummary | None = None,
-    permutation_status: ValidationPermutationStatus = "not_run",
+    permutation_status: ValidationPermutationStatus = "skipped",
     artifact_paths: dict[str, str] | None = None,
     metadata: dict[str, Any] | None = None,
     is_rejected: bool = False,

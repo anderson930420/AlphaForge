@@ -124,9 +124,9 @@ def test_run_validate_search_splits_data_chronologically_and_saves_outputs(sampl
     assert result.permutation_config is not None
     assert result.permutation_config.enabled is False
     assert result.candidate_evidence.permutation_summary is None
-    assert result.candidate_evidence.permutation_status == "skipped_opt_out"
+    assert result.candidate_evidence.permutation_status == "skipped"
     assert summary_payload["permutation_config"]["enabled"] is False
-    assert summary_payload["candidate_evidence"]["permutation_status"] == "skipped_opt_out"
+    assert summary_payload["candidate_evidence"]["permutation_status"] == "skipped"
     assert (
         result.candidate_evidence.degradation_summary["return_degradation"]
         == result.test_result.metrics.annualized_return - result.train_best_result.metrics.annualized_return
@@ -301,13 +301,15 @@ def test_run_validate_search_runs_permutation_diagnostic_for_selected_candidate(
     assert permutation_call["permutation_scope"] == "test"
     assert result.candidate_evidence.permutation_summary is not None
     assert result.candidate_evidence.permutation_summary.strategy_parameters == selected_parameters
-    assert result.candidate_evidence.permutation_status == "run_passed"
+    assert result.candidate_evidence.permutation_status == "completed_passed"
     assert result.research_policy_decision is not None
     assert result.research_policy_decision.verdict == "promote"
     assert result.research_policy_decision.checks["max_permutation_p_value"] is True
 
 
-def test_run_validate_search_rejects_when_permutation_p_value_is_above_default_threshold(sample_market_csv: Path) -> None:
+def test_run_validate_search_marks_completed_failed_when_permutation_p_value_is_above_default_threshold(
+    sample_market_csv: Path,
+) -> None:
     train_best = ExperimentResult(
         data_spec=DataSpec(path=sample_market_csv, symbol="TEST"),
         strategy_spec=StrategySpec(name="ma_crossover", parameters={"short_window": 2, "long_window": 4}),
@@ -371,10 +373,71 @@ def test_run_validate_search_rejects_when_permutation_p_value_is_above_default_t
             permutation_config=ValidationPermutationConfig(enabled=True, permutations=3, seed=7, block_size=2),
         )
 
-    assert result.candidate_evidence.permutation_status == "run_failed"
+    assert result.candidate_evidence.permutation_status == "completed_failed"
     assert result.research_policy_decision is not None
     assert result.research_policy_decision.verdict == "reject"
     assert result.research_policy_decision.checks["max_permutation_p_value"] is False
+
+
+def test_run_validate_search_marks_error_when_permutation_execution_fails(sample_market_csv: Path) -> None:
+    train_best = ExperimentResult(
+        data_spec=DataSpec(path=sample_market_csv, symbol="TEST"),
+        strategy_spec=StrategySpec(name="ma_crossover", parameters={"short_window": 2, "long_window": 4}),
+        backtest_config=BacktestConfig(1000.0, 0.0, 0.0, 252),
+        metrics=MetricReport(0.1, 0.1, 1.0, -0.1, 1.0, 1.0, 2),
+        score=0.9,
+    )
+    test_result = ExperimentResult(
+        data_spec=DataSpec(path=sample_market_csv, symbol="TEST"),
+        strategy_spec=train_best.strategy_spec,
+        backtest_config=train_best.backtest_config,
+        metrics=MetricReport(0.05, 0.12, 0.8, -0.08, 0.5, 0.7, 2),
+        score=0.4,
+    )
+    market_data = pd.DataFrame(
+        {
+            "datetime": pd.date_range("2024-01-01", periods=8, freq="D"),
+            "open": range(1, 9),
+            "high": range(1, 9),
+            "low": range(1, 9),
+            "close": range(1, 9),
+            "volume": [1.0] * 8,
+        }
+    )
+
+    with patch("alphaforge.runner_workflows.load_market_data", return_value=market_data), patch(
+        "alphaforge.runner_workflows.run_search_on_market_data",
+        return_value=SearchExecutionOutput(ranked_results=[train_best], summary=_make_search_summary([train_best])),
+    ), patch(
+        "alphaforge.runner_workflows.run_experiment_on_market_data",
+        return_value=ExperimentExecutionOutput(
+            result=test_result,
+            equity_curve=pd.DataFrame(),
+            trade_log=pd.DataFrame(),
+            report_input=ExperimentReportInput(
+                result=test_result,
+                equity_curve=pd.DataFrame(),
+                trades=pd.DataFrame(),
+                benchmark_summary={"total_return": 0.0, "max_drawdown": 0.0},
+                benchmark_curve=pd.DataFrame(),
+            ),
+            artifact_receipt=None,
+        ),
+    ), patch(
+        "alphaforge.runner_workflows.run_permutation_test_with_details",
+        side_effect=RuntimeError("boom"),
+    ):
+        result = run_validate_search(
+            data_spec=DataSpec(path=sample_market_csv, symbol="TEST"),
+            parameter_grid={"short_window": [2], "long_window": [4]},
+            split_ratio=0.5,
+            permutation_config=ValidationPermutationConfig(enabled=True, permutations=3, seed=7, block_size=2),
+        )
+
+    assert result.candidate_evidence.permutation_status == "error"
+    assert result.candidate_evidence.permutation_summary is None
+    assert result.research_policy_decision is not None
+    assert result.research_policy_decision.verdict == "reject"
 
 
 def test_run_validate_search_with_research_policy_threshold_rejects_weak_trade_count(

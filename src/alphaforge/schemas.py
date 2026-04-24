@@ -69,7 +69,7 @@ class ExperimentResult:
 
 CandidateVerdict = Literal["candidate", "validated", "rejected", "inconclusive"]
 PolicyScope = Literal["validate-search", "walk-forward"]
-ValidationPermutationStatus = Literal["not_run", "run_passed", "run_failed", "skipped_opt_out", "unavailable_rejected"]
+ValidationPermutationStatus = Literal["skipped", "completed_passed", "completed_failed", "error"]
 
 
 @dataclass(frozen=True)
@@ -105,7 +105,7 @@ class CandidateEvidenceSummary:
     train_metrics: MetricReport | None = None
     test_metrics: MetricReport | None = None
     permutation_summary: PermutationTestSummary | None = None
-    permutation_status: ValidationPermutationStatus = "not_run"
+    permutation_status: ValidationPermutationStatus = "skipped"
     benchmark_relative_summary: dict[str, float] = field(default_factory=dict)
     degradation_summary: dict[str, float] = field(default_factory=dict)
     artifact_paths: dict[str, str] = field(default_factory=dict)
