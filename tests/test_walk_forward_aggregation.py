@@ -38,8 +38,7 @@ def _build_fold(
             max_drawdown=max_drawdown,
             win_rate=win_rate,
             turnover=turnover,
-            trade_count=trade_count,
-        ),
+            trade_count=trade_count, bar_count=1),
         score=0.5,
     )
     return WalkForwardFoldResult(

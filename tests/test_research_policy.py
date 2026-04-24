@@ -21,8 +21,7 @@ def _make_evidence(
             max_drawdown=max_drawdown,
             win_rate=0.6,
             turnover=1.0,
-            trade_count=trade_count,
-        ),
+            trade_count=trade_count, bar_count=1),
         degradation_summary={
             "return_degradation": return_degradation,
             "sharpe_degradation": 0.1,

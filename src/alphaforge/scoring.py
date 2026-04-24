@@ -21,8 +21,10 @@ def passes_thresholds(
 
 
 def score_metrics(metrics: MetricReport) -> float:
+    if not isinstance(metrics.bar_count, int) or metrics.bar_count <= 0:
+        raise ValueError(f"MetricReport.bar_count must be positive for scoring, got {metrics.bar_count}")
     drawdown_penalty = abs(metrics.max_drawdown) * 2.0
-    turnover_per_bar = metrics.turnover / max(metrics.bar_count, 1)
+    turnover_per_bar = metrics.turnover / metrics.bar_count
     turnover_penalty = turnover_per_bar * 0.01
     return (
         metrics.annualized_return

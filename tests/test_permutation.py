@@ -195,7 +195,7 @@ def test_permutation_test_with_holdout_cutoff_uses_development_rows_only(sample_
         data_spec=DataSpec(path=sample_market_csv, symbol="TEST"),
         strategy_spec=StrategySpec(name="ma_crossover", parameters={"short_window": 2, "long_window": 4}),
         backtest_config=BacktestConfig(1000.0, 0.0, 0.0, 252),
-        metrics=MetricReport(0.1, 0.1, 1.0, -0.1, 1.0, 1.0, 1),
+        metrics=MetricReport(0.1, 0.1, 1.0, -0.1, 1.0, 1.0, 1, bar_count=1),
         score=0.9,
     )
 

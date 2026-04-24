@@ -3,8 +3,10 @@ from __future__ import annotations
 import math
 
 import pandas as pd
+import pytest
 
 from alphaforge.metrics import _compute_sharpe_ratio, compute_metrics
+from alphaforge.schemas import MetricReport
 
 
 def test_compute_metrics_returns_expected_fields() -> None:
@@ -57,3 +59,45 @@ def test_compute_sharpe_ratio_returns_zero_for_short_or_degenerate_series() -> N
     assert _compute_sharpe_ratio(pd.Series([0.01]), annualization_factor=252) == 0.0
     assert _compute_sharpe_ratio(pd.Series([0.01, 0.01]), annualization_factor=252) == 0.0
     assert _compute_sharpe_ratio(pd.Series([float("nan"), float("nan")]), annualization_factor=252) == 0.0
+
+
+def test_metric_report_requires_positive_bar_count() -> None:
+    with pytest.raises(TypeError):
+        MetricReport(
+            total_return=0.1,
+            annualized_return=0.1,
+            sharpe_ratio=1.0,
+            max_drawdown=-0.1,
+            win_rate=0.5,
+            turnover=1.0,
+            trade_count=3,
+        )
+
+    with pytest.raises(ValueError, match="must be positive"):
+        MetricReport(
+            total_return=0.1,
+            annualized_return=0.1,
+            sharpe_ratio=1.0,
+            max_drawdown=-0.1,
+            win_rate=0.5,
+            turnover=1.0,
+            trade_count=3,
+            bar_count=0,
+        )
+
+    with pytest.raises(ValueError, match="must be positive"):
+        MetricReport(
+            total_return=0.1,
+            annualized_return=0.1,
+            sharpe_ratio=1.0,
+            max_drawdown=-0.1,
+            win_rate=0.5,
+            turnover=1.0,
+            trade_count=3,
+            bar_count=-1,
+        )
+
+
+def test_compute_metrics_rejects_empty_equity_curve() -> None:
+    with pytest.raises(ValueError, match="equity_curve must contain at least one row"):
+        compute_metrics(pd.DataFrame(columns=["strategy_return", "equity", "turnover"]), pd.DataFrame(), annualization_factor=252)

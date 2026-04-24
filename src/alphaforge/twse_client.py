@@ -1,14 +1,18 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+import warnings
 
 import certifi
 import pandas as pd
 import requests
+from urllib3.exceptions import InsecureRequestWarning
 
 TWSE_STOCK_DAY_URL = "https://www.twse.com.tw/exchangeReport/STOCK_DAY"
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -42,15 +46,15 @@ def _fetch_stock_day_month(stock_no: str, month_start: str) -> pd.DataFrame:
             verify=certifi.where(),
         )
     except requests.exceptions.SSLError:
-        # TWSE's certificate chain intermittently fails strict verification on some
-        # local Python/OpenSSL combinations. Fall back to an unverified request so
-        # the public, read-only historical endpoint remains usable for the MVP.
-        response = requests.get(
-            TWSE_STOCK_DAY_URL,
-            params=params,
-            timeout=30,
-            verify=False,
-        )
+        logger.warning("SSL verification failed for TWSE request; retrying with verify=False fallback")
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", InsecureRequestWarning)
+            response = requests.get(
+                TWSE_STOCK_DAY_URL,
+                params=params,
+                timeout=30,
+                verify=False,
+            )
     response.raise_for_status()
     payload = response.json()
     return _normalize_stock_day_payload(payload)

@@ -176,7 +176,7 @@ def test_run_search_with_details_without_holdout_cutoff_uses_full_dataset(sample
         data_spec=DataSpec(path=sample_market_csv, symbol="TEST"),
         strategy_spec=StrategySpec(name="ma_crossover", parameters={"short_window": 2, "long_window": 4}),
         backtest_config=BacktestConfig(1000.0, 0.0, 0.0, 252),
-        metrics=MetricReport(0.1, 0.1, 1.0, -0.1, 1.0, 1.0, 1),
+        metrics=MetricReport(0.1, 0.1, 1.0, -0.1, 1.0, 1.0, 1, bar_count=1),
         score=0.9,
     )
 
@@ -388,7 +388,7 @@ def test_run_experiment_with_artifacts_delegates_to_runner_workflows(sample_mark
         data_spec=DataSpec(path=sample_market_csv, symbol="TEST"),
         strategy_spec=StrategySpec(name="ma_crossover", parameters={"short_window": 2, "long_window": 3}),
         backtest_config=BacktestConfig(1000.0, 0.0, 0.0, 252),
-        metrics=MetricReport(0.1, 0.1, 1.0, -0.1, 1.0, 1.0, 1),
+        metrics=MetricReport(0.1, 0.1, 1.0, -0.1, 1.0, 1.0, 1, bar_count=1),
         score=0.5,
     )
     bundled = ExperimentExecutionOutput(
@@ -424,7 +424,7 @@ def test_run_search_with_details_delegates_to_runner_workflows(sample_market_csv
         data_spec=DataSpec(path=sample_market_csv, symbol="TEST"),
         strategy_spec=StrategySpec(name="ma_crossover", parameters={"short_window": 2, "long_window": 4}),
         backtest_config=BacktestConfig(1000.0, 0.0, 0.0, 252),
-        metrics=MetricReport(0.1, 0.1, 1.0, -0.1, 1.0, 1.0, 1),
+        metrics=MetricReport(0.1, 0.1, 1.0, -0.1, 1.0, 1.0, 1, bar_count=1),
         score=0.5,
     )
     expected = SearchExecutionOutput(
@@ -483,7 +483,7 @@ def test_best_search_report_reads_artifacts_from_receipt_not_runtime_result(tmp_
         data_spec=DataSpec(path=Path("sample_data/a.csv"), symbol="2330"),
         strategy_spec=StrategySpec(name="ma_crossover", parameters={"short_window": 2, "long_window": 4}),
         backtest_config=BacktestConfig(100000.0, 0.001, 0.0005, 252),
-        metrics=MetricReport(0.2, 0.3, 1.4, -0.08, 0.6, 1.2, 4),
+        metrics=MetricReport(0.2, 0.3, 1.4, -0.08, 0.6, 1.2, 4, bar_count=1),
         score=0.9,
     )
     receipt = ArtifactReceipt(

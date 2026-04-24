@@ -144,14 +144,14 @@ def test_run_validate_search_uses_train_only_for_search_and_selected_params_for_
         data_spec=DataSpec(path=sample_market_csv, symbol="TEST"),
         strategy_spec=StrategySpec(name="ma_crossover", parameters={"short_window": 1, "long_window": 2}),
         backtest_config=BacktestConfig(1000.0, 0.0, 0.0, 252),
-        metrics=MetricReport(0.1, 0.1, 1.0, -0.1, 1.0, 1.0, 1),
+        metrics=MetricReport(0.1, 0.1, 1.0, -0.1, 1.0, 1.0, 1, bar_count=1),
         score=0.9,
     )
     test_result = ExperimentResult(
         data_spec=DataSpec(path=sample_market_csv, symbol="TEST"),
         strategy_spec=train_best.strategy_spec,
         backtest_config=train_best.backtest_config,
-        metrics=MetricReport(0.05, 0.05, 0.8, -0.08, 0.5, 0.7, 1),
+        metrics=MetricReport(0.05, 0.05, 0.8, -0.08, 0.5, 0.7, 1, bar_count=1),
         score=0.4,
     )
     train_data = pd.DataFrame(
@@ -233,14 +233,14 @@ def test_run_validate_search_runs_permutation_diagnostic_for_selected_candidate(
         data_spec=DataSpec(path=sample_market_csv, symbol="TEST"),
         strategy_spec=StrategySpec(name=strategy_name, parameters=selected_parameters),
         backtest_config=BacktestConfig(1000.0, 0.0, 0.0, 252),
-        metrics=MetricReport(0.1, 0.1, 1.0, -0.1, 1.0, 1.0, 2),
+        metrics=MetricReport(0.1, 0.1, 1.0, -0.1, 1.0, 1.0, 2, bar_count=1),
         score=0.9,
     )
     test_result = ExperimentResult(
         data_spec=DataSpec(path=sample_market_csv, symbol="TEST"),
         strategy_spec=train_best.strategy_spec,
         backtest_config=train_best.backtest_config,
-        metrics=MetricReport(0.05, 0.12, 0.8, -0.08, 0.5, 0.7, 2),
+        metrics=MetricReport(0.05, 0.12, 0.8, -0.08, 0.5, 0.7, 2, bar_count=1),
         score=0.4,
     )
     market_data = pd.DataFrame(
@@ -314,14 +314,14 @@ def test_run_validate_search_marks_completed_failed_when_permutation_p_value_is_
         data_spec=DataSpec(path=sample_market_csv, symbol="TEST"),
         strategy_spec=StrategySpec(name="ma_crossover", parameters={"short_window": 2, "long_window": 4}),
         backtest_config=BacktestConfig(1000.0, 0.0, 0.0, 252),
-        metrics=MetricReport(0.1, 0.1, 1.0, -0.1, 1.0, 1.0, 2),
+        metrics=MetricReport(0.1, 0.1, 1.0, -0.1, 1.0, 1.0, 2, bar_count=1),
         score=0.9,
     )
     test_result = ExperimentResult(
         data_spec=DataSpec(path=sample_market_csv, symbol="TEST"),
         strategy_spec=train_best.strategy_spec,
         backtest_config=train_best.backtest_config,
-        metrics=MetricReport(0.05, 0.12, 0.8, -0.08, 0.5, 0.7, 2),
+        metrics=MetricReport(0.05, 0.12, 0.8, -0.08, 0.5, 0.7, 2, bar_count=1),
         score=0.4,
     )
     market_data = pd.DataFrame(
@@ -384,14 +384,14 @@ def test_run_validate_search_marks_error_when_permutation_execution_fails(sample
         data_spec=DataSpec(path=sample_market_csv, symbol="TEST"),
         strategy_spec=StrategySpec(name="ma_crossover", parameters={"short_window": 2, "long_window": 4}),
         backtest_config=BacktestConfig(1000.0, 0.0, 0.0, 252),
-        metrics=MetricReport(0.1, 0.1, 1.0, -0.1, 1.0, 1.0, 2),
+        metrics=MetricReport(0.1, 0.1, 1.0, -0.1, 1.0, 1.0, 2, bar_count=1),
         score=0.9,
     )
     test_result = ExperimentResult(
         data_spec=DataSpec(path=sample_market_csv, symbol="TEST"),
         strategy_spec=train_best.strategy_spec,
         backtest_config=train_best.backtest_config,
-        metrics=MetricReport(0.05, 0.12, 0.8, -0.08, 0.5, 0.7, 2),
+        metrics=MetricReport(0.05, 0.12, 0.8, -0.08, 0.5, 0.7, 2, bar_count=1),
         score=0.4,
     )
     market_data = pd.DataFrame(
@@ -447,14 +447,14 @@ def test_run_validate_search_with_research_policy_threshold_rejects_weak_trade_c
         data_spec=DataSpec(path=sample_market_csv, symbol="TEST"),
         strategy_spec=StrategySpec(name="ma_crossover", parameters={"short_window": 2, "long_window": 4}),
         backtest_config=BacktestConfig(1000.0, 0.0, 0.0, 252),
-        metrics=MetricReport(0.1, 0.1, 1.0, -0.1, 1.0, 1.0, 1),
+        metrics=MetricReport(0.1, 0.1, 1.0, -0.1, 1.0, 1.0, 1, bar_count=1),
         score=0.9,
     )
     test_result = ExperimentResult(
         data_spec=DataSpec(path=sample_market_csv, symbol="TEST"),
         strategy_spec=train_best.strategy_spec,
         backtest_config=train_best.backtest_config,
-        metrics=MetricReport(0.05, 0.05, 0.8, -0.08, 0.5, 0.7, 1),
+        metrics=MetricReport(0.05, 0.05, 0.8, -0.08, 0.5, 0.7, 1, bar_count=1),
         score=0.4,
     )
     train_data = pd.DataFrame(
@@ -520,14 +520,14 @@ def test_run_validate_search_with_holdout_cutoff_uses_development_rows_only(samp
         data_spec=DataSpec(path=sample_market_csv, symbol="TEST"),
         strategy_spec=StrategySpec(name="ma_crossover", parameters={"short_window": 2, "long_window": 4}),
         backtest_config=BacktestConfig(1000.0, 0.0, 0.0, 252),
-        metrics=MetricReport(0.1, 0.1, 1.0, -0.1, 1.0, 1.0, 1),
+        metrics=MetricReport(0.1, 0.1, 1.0, -0.1, 1.0, 1.0, 1, bar_count=1),
         score=0.9,
     )
     test_result = ExperimentResult(
         data_spec=DataSpec(path=sample_market_csv, symbol="TEST"),
         strategy_spec=train_best.strategy_spec,
         backtest_config=train_best.backtest_config,
-        metrics=MetricReport(0.05, 0.05, 0.8, -0.08, 0.5, 0.7, 1),
+        metrics=MetricReport(0.05, 0.05, 0.8, -0.08, 0.5, 0.7, 1, bar_count=1),
         score=0.4,
     )
     market_data = pd.DataFrame(
@@ -826,21 +826,21 @@ def test_run_walk_forward_search_uses_train_fold_for_search_and_next_window_for_
         data_spec=DataSpec(path=sample_market_csv, symbol="TEST"),
         strategy_spec=StrategySpec(name="ma_crossover", parameters={"short_window": 2, "long_window": 4}),
         backtest_config=BacktestConfig(1000.0, 0.0, 0.0, 252),
-        metrics=MetricReport(0.1, 0.1, 1.0, -0.1, 1.0, 1.0, 1),
+        metrics=MetricReport(0.1, 0.1, 1.0, -0.1, 1.0, 1.0, 1, bar_count=1),
         score=0.9,
     )
     train_best_fold_2 = ExperimentResult(
         data_spec=DataSpec(path=sample_market_csv, symbol="TEST"),
         strategy_spec=StrategySpec(name="ma_crossover", parameters={"short_window": 3, "long_window": 4}),
         backtest_config=BacktestConfig(1000.0, 0.0, 0.0, 252),
-        metrics=MetricReport(0.08, 0.08, 0.8, -0.09, 0.5, 0.8, 1),
+        metrics=MetricReport(0.08, 0.08, 0.8, -0.09, 0.5, 0.8, 1, bar_count=1),
         score=0.7,
     )
     test_result = ExperimentResult(
         data_spec=DataSpec(path=sample_market_csv, symbol="TEST"),
         strategy_spec=train_best_fold_1.strategy_spec,
         backtest_config=train_best_fold_1.backtest_config,
-        metrics=MetricReport(0.03, 0.03, 0.5, -0.05, 0.5, 0.6, 1),
+        metrics=MetricReport(0.03, 0.03, 0.5, -0.05, 0.5, 0.6, 1, bar_count=1),
         score=0.2,
     )
     market_data = pd.DataFrame(

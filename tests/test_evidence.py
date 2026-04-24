@@ -24,8 +24,7 @@ def _make_result(short_window: int, long_window: int, score: float) -> Experimen
             max_drawdown=-0.08,
             win_rate=0.6,
             turnover=1.2,
-            trade_count=4,
-        ),
+            trade_count=4, bar_count=1),
         score=score,
     )
 
@@ -62,8 +61,7 @@ def test_build_candidate_evidence_summary_records_degradation_and_search_context
             max_drawdown=-0.12,
             win_rate=0.5,
             turnover=0.8,
-            trade_count=2,
-        ),
+            trade_count=2, bar_count=1),
         score=0.4,
     )
 
@@ -112,8 +110,7 @@ def test_candidate_evidence_return_degradation_uses_annualized_returns_not_total
             max_drawdown=-0.06,
             win_rate=0.6,
             turnover=0.7,
-            trade_count=2,
-        ),
+            trade_count=2, bar_count=1),
         score=0.5,
     )
 

@@ -45,8 +45,7 @@ def test_render_and_save_experiment_report_creates_html(tmp_path: Path) -> None:
             max_drawdown=-0.08,
             win_rate=0.55,
             turnover=1.5,
-            trade_count=4,
-        ),
+            trade_count=4, bar_count=1),
         score=1.0,
     )
     equity_curve = pd.DataFrame(
@@ -118,8 +117,7 @@ def test_build_experiment_report_input_preserves_canonical_fields() -> None:
             max_drawdown=-0.08,
             win_rate=0.55,
             turnover=1.5,
-            trade_count=4,
-        ),
+            trade_count=4, bar_count=1),
         score=1.0,
     )
     equity_curve = pd.DataFrame(
@@ -179,8 +177,7 @@ def test_render_experiment_report_handles_empty_trades_with_price_section() -> N
             max_drawdown=-0.08,
             win_rate=0.55,
             turnover=1.5,
-            trade_count=0,
-        ),
+            trade_count=0, bar_count=1),
         score=1.0,
     )
     equity_curve = pd.DataFrame(
@@ -217,14 +214,14 @@ def test_render_search_comparison_report_includes_ranked_table_and_overlay_secti
             data_spec=DataSpec(path=Path("sample_data/a.csv"), symbol="2330"),
             strategy_spec=StrategySpec(name="ma_crossover", parameters={"short_window": 2, "long_window": 4}),
             backtest_config=BacktestConfig(100000.0, 0.001, 0.0005, 252),
-            metrics=MetricReport(0.2, 0.3, 1.4, -0.08, 0.6, 1.2, 4),
+            metrics=MetricReport(0.2, 0.3, 1.4, -0.08, 0.6, 1.2, 4, bar_count=1),
             score=0.9,
         ),
         ExperimentResult(
             data_spec=DataSpec(path=Path("sample_data/b.csv"), symbol="2330"),
             strategy_spec=StrategySpec(name="ma_crossover", parameters={"short_window": 3, "long_window": 5}),
             backtest_config=BacktestConfig(100000.0, 0.001, 0.0005, 252),
-            metrics=MetricReport(0.18, 0.28, 1.2, -0.1, 0.55, 1.1, 3),
+            metrics=MetricReport(0.18, 0.28, 1.2, -0.1, 0.55, 1.1, 3, bar_count=1),
             score=0.8,
         ),
     ]
@@ -282,7 +279,7 @@ def test_render_search_comparison_report_omits_best_report_link_when_not_provide
             data_spec=DataSpec(path=Path("sample_data/a.csv"), symbol="2330"),
             strategy_spec=StrategySpec(name="ma_crossover", parameters={"short_window": 2, "long_window": 4}),
             backtest_config=BacktestConfig(100000.0, 0.001, 0.0005, 252),
-            metrics=MetricReport(0.2, 0.3, 1.4, -0.08, 0.6, 1.2, 4),
+            metrics=MetricReport(0.2, 0.3, 1.4, -0.08, 0.6, 1.2, 4, bar_count=1),
             score=0.9,
         )
     ]
@@ -318,7 +315,7 @@ def test_render_search_comparison_report_supports_breakout_parameter_labels(tmp_
             data_spec=DataSpec(path=Path("sample_data/a.csv"), symbol="2330"),
             strategy_spec=StrategySpec(name="breakout", parameters={"lookback_window": 10}),
             backtest_config=BacktestConfig(100000.0, 0.001, 0.0005, 252),
-            metrics=MetricReport(0.2, 0.3, 1.4, -0.08, 0.6, 1.2, 4),
+            metrics=MetricReport(0.2, 0.3, 1.4, -0.08, 0.6, 1.2, 4, bar_count=1),
             score=0.9,
         )
     ]

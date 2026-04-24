@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import warnings
 from pathlib import Path
 from unittest.mock import Mock, patch
 
+import certifi
 import pandas as pd
 import pytest
 import requests
+from urllib3.exceptions import InsecureRequestWarning
 
 from alphaforge.twse_client import (
     TwseFetchRequest,
@@ -90,3 +93,58 @@ def test_fetch_stock_day_history_falls_back_after_ssl_error() -> None:
     assert mock_get.call_count == 2
     assert mock_get.call_args_list[0].kwargs["verify"] is not False
     assert mock_get.call_args_list[1].kwargs["verify"] is False
+
+
+def test_fetch_stock_day_history_uses_ssl_verification_on_normal_path() -> None:
+    payload = {
+        "stat": "OK",
+        "data": [
+            ["113/03/01", "24,167,721", "16,699,995,060", "697.00", "697.00", "688.00", "689.00", "-1.00"]
+        ],
+    }
+    response = Mock()
+    response.json.return_value = payload
+    response.raise_for_status.return_value = None
+
+    with patch("alphaforge.twse_client.requests.get", return_value=response) as mock_get:
+        fetch_stock_day_history(TwseFetchRequest(stock_no="2330", start_month="2024-03", end_month="2024-03"))
+
+    assert mock_get.call_count == 1
+    assert mock_get.call_args.kwargs["verify"] == certifi.where()
+    assert mock_get.call_args.kwargs["verify"] is not False
+
+
+def test_fetch_stock_day_history_logs_and_locally_suppresses_insecure_warning_on_ssl_fallback(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    payload = {
+        "stat": "OK",
+        "data": [
+            ["113/03/01", "24,167,721", "16,699,995,060", "697.00", "697.00", "688.00", "689.00", "-1.00"]
+        ],
+    }
+    success_response = Mock()
+    success_response.json.return_value = payload
+    success_response.raise_for_status.return_value = None
+
+    call_count = 0
+
+    def fake_get(*args, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            raise requests.exceptions.SSLError("ssl")
+        warnings.warn("insecure retry", InsecureRequestWarning)
+        return success_response
+
+    original_filters = list(warnings.filters)
+    with patch("alphaforge.twse_client.requests.get", side_effect=fake_get):
+        with warnings.catch_warnings(record=True) as recorded:
+            warnings.simplefilter("always")
+            with caplog.at_level("WARNING"):
+                fetch_stock_day_history(TwseFetchRequest(stock_no="2330", start_month="2024-03", end_month="2024-03"))
+
+    assert call_count == 2
+    assert any("retrying with verify=False fallback" in message for message in caplog.messages)
+    assert not any(isinstance(record.message, InsecureRequestWarning) for record in recorded)
+    assert warnings.filters == original_filters

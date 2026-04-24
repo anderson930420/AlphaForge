@@ -72,8 +72,7 @@ def _make_result(short_window: int, long_window: int, score: float = 0.5) -> Exp
             max_drawdown=-0.08,
             win_rate=0.6,
             turnover=1.2,
-            trade_count=4,
-        ),
+            trade_count=4, bar_count=1),
         score=score,
     )
 
@@ -90,8 +89,7 @@ def _make_breakout_result(lookback_window: int, score: float = 0.5) -> Experimen
             max_drawdown=-0.07,
             win_rate=0.55,
             turnover=1.1,
-            trade_count=3,
-        ),
+            trade_count=3, bar_count=1),
         score=score,
     )
 

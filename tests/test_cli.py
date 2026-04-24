@@ -117,8 +117,7 @@ def test_cli_run_supports_breakout_strategy(
             max_drawdown=-0.1,
             win_rate=1.0,
             turnover=1.0,
-            trade_count=1,
-        ),
+            trade_count=1, bar_count=1),
         score=0.5,
     )
 
@@ -258,8 +257,7 @@ def test_cli_search_supports_breakout_strategy(
             max_drawdown=-0.1,
             win_rate=1.0,
             turnover=1.0,
-            trade_count=1,
-        ),
+            trade_count=1, bar_count=1),
         score=0.5,
     )
     summary = SearchSummary(
@@ -328,8 +326,7 @@ def test_cli_run_path_does_not_load_twse_client(
             max_drawdown=-0.1,
             win_rate=1.0,
             turnover=1.0,
-            trade_count=1,
-        ),
+            trade_count=1, bar_count=1),
         score=0.5,
     )
 
@@ -394,8 +391,7 @@ def test_cli_run_generates_report_only_when_requested(
             max_drawdown=-0.1,
             win_rate=1.0,
             turnover=1.0,
-            trade_count=1,
-        ),
+            trade_count=1, bar_count=1),
         score=0.5,
     )
     sample_equity_curve = pd.DataFrame(
@@ -484,8 +480,7 @@ def test_cli_twse_search_fetches_saves_and_runs_search(
             max_drawdown=-0.1,
             win_rate=1.0,
             turnover=1.0,
-            trade_count=1,
-        ),
+            trade_count=1, bar_count=1),
         score=0.5,
     )
 
@@ -552,8 +547,7 @@ def test_cli_search_generates_only_best_report_when_requested(
             max_drawdown=-0.1,
             win_rate=1.0,
             turnover=1.0,
-            trade_count=1,
-        ),
+            trade_count=1, bar_count=1),
         score=0.5,
     )
 
@@ -661,8 +655,7 @@ def test_cli_search_omits_missing_artifact_paths_instead_of_guessing(
             max_drawdown=-0.1,
             win_rate=1.0,
             turnover=1.0,
-            trade_count=1,
-        ),
+            trade_count=1, bar_count=1),
         score=0.5,
     )
 

@@ -21,6 +21,8 @@ def compute_metrics(
     annualization_factor: int,
     risk_free_rate: float = 0.0,
 ) -> MetricReport:
+    if equity_curve.empty:
+        raise ValueError("equity_curve must contain at least one row to compute metrics")
     returns = equity_curve["strategy_return"].astype(float)
     bar_count = int(len(equity_curve))
     total_return = (equity_curve["equity"].iloc[-1] / equity_curve["equity"].iloc[0]) - 1.0

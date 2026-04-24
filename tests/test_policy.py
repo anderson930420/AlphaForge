@@ -28,8 +28,7 @@ def _make_result(
             max_drawdown=max_drawdown,
             win_rate=0.6,
             turnover=1.2,
-            trade_count=4,
-        ),
+            trade_count=4, bar_count=1),
         score=score,
     )
 

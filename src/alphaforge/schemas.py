@@ -54,7 +54,13 @@ class MetricReport:
     win_rate: float
     turnover: float
     trade_count: int
-    bar_count: int = 0
+    bar_count: int
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.bar_count, int):
+            raise TypeError(f"MetricReport.bar_count must be an integer, got {type(self.bar_count).__name__}")
+        if self.bar_count <= 0:
+            raise ValueError(f"MetricReport.bar_count must be positive, got {self.bar_count}")
 
 
 @dataclass(frozen=True)
