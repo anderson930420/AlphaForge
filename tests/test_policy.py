@@ -75,6 +75,25 @@ def test_validation_policy_validates_complete_positive_evidence() -> None:
     ]
 
 
+def test_validation_policy_does_not_fail_on_lower_raw_test_return_when_annualized_return_is_not_degraded() -> None:
+    train_result = _make_result(2, 4, total_return=0.25, annualized_return=0.10, sharpe_ratio=1.0, max_drawdown=-0.12)
+    test_result = _make_result(2, 4, total_return=0.08, annualized_return=0.12, sharpe_ratio=1.1, max_drawdown=-0.08)
+    evidence = build_candidate_evidence_summary(
+        strategy_spec=train_result.strategy_spec,
+        train_result=train_result,
+        test_result=test_result,
+        search_summary=_make_search_summary(train_result),
+        benchmark_summary={"total_return": 0.02, "max_drawdown": -0.12},
+    )
+
+    decision = evaluate_candidate_policy(evidence, policy_scope="validate-search")
+
+    assert test_result.metrics.total_return < train_result.metrics.total_return
+    assert evidence.degradation_summary["return_degradation"] == test_result.metrics.annualized_return - train_result.metrics.annualized_return
+    assert evidence.degradation_summary["return_degradation"] >= 0.0
+    assert decision.verdict == "validated"
+
+
 def test_validation_policy_rejects_clear_failure() -> None:
     train_result = _make_result(2, 4, total_return=0.2, annualized_return=0.22, sharpe_ratio=1.2, max_drawdown=-0.08)
     test_result = _make_result(2, 4, total_return=-0.05, annualized_return=-0.04, sharpe_ratio=-0.3, max_drawdown=-0.16)

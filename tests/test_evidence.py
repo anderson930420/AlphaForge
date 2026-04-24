@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from alphaforge.evidence import (
     build_candidate_evidence_summary,
     build_walk_forward_evidence_summary,
@@ -82,7 +84,7 @@ def test_build_candidate_evidence_summary_records_degradation_and_search_context
     assert evidence.search_ranking_score == "score"
     assert evidence.search_score == 0.9
     assert evidence.degradation_summary == {
-        "return_degradation": -0.1,
+        "return_degradation": -0.18,
         "sharpe_degradation": -0.2999999999999998,
         "max_drawdown_delta": -0.039999999999999994,
     }
@@ -95,6 +97,39 @@ def test_build_candidate_evidence_summary_records_degradation_and_search_context
         "max_drawdown_gap": -0.07999999999999999,
     }
     assert evidence.artifact_paths == {"validation_summary_path": "/tmp/validation_summary.json"}
+
+
+def test_candidate_evidence_return_degradation_uses_annualized_returns_not_total_returns() -> None:
+    train_result = _make_result(2, 4, 0.9)
+    test_result = ExperimentResult(
+        data_spec=train_result.data_spec,
+        strategy_spec=train_result.strategy_spec,
+        backtest_config=train_result.backtest_config,
+        metrics=MetricReport(
+            total_return=0.08,
+            annualized_return=0.35,
+            sharpe_ratio=1.6,
+            max_drawdown=-0.06,
+            win_rate=0.6,
+            turnover=0.7,
+            trade_count=2,
+        ),
+        score=0.5,
+    )
+
+    evidence = build_candidate_evidence_summary(
+        strategy_spec=train_result.strategy_spec,
+        train_result=train_result,
+        test_result=test_result,
+        search_summary=None,
+        benchmark_summary={"total_return": 0.01, "max_drawdown": -0.04},
+    )
+
+    raw_total_return_degradation = test_result.metrics.total_return - train_result.metrics.total_return
+    annualized_return_degradation = test_result.metrics.annualized_return - train_result.metrics.annualized_return
+    assert raw_total_return_degradation < 0.0
+    assert annualized_return_degradation > 0.0
+    assert evidence.degradation_summary["return_degradation"] == pytest.approx(annualized_return_degradation)
 
 
 def test_build_walk_forward_evidence_summary_records_fold_counts_and_artifacts() -> None:

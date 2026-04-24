@@ -80,7 +80,10 @@ def test_run_validate_search_splits_data_chronologically_and_saves_outputs(sampl
     assert result.candidate_decision is not None
     assert result.candidate_decision.verdict == result.candidate_evidence.verdict
     assert result.candidate_decision.policy_scope == "validate-search"
-    assert result.candidate_evidence.degradation_summary["return_degradation"] == result.test_result.metrics.total_return - result.train_best_result.metrics.total_return
+    assert (
+        result.candidate_evidence.degradation_summary["return_degradation"]
+        == result.test_result.metrics.annualized_return - result.train_best_result.metrics.annualized_return
+    )
     assert result.candidate_evidence.benchmark_relative_summary["benchmark_total_return"] == summary_payload["candidate_evidence"]["benchmark_relative_summary"]["benchmark_total_return"]
     assert not hasattr(result, "validation_summary_path")
     assert not hasattr(result, "train_ranked_results_path")

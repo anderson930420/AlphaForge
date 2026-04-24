@@ -149,8 +149,10 @@ def _build_degradation_summary(
 ) -> dict[str, float]:
     if train_metrics is None or test_metrics is None:
         return {}
+    train_period_normalized_return = train_metrics.annualized_return
+    test_period_normalized_return = test_metrics.annualized_return
     return {
-        "return_degradation": test_metrics.total_return - train_metrics.total_return,
+        "return_degradation": test_period_normalized_return - train_period_normalized_return,
         "sharpe_degradation": test_metrics.sharpe_ratio - train_metrics.sharpe_ratio,
         "max_drawdown_delta": test_metrics.max_drawdown - train_metrics.max_drawdown,
     }
