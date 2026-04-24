@@ -91,93 +91,32 @@ TBD - created by archiving change formalize-execution-semantics-contract. Update
 
 `Strategy.generate_signals()` SHALL produce a canonical target-position series for the next tradable interval, and `backtest.py` SHALL normalize that series into the supported long-flat execution domain.
 
-#### Purpose
+#### Input alignment contract
 
-- Make the meaning of strategy output explicit.
-- Remove ambiguity about whether strategy output is a raw signal, an order instruction, a desired exposure weight, or an executed position.
+- `run_backtest()` SHALL be treated as a public execution boundary.
+- target positions SHALL map unambiguously to market-data row order before normalization, lagging, turnover, cost, trade extraction, or equity construction.
+- if target positions are supplied as a `pd.Series`, the series index SHALL exactly equal the market-data index.
+- if target positions are supplied as list-like or numpy-like values, the input SHALL be accepted positionally only when its length equals the market-data row count.
+- any target-position input whose length differs from market data SHALL raise `ValueError`.
+- a same-length `pd.Series` with mismatched index labels SHALL raise `ValueError` and SHALL NOT be aligned implicitly by pandas.
+- target-position normalization SHALL NOT introduce NaN values through index-label alignment.
 
-#### Canonical owner
+#### Scenario: stale target-position series index fails fast
 
-- `src/alphaforge/strategy/base.py` owns the interface shape of `generate_signals()` only.
-- `src/alphaforge/backtest.py` owns the interpretation and normalization of that output into executable positions.
-- `src/alphaforge/strategy/ma_crossover.py` owns MA-specific signal generation only.
-- `src/alphaforge/strategy/breakout.py` owns breakout-specific signal generation only.
+- GIVEN market data with one row order and index
+- AND a same-length `pd.Series` of target positions with different index labels
+- WHEN `run_backtest()` is called
+- THEN it SHALL raise `ValueError`
+- AND the error message SHALL mention target-position index alignment
+- AND no equity curve or trade log SHALL be produced from implicit pandas alignment
 
-#### Allowed responsibilities
+#### Scenario: positional target-position inputs are accepted when length matches
 
-- `generate_signals()` MAY return a `pd.Series` aligned to the input market-data index.
-- The series MAY contain numeric values or values coercible to numeric form by `backtest.py`.
-- `backtest.py` MAY normalize raw strategy output by coercing to float, filling missing values with `0.0`, and clipping values into the supported long-flat domain.
-
-#### Explicit non-responsibilities
-
-- `generate_signals()` MUST NOT define fill policy, lag policy, or cost policy.
-- `generate_signals()` MUST NOT be documented as an order stream, fill stream, or trade stream.
-- `strategy/base.py` MUST NOT claim ownership of normalization, clipping, timing, or cost semantics just because it defines the interface type.
-
-#### Inputs / outputs / contracts
-
-- Input contract:
-  - the series should be index-compatible with the supplied market data
-  - the output is interpreted as target position for the next tradable interval
-- Normalization contract:
-  - missing values are filled to `0.0`
-  - values below `0.0` normalize to `0.0`
-  - values above `1.0` normalize to `1.0`
-- Supported execution domain:
-  - `0.0` means flat
-  - values between `0.0` and `1.0` inclusive remain long-only target exposure states
-- Unsupported values:
-  - negative weights are forbidden for the current execution contract
-  - leverage above `1.0` is forbidden for the current execution contract
-
-#### Invariants
-
-- Strategy output is a target-position series, not an order instruction stream.
-- The supported execution domain is long-flat only.
-- The backtest owner is the only place where normalization semantics may be applied.
-- Same-bar execution is not implied by the strategy interface.
-
-#### Cross-module dependencies
-
-- `strategy/base.py` defines the return type contract.
-- `strategy/ma_crossover.py` and `strategy/breakout.py` produce strategy-specific values that enter the execution contract.
-- `backtest.py` consumes the series and applies canonical normalization.
-- `experiment_runner.py` passes the series through without redefining its meaning.
-
-#### Failure modes if this boundary is violated
-
-- If strategy output is treated as an order instruction, same-bar or quantity-based assumptions can leak into execution.
-- If downstream code assumes unsupported negative or leveraged weights are preserved, backtest results and reports will disagree.
-- If the interface wording implies hidden timing semantics, future strategies will inherit the wrong contract.
-
-#### Migration notes from current implementation
-
-- The current strategy interface docstring says "target position weights," which can be misread as either exposure sizing or order intent.
-- The current MA crossover strategy already emits long-flat values, which matches the intended current domain.
-- The current backtest implementation should be understood as the place where normalization semantics live, not the strategy interface.
-
-#### Open questions / deferred decisions
-
-- Whether upstream validation should fail fast on out-of-domain values before execution or whether `backtest.py` should remain the only normalization authority.
-  - Recommended default: keep `backtest.py` as the normalization authority and add fail-fast validation only where it does not create a second semantic owner.
-- Whether future short exposure should be admitted in the same execution mode or require a separate execution spec.
-  - Recommended default: require a separate spec revision before short exposure is supported.
-
-#### Scenario: a strategy emits NaNs and fractional values
-
-- GIVEN a strategy returns a series containing NaNs and positive fractional values
-- WHEN `backtest.py` normalizes the series
-- THEN NaNs SHALL become flat exposure
-- AND positive fractional values up to `1.0` SHALL be preserved as long-only target exposure
-- AND the resulting execution state SHALL remain long-flat only
-
-#### Scenario: same-bar execution remains forbidden
-
-- GIVEN a strategy produces a target position on bar `t`
-- WHEN the backtest runs
-- THEN that target SHALL become active on bar `t+1`
-- AND the first bar SHALL remain flat
+- GIVEN market data with `N` rows
+- AND target positions supplied as a list-like or numpy-like object with `N` values
+- WHEN `run_backtest()` is called
+- THEN the values SHALL be assigned positionally in market-data row order
+- AND normal backtest execution SHALL proceed
 
 ### Requirement: Trade extraction, costs, and equity are derived from executed position transitions
 

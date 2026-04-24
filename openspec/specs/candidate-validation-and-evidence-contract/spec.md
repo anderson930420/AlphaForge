@@ -2,62 +2,28 @@
 
 ## Purpose
 Define the canonical candidate-evidence contract for `validate-search` and walk-forward fold outputs, including evidence summaries, degradation semantics, and fold/aggregate evidence relationships.
-
 ## Requirements
 ### Requirement: validation flows expose a canonical candidate-evidence summary
 
 `validate-search` SHALL produce a canonical candidate-evidence summary for the searched candidate it evaluates on the train/test split.
 
-#### Purpose
-
-- Make the post-search evidence contract explicit and stable.
-- Keep candidate evidence assembly in the runner and runtime schemas instead of CLI or report code.
-
-#### Canonical owner
-
-- `src/alphaforge/schemas.py` is the authoritative owner of the candidate-evidence runtime shape.
-- `src/alphaforge/experiment_runner.py` is the authoritative owner of assembling validation evidence from search, train, test, and benchmark outputs.
-- `src/alphaforge/storage.py` is the authoritative owner of serializing that evidence into persisted validation artifacts.
-
-#### Candidate-evidence fields
-
-- strategy name
-- strategy parameters
-- optional search ranking context
-- train metrics
-- test metrics
-- benchmark-relative summary
-- degradation summary
-- artifact paths when produced
-- verdict/status
-
 #### Degradation semantics
 
-- return degradation SHALL be calculated as `test_total_return - train_total_return`
+- return degradation SHALL be calculated as `test_annualized_return - train_annualized_return`
+- `return_degradation` SHALL mean period-normalized return degradation, not raw total-return degradation
+- annualized return values SHALL come from `MetricReport.annualized_return`, whose formula is owned by `src/alphaforge/metrics.py`
 - Sharpe degradation SHALL be calculated as `test_sharpe_ratio - train_sharpe_ratio`
 - max-drawdown delta SHALL be calculated as `test_max_drawdown - train_max_drawdown`
 - the degradation summary SHALL use stable field names and SHALL not invent a larger scoring system
 
-#### Verdict vocabulary
+#### Scenario: validation return degradation is period-normalized
 
-- `candidate`
-- `validated`
-- `rejected`
-- `inconclusive`
-
-#### Verdict semantics
-
-- `candidate` is used for search-only evidence that has not been validated on train/test
-- `validated` is used when complete train/test evidence exists and the workflow completed normally
-- `rejected` is reserved for explicit rejection policy failures
-- `inconclusive` is used when evidence is partial, missing, or insufficient to reach a validated result
-
-#### Scenario: validation evidence includes explicit degradation fields
-
-- GIVEN a candidate has been evaluated on train and test data
+- GIVEN a candidate has been evaluated on train and test data with unequal segment lengths
+- AND the test segment has lower raw total return than the train segment
+- AND the test annualized return is equal to or greater than the train annualized return
 - WHEN the validation evidence summary is assembled
-- THEN it SHALL include return degradation, Sharpe degradation, and max-drawdown delta using the canonical field names
-- AND the verdict SHALL be explicit
+- THEN `return_degradation` SHALL be non-negative
+- AND the validation policy SHALL NOT fail solely because test raw total return is lower than train raw total return
 
 ### Requirement: walk-forward flows expose fold-level candidate evidence and an aggregate evidence summary
 
@@ -103,3 +69,4 @@ Define the canonical candidate-evidence contract for `validate-search` and walk-
 - WHEN the aggregate evidence summary is assembled
 - THEN it SHALL report fold counts and aggregate metrics explicitly
 - AND it SHALL not guess a single candidate identity when folds differ
+
