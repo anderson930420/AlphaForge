@@ -5,10 +5,12 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pandas as pd
+import pytest
 
 from alphaforge.experiment_runner import (
     ExperimentExecutionOutput,
     SearchExecutionOutput,
+    run_strategy_comparison_with_details,
     run_experiment,
     run_experiment_with_artifacts,
     run_search,
@@ -17,7 +19,18 @@ from alphaforge.experiment_runner import (
     run_walk_forward_search,
 )
 from alphaforge.search_reporting import save_best_search_report
-from alphaforge.schemas import BacktestConfig, DataSpec, ExperimentResult, MetricReport, SearchSummary, StrategySpec
+from alphaforge.schemas import (
+    BacktestConfig,
+    DataSpec,
+    ExperimentResult,
+    MetricReport,
+    SearchSummary,
+    StrategyComparisonConfig,
+    StrategyFamilySearchConfig,
+    StrategySpec,
+    ValidationPermutationConfig,
+    ValidationSplitConfig,
+)
 from alphaforge.storage import ArtifactReceipt, serialize_experiment_result
 
 
@@ -269,6 +282,132 @@ def test_run_validate_search_supports_breakout_family(sample_market_csv: Path, t
     assert validation_result.selected_strategy_spec.name == "breakout"
     assert "lookback_window" in validation_result.selected_strategy_spec.parameters
     assert validation_result.candidate_evidence.strategy_name == "breakout"
+
+
+def test_run_strategy_comparison_compares_ma_and_breakout(sample_market_csv: Path, tmp_path: Path) -> None:
+    execution = run_strategy_comparison_with_details(
+        StrategyComparisonConfig(
+            data_spec=DataSpec(path=sample_market_csv, symbol="TEST"),
+            split_config=ValidationSplitConfig(split_ratio=0.5),
+            backtest_config=BacktestConfig(
+                initial_capital=1000,
+                fee_rate=0.0,
+                slippage_rate=0.0,
+                annualization_factor=252,
+            ),
+            strategy_families=[
+                StrategyFamilySearchConfig(
+                    strategy_name="ma_crossover",
+                    parameter_grid={"short_window": [2], "long_window": [3, 4]},
+                ),
+                StrategyFamilySearchConfig(
+                    strategy_name="breakout",
+                    parameter_grid={"lookback_window": [2, 3]},
+                ),
+            ],
+            output_dir=tmp_path,
+            experiment_name="comparison_case",
+        )
+    )
+
+    summary = execution.comparison_summary
+    result_by_strategy = {result.strategy_name: result for result in summary.comparison_results}
+
+    assert set(result_by_strategy) == {"ma_crossover", "breakout"}
+    assert result_by_strategy["ma_crossover"].selected_strategy_spec.name == "ma_crossover"
+    assert result_by_strategy["breakout"].selected_strategy_spec.name == "breakout"
+    assert all(result.research_policy_verdict is not None for result in summary.comparison_results)
+    assert all(result.candidate_policy_verdict is not None for result in summary.comparison_results)
+    assert all(result.permutation_status == "skipped" for result in summary.comparison_results)
+    assert execution.artifact_receipt is not None
+    assert execution.artifact_receipt.comparison_summary_path.exists()
+    assert execution.artifact_receipt.comparison_results_path.exists()
+    assert (tmp_path / "comparison_case" / "strategies" / "ma_crossover" / "validation_summary.json").exists()
+    assert (tmp_path / "comparison_case" / "strategies" / "breakout" / "validation_summary.json").exists()
+    assert summary.metadata["ranking_contract"] == "research_policy_verdict_group_then_descending_test_score"
+
+
+def test_run_strategy_comparison_propagates_permutation_summary_per_family(
+    sample_market_csv: Path,
+    tmp_path: Path,
+) -> None:
+    execution = run_strategy_comparison_with_details(
+        StrategyComparisonConfig(
+            data_spec=DataSpec(path=sample_market_csv, symbol="TEST"),
+            split_config=ValidationSplitConfig(split_ratio=0.5),
+            backtest_config=BacktestConfig(
+                initial_capital=1000,
+                fee_rate=0.0,
+                slippage_rate=0.0,
+                annualization_factor=252,
+            ),
+            strategy_families=[
+                StrategyFamilySearchConfig(
+                    strategy_name="ma_crossover",
+                    parameter_grid={"short_window": [2], "long_window": [3]},
+                ),
+                StrategyFamilySearchConfig(
+                    strategy_name="breakout",
+                    parameter_grid={"lookback_window": [2]},
+                ),
+            ],
+            permutation_config=ValidationPermutationConfig(
+                enabled=True,
+                permutations=2,
+                seed=7,
+                block_size=2,
+                null_model="return_block_reconstruction",
+                scope="test",
+            ),
+            output_dir=tmp_path,
+            experiment_name="comparison_permutation_case",
+        )
+    )
+
+    result_by_strategy = {result.strategy_name: result for result in execution.comparison_summary.comparison_results}
+
+    assert result_by_strategy["ma_crossover"].validation_result.candidate_evidence.permutation_summary.strategy_name == "ma_crossover"
+    assert result_by_strategy["breakout"].validation_result.candidate_evidence.permutation_summary.strategy_name == "breakout"
+    assert result_by_strategy["ma_crossover"].permutation_status in {"completed_passed", "completed_failed"}
+    assert result_by_strategy["breakout"].permutation_status in {"completed_passed", "completed_failed"}
+    assert (
+        tmp_path
+        / "comparison_permutation_case"
+        / "strategies"
+        / "ma_crossover"
+        / "permutation_test"
+        / "permutation_test_summary.json"
+    ).exists()
+    assert (
+        tmp_path
+        / "comparison_permutation_case"
+        / "strategies"
+        / "breakout"
+        / "permutation_test"
+        / "permutation_test_summary.json"
+    ).exists()
+
+
+def test_run_strategy_comparison_rejects_unsupported_strategy(sample_market_csv: Path) -> None:
+    with pytest.raises(ValueError, match="Unsupported strategy"):
+        run_strategy_comparison_with_details(
+            StrategyComparisonConfig(
+                data_spec=DataSpec(path=sample_market_csv, symbol="TEST"),
+                split_config=ValidationSplitConfig(split_ratio=0.5),
+                backtest_config=BacktestConfig(
+                    initial_capital=1000,
+                    fee_rate=0.0,
+                    slippage_rate=0.0,
+                    annualization_factor=252,
+                ),
+                strategy_families=[
+                    StrategyFamilySearchConfig(
+                        strategy_name="not_supported",
+                        parameter_grid={"window": [2]},
+                    ),
+                ],
+            )
+        )
 
 
 def test_run_walk_forward_search_supports_breakout_family(sample_market_csv: Path, tmp_path: Path) -> None:

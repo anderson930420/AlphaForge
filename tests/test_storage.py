@@ -16,6 +16,9 @@ from alphaforge.schemas import (
     PermutationTestArtifactReceipt,
     PermutationTestSummary,
     SearchSummary,
+    StrategyComparisonResult,
+    StrategyComparisonSummary,
+    StrategyFamilySearchConfig,
     StrategySpec,
     ValidationResult,
     ValidationPermutationConfig,
@@ -35,6 +38,8 @@ from alphaforge.storage import (
     METRICS_SUMMARY_FILENAME,
     PERMUTATION_SCORES_FILENAME,
     PERMUTATION_TEST_SUMMARY_FILENAME,
+    COMPARISON_RESULTS_FILENAME,
+    COMPARISON_SUMMARY_FILENAME,
     RANKED_RESULTS_FILENAME,
     POLICY_DECISION_FILENAME,
     TRAIN_RANKED_RESULTS_FILENAME,
@@ -46,16 +51,19 @@ from alphaforge.storage import (
     save_ranked_results_with_columns,
     save_permutation_test_result,
     save_single_experiment,
+    save_strategy_comparison_summary,
     save_validation_result,
     save_walk_forward_result,
     serialize_artifact_receipt,
     serialize_search_artifact_receipt,
     serialize_permutation_test_artifact_receipt,
+    serialize_strategy_comparison_artifact_receipt,
     serialize_validation_artifact_receipt,
     serialize_validation_result,
     serialize_walk_forward_artifact_receipt,
     serialize_walk_forward_result,
     SearchArtifactReceipt,
+    ValidationArtifactReceipt,
 )
 from alphaforge.permutation import NULL_MODEL
 
@@ -133,6 +141,50 @@ def _make_search_summary(result: ExperimentResult, result_count: int = 1) -> Sea
         ranking_score="score",
         best_result=result,
         top_results=[result],
+    )
+
+
+def _make_validation_result_for_comparison(result: ExperimentResult, verdict: str = "promote") -> ValidationResult:
+    return ValidationResult(
+        data_spec=result.data_spec,
+        split_config=ValidationSplitConfig(split_ratio=0.5),
+        selected_strategy_spec=result.strategy_spec,
+        train_best_result=result,
+        test_result=result,
+        test_benchmark_summary={"total_return": 0.1, "max_drawdown": -0.05},
+        candidate_evidence=build_candidate_evidence_summary(
+            strategy_spec=result.strategy_spec,
+            train_result=result,
+            test_result=result,
+            search_summary=_make_search_summary(result),
+            benchmark_summary={"total_return": 0.1, "max_drawdown": -0.05},
+            artifact_paths={
+                "validation_summary_path": f"/tmp/{result.strategy_spec.name}/validation_summary.json",
+            },
+        ),
+        candidate_decision=CandidatePolicyDecision(
+            policy_name="post_search_candidate_policy",
+            policy_scope="validate-search",
+            verdict="validated",
+            decision_reasons=["evidence_complete"],
+        ),
+        research_policy_decision=PolicyDecision(
+            candidate_id=result.strategy_spec.name,
+            verdict=verdict,
+            reasons=["unit-test"],
+            checks={"test_metrics_present": True},
+            max_reruns=0,
+            rerun_count=0,
+        ),
+        research_policy_config={
+            "max_reruns": 0,
+            "min_trade_count": 1,
+            "max_drawdown_cap": None,
+            "min_return_degradation": 0.0,
+            "max_permutation_p_value": None,
+            "required_permutation_null_model": None,
+            "required_permutation_scope": None,
+        },
     )
 
 
@@ -368,6 +420,95 @@ def test_save_validation_result_writes_policy_decision_artifact(tmp_path: Path) 
     assert policy_payload["research_policy_decision"]["verdict"] == "reject"
     assert policy_payload["research_policy_config"]["min_trade_count"] == 2
     assert receipt.policy_decision_path == validation_root / POLICY_DECISION_FILENAME
+
+
+def test_save_strategy_comparison_summary_writes_summary_results_and_family_paths(tmp_path: Path) -> None:
+    comparison_root = tmp_path / "comparison_case"
+    ma_validation = _make_validation_result_for_comparison(_make_result(short_window=2, long_window=4, score=0.8))
+    breakout_validation = _make_validation_result_for_comparison(_make_breakout_result(lookback_window=3, score=0.6))
+    ma_receipt = ValidationArtifactReceipt(
+        validation_summary_path=comparison_root / "strategies" / "ma_crossover" / VALIDATION_SUMMARY_FILENAME,
+        train_ranked_results_path=comparison_root / "strategies" / "ma_crossover" / TRAIN_RANKED_RESULTS_FILENAME,
+        policy_decision_path=comparison_root / "strategies" / "ma_crossover" / POLICY_DECISION_FILENAME,
+    )
+    breakout_receipt = ValidationArtifactReceipt(
+        validation_summary_path=comparison_root / "strategies" / "breakout" / VALIDATION_SUMMARY_FILENAME,
+        train_ranked_results_path=comparison_root / "strategies" / "breakout" / TRAIN_RANKED_RESULTS_FILENAME,
+        policy_decision_path=comparison_root / "strategies" / "breakout" / POLICY_DECISION_FILENAME,
+    )
+    summary = StrategyComparisonSummary(
+        data_spec=ma_validation.data_spec,
+        split_config=ValidationSplitConfig(split_ratio=0.5),
+        backtest_config=ma_validation.train_best_result.backtest_config,
+        strategy_families=[
+            StrategyFamilySearchConfig(
+                strategy_name="ma_crossover",
+                parameter_grid={"short_window": [2], "long_window": [4]},
+            ),
+            StrategyFamilySearchConfig(
+                strategy_name="breakout",
+                parameter_grid={"lookback_window": [3]},
+            ),
+        ],
+        permutation_config=ValidationPermutationConfig(),
+        research_policy_config=ma_validation.research_policy_config,
+        comparison_results=[
+            StrategyComparisonResult(
+                strategy_name="ma_crossover",
+                selected_strategy_spec=ma_validation.selected_strategy_spec,
+                validation_result=ma_validation,
+                train_score=ma_validation.train_best_result.score,
+                test_score=ma_validation.test_result.score,
+                permutation_status="skipped",
+                research_policy_verdict="promote",
+                candidate_policy_verdict="validated",
+                artifact_paths={"validation_summary_path": str(ma_receipt.validation_summary_path)},
+            ),
+            StrategyComparisonResult(
+                strategy_name="breakout",
+                selected_strategy_spec=breakout_validation.selected_strategy_spec,
+                validation_result=breakout_validation,
+                train_score=breakout_validation.train_best_result.score,
+                test_score=breakout_validation.test_result.score,
+                permutation_status="skipped",
+                research_policy_verdict="promote",
+                candidate_policy_verdict="validated",
+                artifact_paths={"validation_summary_path": str(breakout_receipt.validation_summary_path)},
+            ),
+        ],
+    )
+
+    persisted_summary, receipt = save_strategy_comparison_summary(
+        comparison_root,
+        summary,
+        strategy_validation_artifacts={
+            "ma_crossover": ma_receipt,
+            "breakout": breakout_receipt,
+        },
+    )
+    summary_payload = json.loads((comparison_root / COMPARISON_SUMMARY_FILENAME).read_text(encoding="utf-8"))
+    results_frame = pd.read_csv(comparison_root / COMPARISON_RESULTS_FILENAME)
+    serialized_receipt = serialize_strategy_comparison_artifact_receipt(receipt)
+
+    assert (comparison_root / COMPARISON_SUMMARY_FILENAME).exists()
+    assert (comparison_root / COMPARISON_RESULTS_FILENAME).exists()
+    assert persisted_summary.artifact_paths["comparison_summary_path"] == str(comparison_root / COMPARISON_SUMMARY_FILENAME)
+    assert persisted_summary.artifact_paths["comparison_results_path"] == str(comparison_root / COMPARISON_RESULTS_FILENAME)
+    assert summary_payload["comparison_summary_path"] == str(comparison_root / COMPARISON_SUMMARY_FILENAME)
+    assert summary_payload["comparison_results_path"] == str(comparison_root / COMPARISON_RESULTS_FILENAME)
+    assert len(summary_payload["comparison_results"]) == 2
+    assert results_frame["strategy_name"].tolist() == ["ma_crossover", "breakout"]
+    assert results_frame["permutation_status"].tolist() == ["skipped", "skipped"]
+    assert results_frame["validation_summary_path"].tolist() == [
+        str(ma_receipt.validation_summary_path),
+        str(breakout_receipt.validation_summary_path),
+    ]
+    assert serialized_receipt["strategy_validation_artifacts"]["ma_crossover"]["validation_summary_path"] == str(
+        ma_receipt.validation_summary_path
+    )
+    assert serialized_receipt["strategy_validation_artifacts"]["breakout"]["validation_summary_path"] == str(
+        breakout_receipt.validation_summary_path
+    )
 
 
 def test_save_walk_forward_result_writes_summary_and_fold_results_contract(tmp_path: Path) -> None:

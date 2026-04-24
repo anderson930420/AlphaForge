@@ -1,0 +1,7 @@
+- [x] Add OpenSpec contract for multi-strategy validation comparison.
+- [x] Add runtime comparison schemas and public runner entrypoint.
+- [x] Add comparison workflow that reuses validation-search per strategy family.
+- [x] Add storage serialization and persisted comparison artifacts.
+- [x] Add `compare-strategies` CLI command and argument assembly.
+- [x] Add workflow, storage, CLI, and regression tests.
+- [x] Run OpenSpec validation, pytest, and smoke tests where feasible.

@@ -163,6 +163,53 @@ class ValidationResult:
 
 
 @dataclass(frozen=True)
+class StrategyFamilySearchConfig:
+    strategy_name: str
+    parameter_grid: dict[str, list[int]]
+
+
+@dataclass(frozen=True)
+class StrategyComparisonConfig:
+    data_spec: DataSpec
+    split_config: ValidationSplitConfig
+    backtest_config: BacktestConfig
+    strategy_families: list[StrategyFamilySearchConfig]
+    permutation_config: ValidationPermutationConfig | None = None
+    research_policy_config: Any | None = None
+    max_drawdown_cap: float | None = None
+    min_trade_count: int | None = None
+    holdout_cutoff_date: str | None = None
+    output_dir: Path | None = None
+    experiment_name: str = "alphaforge_run"
+
+
+@dataclass(frozen=True)
+class StrategyComparisonResult:
+    strategy_name: str
+    selected_strategy_spec: StrategySpec
+    validation_result: ValidationResult
+    train_score: float
+    test_score: float
+    permutation_status: ValidationPermutationStatus
+    research_policy_verdict: str | None = None
+    candidate_policy_verdict: CandidateVerdict | None = None
+    artifact_paths: dict[str, str] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class StrategyComparisonSummary:
+    data_spec: DataSpec
+    split_config: ValidationSplitConfig
+    backtest_config: BacktestConfig
+    strategy_families: list[StrategyFamilySearchConfig]
+    permutation_config: ValidationPermutationConfig | None
+    research_policy_config: dict[str, Any]
+    comparison_results: list[StrategyComparisonResult]
+    artifact_paths: dict[str, str] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
 class WalkForwardConfig:
     train_size: int
     test_size: int

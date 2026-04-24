@@ -9,13 +9,23 @@ from . import config
 from .experiment_runner import (
     run_experiment_with_artifacts,
     run_search_with_details,
+    run_strategy_comparison_with_details,
     run_validate_search_with_details,
     run_walk_forward_search_with_details,
 )
 from .permutation import run_permutation_test_with_details
 from .permutation import DEFAULT_PERMUTATION_TARGET_METRIC_NAME, SUPPORTED_PERMUTATION_TARGET_METRICS
 from .report import render_experiment_report, save_experiment_report
-from .schemas import BacktestConfig, DataSpec, SearchSummary, StrategySpec, ValidationPermutationConfig
+from .schemas import (
+    BacktestConfig,
+    DataSpec,
+    SearchSummary,
+    StrategyComparisonConfig,
+    StrategyFamilySearchConfig,
+    StrategySpec,
+    ValidationPermutationConfig,
+    ValidationSplitConfig,
+)
 from .search import SUPPORTED_STRATEGY_FAMILIES
 from .storage import (
     ensure_output_dir,
@@ -23,12 +33,17 @@ from .storage import (
     serialize_experiment_result,
     serialize_permutation_test_artifact_receipt,
     serialize_permutation_test_summary,
+    serialize_strategy_comparison_artifact_receipt,
+    serialize_strategy_comparison_summary,
     serialize_validation_artifact_receipt,
     serialize_validation_result,
     serialize_walk_forward_artifact_receipt,
     serialize_walk_forward_result,
     REPORT_FILENAME,
 )
+
+DEFAULT_COMPARISON_STRATEGIES = ["ma_crossover", "breakout"]
+DEFAULT_BREAKOUT_LOOKBACK_WINDOWS = [10, 20, 30, 40, 60]
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -75,6 +90,30 @@ def build_parser() -> argparse.ArgumentParser:
         default="return_block_reconstruction",
     )
     validate_search.add_argument("--permutation-scope", type=str, default="test")
+
+    compare_strategies = subparsers.add_parser(
+        "compare-strategies",
+        help="Compare multiple strategy families through one validation protocol",
+    )
+    _add_common_arguments(compare_strategies)
+    compare_strategies.add_argument("--split-ratio", type=float, required=True)
+    compare_strategies.add_argument("--strategies", type=str, nargs="+", choices=SUPPORTED_STRATEGY_FAMILIES, default=None)
+    compare_strategies.add_argument("--short-windows", type=int, nargs="+", default=config.SHORT_WINDOW_RANGE)
+    compare_strategies.add_argument("--long-windows", type=int, nargs="+", default=config.LONG_WINDOW_RANGE)
+    compare_strategies.add_argument("--lookback-windows", type=int, nargs="+", default=DEFAULT_BREAKOUT_LOOKBACK_WINDOWS)
+    compare_strategies.add_argument("--max-drawdown-cap", type=float, default=None)
+    compare_strategies.add_argument("--min-trade-count", type=int, default=None)
+    compare_strategies.add_argument("--holdout-cutoff-date", type=str, default=None)
+    compare_strategies.add_argument("--permutation-test", action="store_true")
+    compare_strategies.add_argument("--permutations", type=int, default=25)
+    compare_strategies.add_argument("--permutation-seed", type=int, default=42)
+    compare_strategies.add_argument("--permutation-block-size", type=int, default=2)
+    compare_strategies.add_argument(
+        "--permutation-null-model",
+        type=str,
+        default="return_block_reconstruction",
+    )
+    compare_strategies.add_argument("--permutation-scope", type=str, default="test")
 
     walk_forward = subparsers.add_parser("walk-forward", help="Run walk-forward validation for a selected strategy family")
     _add_common_arguments(walk_forward)
@@ -255,6 +294,26 @@ def main() -> None:
             print(json.dumps(payload, indent=2, default=str))
             return
 
+        if args.command == "compare-strategies":
+            comparison_execution = run_strategy_comparison_with_details(
+                StrategyComparisonConfig(
+                    data_spec=data_spec,
+                    split_config=ValidationSplitConfig(split_ratio=args.split_ratio),
+                    backtest_config=backtest_config,
+                    strategy_families=_build_strategy_family_search_configs_from_args(args),
+                    permutation_config=_build_validation_permutation_config_from_args(args),
+                    max_drawdown_cap=args.max_drawdown_cap,
+                    min_trade_count=args.min_trade_count,
+                    holdout_cutoff_date=args.holdout_cutoff_date,
+                    output_dir=args.output_dir,
+                    experiment_name=args.experiment_name,
+                )
+            )
+            payload = serialize_strategy_comparison_summary(comparison_execution.comparison_summary)
+            payload.update(serialize_strategy_comparison_artifact_receipt(comparison_execution.artifact_receipt) or {})
+            print(json.dumps(payload, indent=2, default=str))
+            return
+
         if args.command == "walk-forward":
             walk_forward_execution = run_walk_forward_search_with_details(
                 data_spec=data_spec,
@@ -383,6 +442,33 @@ def _build_validation_permutation_config_from_args(args: argparse.Namespace) -> 
         null_model=args.permutation_null_model,
         scope=args.permutation_scope,
     )
+
+
+def _build_strategy_family_search_configs_from_args(args: argparse.Namespace) -> list[StrategyFamilySearchConfig]:
+    requested_strategies = list(args.strategies or DEFAULT_COMPARISON_STRATEGIES)
+    configs: list[StrategyFamilySearchConfig] = []
+    for strategy_name in requested_strategies:
+        if strategy_name == "ma_crossover":
+            configs.append(
+                StrategyFamilySearchConfig(
+                    strategy_name="ma_crossover",
+                    parameter_grid={
+                        "short_window": args.short_windows,
+                        "long_window": args.long_windows,
+                    },
+                )
+            )
+            continue
+        if strategy_name == "breakout":
+            configs.append(
+                StrategyFamilySearchConfig(
+                    strategy_name="breakout",
+                    parameter_grid={"lookback_window": args.lookback_windows},
+                )
+            )
+            continue
+        raise ValueError(f"Unsupported strategy: {strategy_name}")
+    return configs
 
 
 def _build_search_summary(

@@ -19,6 +19,7 @@ from .evidence import build_candidate_evidence_summary, build_walk_forward_evide
 from .experiment_runner import (
     ExperimentExecutionOutput,
     SearchExecutionOutput,
+    StrategyComparisonExecutionOutput,
     ValidationExecutionOutput,
     WalkForwardExecutionOutput,
 )
@@ -44,6 +45,9 @@ from .schemas import (
     ExperimentResult,
     SearchSummary,
     StrategySpec,
+    StrategyComparisonConfig,
+    StrategyComparisonResult,
+    StrategyComparisonSummary,
     ValidationResult,
     ValidationSplitConfig,
     PermutationTestArtifactReceipt,
@@ -55,7 +59,7 @@ from .schemas import (
     ValidationPermutationStatus,
 )
 from .scoring import RANKING_SCORE_FIELD, rank_results, score_metrics, select_best_result, select_top_results
-from .search import SearchSpaceEvaluation, evaluate_strategy_search_space
+from .search import SUPPORTED_STRATEGY_FAMILIES, SearchSpaceEvaluation, evaluate_strategy_search_space
 from .search_reporting import save_best_search_report, save_search_comparison_report
 from .storage import (
     ArtifactReceipt,
@@ -69,8 +73,10 @@ from .storage import (
     save_ranked_results_artifact,
     save_ranked_results_with_columns,
     save_single_experiment,
+    save_strategy_comparison_summary,
     save_validation_result,
     save_walk_forward_result,
+    serialize_validation_artifact_receipt,
 )
 from .walk_forward_aggregation import aggregate_walk_forward_benchmark_metrics, aggregate_walk_forward_test_metrics
 
@@ -431,6 +437,76 @@ def run_validate_search_on_market_data(
     return validation_result, validation_artifact_receipt
 
 
+def run_strategy_comparison_with_details_workflow(
+    comparison_config: StrategyComparisonConfig,
+) -> StrategyComparisonExecutionOutput:
+    backtest_config = resolve_backtest_config(comparison_config.backtest_config)
+    validation_permutation_config = comparison_config.permutation_config or ValidationPermutationConfig()
+    _validate_strategy_comparison_families(comparison_config)
+
+    comparison_root = workflow_root(comparison_config.output_dir, comparison_config.experiment_name)
+    strategy_output_root = comparison_root / "strategies" if comparison_root is not None else None
+    resolved_research_policy_config = _resolve_research_policy_config(
+        policy_config=comparison_config.research_policy_config,
+        max_drawdown_cap=comparison_config.max_drawdown_cap,
+        min_trade_count=comparison_config.min_trade_count,
+        permutation_config=validation_permutation_config,
+    )
+
+    comparison_results: list[StrategyComparisonResult] = []
+    validation_artifacts: dict[str, ValidationArtifactReceipt] = {}
+    for strategy_family in comparison_config.strategy_families:
+        validation_result, validation_artifact_receipt = run_validate_search_on_market_data(
+            data_spec=comparison_config.data_spec,
+            parameter_grid=strategy_family.parameter_grid,
+            split_ratio=comparison_config.split_config.split_ratio,
+            strategy_name=strategy_family.strategy_name,
+            backtest_config=backtest_config,
+            output_dir=strategy_output_root,
+            experiment_name=strategy_family.strategy_name,
+            max_drawdown_cap=comparison_config.max_drawdown_cap,
+            min_trade_count=comparison_config.min_trade_count,
+            holdout_cutoff_date=comparison_config.holdout_cutoff_date,
+            policy_config=comparison_config.research_policy_config,
+            permutation_config=validation_permutation_config,
+        )
+        if validation_artifact_receipt is not None:
+            validation_artifacts[strategy_family.strategy_name] = validation_artifact_receipt
+        comparison_results.append(
+            _build_strategy_comparison_result(
+                validation_result=validation_result,
+                validation_artifact_receipt=validation_artifact_receipt,
+            )
+        )
+
+    comparison_results = sorted(comparison_results, key=_strategy_comparison_ranking_key)
+    summary = StrategyComparisonSummary(
+        data_spec=comparison_config.data_spec,
+        split_config=comparison_config.split_config,
+        backtest_config=backtest_config,
+        strategy_families=list(comparison_config.strategy_families),
+        permutation_config=validation_permutation_config,
+        research_policy_config=_serialize_research_policy_config(resolved_research_policy_config),
+        comparison_results=comparison_results,
+        metadata={
+            "comparison_result_count": len(comparison_results),
+            "ranking_contract": "research_policy_verdict_group_then_descending_test_score",
+            "failure_behavior": "fail_fast",
+        },
+    )
+    artifact_receipt = None
+    if comparison_root is not None:
+        summary, artifact_receipt = save_strategy_comparison_summary(
+            comparison_root,
+            summary,
+            strategy_validation_artifacts=validation_artifacts,
+        )
+    return StrategyComparisonExecutionOutput(
+        comparison_summary=summary,
+        artifact_receipt=artifact_receipt,
+    )
+
+
 def run_walk_forward_search_with_details_workflow(
     data_spec: DataSpec,
     parameter_grid: dict[str, list[int]],
@@ -721,6 +797,57 @@ def _classify_validation_permutation_status(
     ):
         return "error"
     return "completed_passed"
+
+
+def _validate_strategy_comparison_families(comparison_config: StrategyComparisonConfig) -> None:
+    if not comparison_config.strategy_families:
+        raise ValueError("Strategy comparison requires at least one strategy family")
+    seen: set[str] = set()
+    for strategy_family in comparison_config.strategy_families:
+        if strategy_family.strategy_name not in SUPPORTED_STRATEGY_FAMILIES:
+            raise ValueError(f"Unsupported strategy: {strategy_family.strategy_name}")
+        if strategy_family.strategy_name in seen:
+            raise ValueError(f"Duplicate strategy family in comparison: {strategy_family.strategy_name}")
+        seen.add(strategy_family.strategy_name)
+
+
+def _build_strategy_comparison_result(
+    *,
+    validation_result: ValidationResult,
+    validation_artifact_receipt: ValidationArtifactReceipt | None,
+) -> StrategyComparisonResult:
+    candidate_evidence = validation_result.candidate_evidence
+    artifact_paths = dict(candidate_evidence.artifact_paths if candidate_evidence is not None else {})
+    if validation_artifact_receipt is not None:
+        artifact_paths.update(
+            {
+                key: value
+                for key, value in (serialize_validation_artifact_receipt(validation_artifact_receipt) or {}).items()
+                if isinstance(value, str)
+            }
+        )
+    return StrategyComparisonResult(
+        strategy_name=validation_result.selected_strategy_spec.name,
+        selected_strategy_spec=validation_result.selected_strategy_spec,
+        validation_result=validation_result,
+        train_score=validation_result.train_best_result.score,
+        test_score=validation_result.test_result.score,
+        permutation_status=candidate_evidence.permutation_status if candidate_evidence is not None else "skipped",
+        research_policy_verdict=getattr(validation_result.research_policy_decision, "verdict", None),
+        candidate_policy_verdict=validation_result.candidate_decision.verdict
+        if validation_result.candidate_decision is not None
+        else None,
+        artifact_paths=artifact_paths,
+    )
+
+
+def _strategy_comparison_ranking_key(result: StrategyComparisonResult) -> tuple[int, float, str]:
+    verdict_rank = {
+        "promote": 0,
+        "blocked": 1,
+        "reject": 2,
+    }.get(result.research_policy_verdict, 3)
+    return (verdict_rank, -result.test_score, result.strategy_name)
 
 
 def _build_research_policy_candidate_id(

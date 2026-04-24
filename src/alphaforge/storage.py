@@ -8,7 +8,7 @@ artifacts and are not part of the canonical persisted experiment contract.
 """
 
 import json
-from dataclasses import asdict, dataclass, replace
+from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -26,6 +26,8 @@ from .schemas import (
     PermutationTestArtifactReceipt,
     PermutationTestSummary,
     StrategySpec,
+    StrategyComparisonResult,
+    StrategyComparisonSummary,
     ValidationResult,
     WalkForwardEvidenceSummary,
     WalkForwardFoldResult,
@@ -80,6 +82,8 @@ FOLD_RESULTS_FILENAME = "fold_results.csv"
 WALK_FORWARD_FOLD_PATH_COLUMN = "fold_path"
 PERMUTATION_TEST_SUMMARY_FILENAME = "permutation_test_summary.json"
 PERMUTATION_SCORES_FILENAME = "permutation_scores.csv"
+COMPARISON_SUMMARY_FILENAME = "comparison_summary.json"
+COMPARISON_RESULTS_FILENAME = "comparison_results.csv"
 
 CANONICAL_SEARCH_FILENAMES = (RANKED_RESULTS_FILENAME,)
 CANONICAL_SEARCH_REPORT_FILENAMES = (BEST_REPORT_FILENAME, SEARCH_REPORT_FILENAME)
@@ -129,6 +133,15 @@ class SearchArtifactReceipt:
     ranked_results_path: Path | None = None
     best_report_path: Path | None = None
     comparison_report_path: Path | None = None
+
+
+@dataclass(frozen=True)
+class StrategyComparisonArtifactReceipt:
+    """Storage-owned receipt for persisted strategy-comparison artifacts."""
+
+    comparison_summary_path: Path
+    comparison_results_path: Path
+    strategy_validation_artifacts: dict[str, ValidationArtifactReceipt] = field(default_factory=dict)
 
 
 def ensure_output_dir(path: Path) -> Path:
@@ -257,6 +270,72 @@ def serialize_validation_artifact_receipt(receipt: ValidationArtifactReceipt | N
         "policy_decision_path": _serialize_path(receipt.policy_decision_path),
         "permutation_test_summary_path": _serialize_path(receipt.permutation_test_summary_path),
         "permutation_scores_path": _serialize_path(receipt.permutation_scores_path),
+    }
+
+
+def serialize_strategy_family_search_config(config: Any) -> dict[str, Any]:
+    return {
+        "strategy_name": config.strategy_name,
+        "parameter_grid": {name: list(values) for name, values in config.parameter_grid.items()},
+    }
+
+
+def serialize_strategy_comparison_result(result: StrategyComparisonResult) -> dict[str, Any]:
+    evidence = result.validation_result.candidate_evidence
+    train_metrics = result.validation_result.train_best_result.metrics
+    test_metrics = result.validation_result.test_result.metrics
+    benchmark_summary = evidence.benchmark_relative_summary if evidence is not None else {}
+    permutation_summary = evidence.permutation_summary if evidence is not None else None
+    return {
+        "strategy_name": result.strategy_name,
+        "selected_strategy_spec": serialize_strategy_spec(result.selected_strategy_spec),
+        "selected_parameters": dict(result.selected_strategy_spec.parameters),
+        "train_score": result.train_score,
+        "test_score": result.test_score,
+        "train_metrics": serialize_metric_report(train_metrics),
+        "test_metrics": serialize_metric_report(test_metrics),
+        "benchmark_total_return": benchmark_summary.get("benchmark_total_return"),
+        "return_excess": benchmark_summary.get("return_excess"),
+        "permutation_status": result.permutation_status,
+        "empirical_p_value": permutation_summary.empirical_p_value if permutation_summary is not None else None,
+        "research_policy_verdict": result.research_policy_verdict,
+        "candidate_policy_verdict": result.candidate_policy_verdict,
+        "validation_result": serialize_validation_result(result.validation_result),
+        "artifact_paths": result.artifact_paths,
+    }
+
+
+def serialize_strategy_comparison_summary(summary: StrategyComparisonSummary) -> dict[str, Any]:
+    return {
+        "data_spec": serialize_data_spec(summary.data_spec),
+        "split_config": asdict(summary.split_config),
+        "backtest_config": serialize_backtest_config(summary.backtest_config),
+        "strategy_families": [
+            serialize_strategy_family_search_config(strategy_family) for strategy_family in summary.strategy_families
+        ],
+        "permutation_config": asdict(summary.permutation_config) if summary.permutation_config is not None else None,
+        "research_policy_config": serialize_research_policy_config(summary.research_policy_config),
+        "comparison_results": [
+            serialize_strategy_comparison_result(comparison_result)
+            for comparison_result in summary.comparison_results
+        ],
+        "artifact_paths": summary.artifact_paths,
+        "metadata": summary.metadata,
+    }
+
+
+def serialize_strategy_comparison_artifact_receipt(
+    receipt: StrategyComparisonArtifactReceipt | None,
+) -> dict[str, Any] | None:
+    if receipt is None:
+        return None
+    return {
+        "comparison_summary_path": str(receipt.comparison_summary_path),
+        "comparison_results_path": str(receipt.comparison_results_path),
+        "strategy_validation_artifacts": {
+            strategy_name: serialize_validation_artifact_receipt(strategy_receipt)
+            for strategy_name, strategy_receipt in receipt.strategy_validation_artifacts.items()
+        },
     }
 
 
@@ -502,6 +581,40 @@ def save_validation_result(
     return validation_result, receipt
 
 
+def save_strategy_comparison_summary(
+    output_dir: Path,
+    summary: StrategyComparisonSummary,
+    strategy_validation_artifacts: dict[str, ValidationArtifactReceipt] | None = None,
+) -> tuple[StrategyComparisonSummary, StrategyComparisonArtifactReceipt]:
+    """Write the canonical persisted comparison summary and result table."""
+    ensure_output_dir(output_dir)
+    summary_path = output_dir / COMPARISON_SUMMARY_FILENAME
+    results_path = output_dir / COMPARISON_RESULTS_FILENAME
+    receipt = StrategyComparisonArtifactReceipt(
+        comparison_summary_path=summary_path,
+        comparison_results_path=results_path,
+        strategy_validation_artifacts=dict(strategy_validation_artifacts or {}),
+    )
+    receipt_payload = serialize_strategy_comparison_artifact_receipt(receipt) or {}
+    persisted_summary = replace(
+        summary,
+        artifact_paths={
+            **summary.artifact_paths,
+            "comparison_summary_path": str(summary_path),
+            "comparison_results_path": str(results_path),
+        },
+    )
+    _write_json(
+        summary_path,
+        {
+            **serialize_strategy_comparison_summary(persisted_summary),
+            **receipt_payload,
+        },
+    )
+    _write_strategy_comparison_results_csv(results_path, persisted_summary)
+    return persisted_summary, receipt
+
+
 def save_walk_forward_result(
     output_dir: Path,
     walk_forward_result: WalkForwardResult,
@@ -625,6 +738,63 @@ def _write_walk_forward_fold_results_csv(path: Path, walk_forward_result: WalkFo
             row[parameter_name] = fold.selected_strategy_spec.parameters.get(parameter_name)
         rows.append(row)
     pd.DataFrame(rows, columns=fixed_columns + parameter_columns + metric_columns).to_csv(path, index=False)
+
+
+def _write_strategy_comparison_results_csv(path: Path, summary: StrategyComparisonSummary) -> None:
+    columns = [
+        "strategy_name",
+        "selected_parameters",
+        "train_score",
+        "test_score",
+        "train_total_return",
+        "test_total_return",
+        "train_sharpe_ratio",
+        "test_sharpe_ratio",
+        "train_max_drawdown",
+        "test_max_drawdown",
+        "test_trade_count",
+        "test_bar_count",
+        "benchmark_total_return",
+        "return_excess",
+        "permutation_status",
+        "empirical_p_value",
+        "research_policy_verdict",
+        "candidate_policy_verdict",
+        "validation_summary_path",
+        "permutation_test_summary_path",
+    ]
+    rows = []
+    for result in summary.comparison_results:
+        evidence = result.validation_result.candidate_evidence
+        train_metrics = result.validation_result.train_best_result.metrics
+        test_metrics = result.validation_result.test_result.metrics
+        benchmark_summary = evidence.benchmark_relative_summary if evidence is not None else {}
+        permutation_summary = evidence.permutation_summary if evidence is not None else None
+        rows.append(
+            {
+                "strategy_name": result.strategy_name,
+                "selected_parameters": json.dumps(result.selected_strategy_spec.parameters, sort_keys=True),
+                "train_score": result.train_score,
+                "test_score": result.test_score,
+                "train_total_return": train_metrics.total_return,
+                "test_total_return": test_metrics.total_return,
+                "train_sharpe_ratio": train_metrics.sharpe_ratio,
+                "test_sharpe_ratio": test_metrics.sharpe_ratio,
+                "train_max_drawdown": train_metrics.max_drawdown,
+                "test_max_drawdown": test_metrics.max_drawdown,
+                "test_trade_count": test_metrics.trade_count,
+                "test_bar_count": test_metrics.bar_count,
+                "benchmark_total_return": benchmark_summary.get("benchmark_total_return"),
+                "return_excess": benchmark_summary.get("return_excess"),
+                "permutation_status": result.permutation_status,
+                "empirical_p_value": permutation_summary.empirical_p_value if permutation_summary is not None else None,
+                "research_policy_verdict": result.research_policy_verdict,
+                "candidate_policy_verdict": result.candidate_policy_verdict,
+                "validation_summary_path": result.artifact_paths.get("validation_summary_path"),
+                "permutation_test_summary_path": result.artifact_paths.get("permutation_test_summary_path"),
+            }
+        )
+    pd.DataFrame(rows, columns=columns).to_csv(path, index=False)
 
 
 def _write_permutation_scores_csv(path: Path, summary: PermutationTestSummary) -> None:

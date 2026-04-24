@@ -9,10 +9,19 @@ import pandas as pd
 import pytest
 
 from alphaforge.cli import main
-from alphaforge.experiment_runner import ExperimentExecutionOutput, SearchExecutionOutput
+from alphaforge.experiment_runner import ExperimentExecutionOutput, SearchExecutionOutput, StrategyComparisonExecutionOutput
 from alphaforge.report import ExperimentReportInput
 from alphaforge.storage import ArtifactReceipt, SearchArtifactReceipt
-from alphaforge.schemas import BacktestConfig, DataSpec, ExperimentResult, MetricReport, SearchSummary, StrategySpec
+from alphaforge.schemas import (
+    BacktestConfig,
+    DataSpec,
+    ExperimentResult,
+    MetricReport,
+    SearchSummary,
+    StrategyComparisonSummary,
+    StrategySpec,
+    ValidationSplitConfig,
+)
 
 
 def _make_search_summary(results: list[ExperimentResult], attempted: int | None = None, invalid: int = 0) -> SearchSummary:
@@ -290,6 +299,152 @@ def test_cli_search_supports_breakout_strategy(
     assert payload["search_parameter_names"] == ["lookback_window"]
     assert payload["best_result"]["strategy_spec"]["name"] == "breakout"
     assert payload["best_result"]["strategy_spec"]["parameters"] == {"lookback_window": 2}
+
+
+def test_cli_compare_strategies_defaults_to_ma_and_breakout(
+    sample_market_csv: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    captured = {}
+
+    def fake_compare(comparison_config):
+        captured["config"] = comparison_config
+        return StrategyComparisonExecutionOutput(
+            comparison_summary=StrategyComparisonSummary(
+                data_spec=comparison_config.data_spec,
+                split_config=comparison_config.split_config,
+                backtest_config=comparison_config.backtest_config,
+                strategy_families=comparison_config.strategy_families,
+                permutation_config=comparison_config.permutation_config,
+                research_policy_config={},
+                comparison_results=[],
+            ),
+            artifact_receipt=None,
+        )
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "alphaforge",
+            "compare-strategies",
+            "--data",
+            str(sample_market_csv),
+            "--output-dir",
+            str(tmp_path),
+            "--split-ratio",
+            "0.7",
+        ],
+    )
+
+    with patch("alphaforge.cli.run_strategy_comparison_with_details", side_effect=fake_compare):
+        main()
+
+    payload = json.loads(capsys.readouterr().out)
+    config = captured["config"]
+
+    assert [family.strategy_name for family in config.strategy_families] == ["ma_crossover", "breakout"]
+    assert payload["strategy_families"][0]["strategy_name"] == "ma_crossover"
+    assert payload["strategy_families"][1]["strategy_name"] == "breakout"
+    assert config.split_config.split_ratio == 0.7
+
+
+def test_cli_compare_strategies_accepts_explicit_strategies_and_permutation_flags(
+    sample_market_csv: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    captured = {}
+
+    def fake_compare(comparison_config):
+        captured["config"] = comparison_config
+        return StrategyComparisonExecutionOutput(
+            comparison_summary=StrategyComparisonSummary(
+                data_spec=comparison_config.data_spec,
+                split_config=comparison_config.split_config,
+                backtest_config=comparison_config.backtest_config,
+                strategy_families=comparison_config.strategy_families,
+                permutation_config=comparison_config.permutation_config,
+                research_policy_config={},
+                comparison_results=[],
+            ),
+            artifact_receipt=None,
+        )
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "alphaforge",
+            "compare-strategies",
+            "--data",
+            str(sample_market_csv),
+            "--output-dir",
+            str(tmp_path),
+            "--split-ratio",
+            "0.6",
+            "--strategies",
+            "breakout",
+            "--lookback-windows",
+            "2",
+            "4",
+            "--permutation-test",
+            "--permutations",
+            "9",
+            "--permutation-seed",
+            "123",
+            "--permutation-block-size",
+            "3",
+            "--permutation-null-model",
+            "return_block_reconstruction",
+            "--permutation-scope",
+            "test",
+        ],
+    )
+
+    with patch("alphaforge.cli.run_strategy_comparison_with_details", side_effect=fake_compare):
+        main()
+
+    json.loads(capsys.readouterr().out)
+    config = captured["config"]
+
+    assert [family.strategy_name for family in config.strategy_families] == ["breakout"]
+    assert config.strategy_families[0].parameter_grid == {"lookback_window": [2, 4]}
+    assert config.permutation_config.enabled is True
+    assert config.permutation_config.permutations == 9
+    assert config.permutation_config.seed == 123
+    assert config.permutation_config.block_size == 3
+    assert config.permutation_config.null_model == "return_block_reconstruction"
+    assert config.permutation_config.scope == "test"
+
+
+def test_cli_compare_strategies_rejects_unsupported_strategy(
+    sample_market_csv: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "alphaforge",
+            "compare-strategies",
+            "--data",
+            str(sample_market_csv),
+            "--output-dir",
+            str(tmp_path),
+            "--split-ratio",
+            "0.7",
+            "--strategies",
+            "not_supported",
+        ],
+    )
+
+    with pytest.raises(SystemExit):
+        main()
 
 
 def test_cli_run_path_does_not_load_twse_client(

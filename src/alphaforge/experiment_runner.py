@@ -18,12 +18,20 @@ from .schemas import (
     EquityCurveFrame,
     ExperimentResult,
     SearchSummary,
+    StrategyComparisonConfig,
+    StrategyComparisonSummary,
     StrategySpec,
     ValidationResult,
     ValidationPermutationConfig,
     WalkForwardResult,
 )
-from .storage import ArtifactReceipt, SearchArtifactReceipt, ValidationArtifactReceipt, WalkForwardArtifactReceipt
+from .storage import (
+    ArtifactReceipt,
+    SearchArtifactReceipt,
+    StrategyComparisonArtifactReceipt,
+    ValidationArtifactReceipt,
+    WalkForwardArtifactReceipt,
+)
 from .research_policy import ResearchPolicyConfig
 
 
@@ -53,6 +61,14 @@ class ValidationExecutionOutput:
 
     validation_result: ValidationResult
     artifact_receipt: ValidationArtifactReceipt | None = None
+
+
+@dataclass(frozen=True)
+class StrategyComparisonExecutionOutput:
+    """Public compatibility bundle for strategy comparison results and artifact refs."""
+
+    comparison_summary: StrategyComparisonSummary
+    artifact_receipt: StrategyComparisonArtifactReceipt | None = None
 
 
 @dataclass(frozen=True)
@@ -216,6 +232,14 @@ def run_validate_search_with_details(
         policy_config=policy_config,
         permutation_config=permutation_config,
     )
+
+
+def run_strategy_comparison_with_details(
+    comparison_config: StrategyComparisonConfig,
+) -> StrategyComparisonExecutionOutput:
+    from .runner_workflows import run_strategy_comparison_with_details_workflow
+
+    return run_strategy_comparison_with_details_workflow(comparison_config)
 
 
 def run_walk_forward_search(
