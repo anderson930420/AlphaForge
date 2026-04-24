@@ -27,8 +27,11 @@ from .strategy.ma_crossover import MovingAverageCrossoverStrategy
 
 SUPPORTED_PERMUTATION_TARGET_METRICS: tuple[PermutationTargetMetricName, ...] = ("score", "sharpe_ratio")
 DEFAULT_PERMUTATION_TARGET_METRIC_NAME: PermutationTargetMetricName = "score"
+NULL_MODEL = "return_block_reconstruction"
 PERMUTATION_MODE = "block"
 DEFAULT_PERMUTATION_TEST_EXPERIMENT_NAME = "permutation_test"
+OHLC_COLUMNS = ("open", "high", "low", "close")
+CANONICAL_MARKET_DATA_COLUMNS = ("datetime", "open", "high", "low", "close", "volume")
 
 
 def run_permutation_test(
@@ -108,6 +111,7 @@ def run_permutation_test_with_details(
         strategy_name=strategy_spec.name,
         strategy_parameters=dict(strategy_spec.parameters),
         target_metric_name=target_metric_name,
+        null_model=NULL_MODEL,
         permutation_mode=PERMUTATION_MODE,
         block_size=block_size,
         real_observed_metric_value=real_observed_metric_value,
@@ -167,12 +171,87 @@ def _extract_target_metric_value(
 
 
 def _permute_market_data_by_blocks(market_data: pd.DataFrame, block_size: int, seed: int) -> pd.DataFrame:
-    blocks = [market_data.iloc[start : start + block_size].copy() for start in range(0, len(market_data), block_size)]
-    if len(blocks) == 0:
+    """Build a return-block reconstructed synthetic OHLCV path."""
+    _validate_positive_finite_ohlc(market_data)
+    if len(market_data) <= 1:
         return market_data.copy().reset_index(drop=True)
+
+    relative_rows = _build_relative_movement_rows(market_data)
+    blocks = [relative_rows.iloc[start : start + block_size].copy() for start in range(0, len(relative_rows), block_size)]
     block_order = np.random.default_rng(seed).permutation(len(blocks))
     permuted_blocks = [blocks[index] for index in block_order]
-    return pd.concat(permuted_blocks, ignore_index=True)
+    permuted_relative_rows = pd.concat(permuted_blocks, ignore_index=True)
+    return _reconstruct_market_data_from_relative_rows(
+        anchor_row=market_data.iloc[0],
+        datetimes=market_data["datetime"].reset_index(drop=True),
+        relative_rows=permuted_relative_rows,
+    )
+
+
+def _build_relative_movement_rows(market_data: pd.DataFrame) -> pd.DataFrame:
+    previous_close = market_data["close"].shift(1)
+    relative_rows = pd.DataFrame(
+        {
+            "open_rel": market_data["open"] / previous_close,
+            "high_rel": market_data["high"] / previous_close,
+            "low_rel": market_data["low"] / previous_close,
+            "close_rel": market_data["close"] / previous_close,
+            "volume": market_data["volume"],
+        }
+    ).iloc[1:].reset_index(drop=True)
+    if not np.isfinite(relative_rows[["open_rel", "high_rel", "low_rel", "close_rel"]].to_numpy()).all():
+        raise ValueError("Cannot build permutation null from non-finite relative OHLC values")
+    if (relative_rows[["open_rel", "high_rel", "low_rel", "close_rel"]] <= 0.0).any().any():
+        raise ValueError("Cannot build permutation null from non-positive relative OHLC values")
+    return relative_rows
+
+
+def _reconstruct_market_data_from_relative_rows(
+    *,
+    anchor_row: pd.Series,
+    datetimes: pd.Series,
+    relative_rows: pd.DataFrame,
+) -> pd.DataFrame:
+    rows = [
+        {
+            "datetime": datetimes.iloc[0],
+            "open": float(anchor_row["open"]),
+            "high": float(anchor_row["high"]),
+            "low": float(anchor_row["low"]),
+            "close": float(anchor_row["close"]),
+            "volume": float(anchor_row["volume"]),
+        }
+    ]
+    previous_synthetic_close = float(anchor_row["close"])
+    for index, relative_row in enumerate(relative_rows.itertuples(index=False), start=1):
+        synthetic_open = previous_synthetic_close * float(relative_row.open_rel)
+        synthetic_high = previous_synthetic_close * float(relative_row.high_rel)
+        synthetic_low = previous_synthetic_close * float(relative_row.low_rel)
+        synthetic_close = previous_synthetic_close * float(relative_row.close_rel)
+        high = max(synthetic_open, synthetic_high, synthetic_low, synthetic_close)
+        low = min(synthetic_open, synthetic_high, synthetic_low, synthetic_close)
+        rows.append(
+            {
+                "datetime": datetimes.iloc[index],
+                "open": synthetic_open,
+                "high": high,
+                "low": low,
+                "close": synthetic_close,
+                "volume": float(relative_row.volume),
+            }
+        )
+        previous_synthetic_close = synthetic_close
+    reconstructed = pd.DataFrame(rows, columns=CANONICAL_MARKET_DATA_COLUMNS)
+    _validate_positive_finite_ohlc(reconstructed)
+    return reconstructed.reset_index(drop=True)
+
+
+def _validate_positive_finite_ohlc(market_data: pd.DataFrame) -> None:
+    ohlc_values = market_data[list(OHLC_COLUMNS)].astype(float).to_numpy()
+    if not np.isfinite(ohlc_values).all():
+        raise ValueError("Permutation null construction requires finite OHLC prices")
+    if (ohlc_values <= 0.0).any():
+        raise ValueError("Permutation null construction requires positive OHLC prices")
 
 
 def _build_strategy(strategy_spec: StrategySpec) -> Strategy:

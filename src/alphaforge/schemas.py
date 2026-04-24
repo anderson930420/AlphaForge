@@ -185,6 +185,7 @@ class PermutationTestSummary:
     seed: int
     null_ge_count: int
     empirical_p_value: float
+    null_model: str = "return_block_reconstruction"
     artifact_paths: dict[str, str] = field(default_factory=dict)
     metadata: dict[str, Any] = field(default_factory=dict)
 

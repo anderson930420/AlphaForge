@@ -10,7 +10,7 @@ import pandas as pd
 import pytest
 
 from alphaforge.cli import main
-from alphaforge.permutation import _permute_market_data_by_blocks, run_permutation_test_with_details
+from alphaforge.permutation import NULL_MODEL, _permute_market_data_by_blocks, run_permutation_test_with_details
 from alphaforge.schemas import (
     BacktestConfig,
     DataSpec,
@@ -22,7 +22,7 @@ from alphaforge.schemas import (
 from alphaforge.storage import save_permutation_test_result
 
 
-def test_block_permutation_is_deterministic_and_preserves_within_block_order() -> None:
+def test_return_block_permutation_is_deterministic_and_preserves_datetime_shape() -> None:
     market_data = pd.DataFrame(
         {
             "datetime": pd.date_range("2024-01-01", periods=5, freq="D"),
@@ -37,16 +37,57 @@ def test_block_permutation_is_deterministic_and_preserves_within_block_order() -
     first = _permute_market_data_by_blocks(market_data, block_size=2, seed=11)
     second = _permute_market_data_by_blocks(market_data, block_size=2, seed=11)
 
-    expected_block_order = np.random.default_rng(11).permutation(3).tolist()
-    blocks = [market_data.iloc[start : start + 2] for start in range(0, len(market_data), 2)]
-    expected = pd.concat([blocks[index] for index in expected_block_order], ignore_index=True)
+    pd.testing.assert_frame_equal(first, second)
+    assert first["datetime"].tolist() == market_data["datetime"].tolist()
+    assert first.columns.tolist() == ["datetime", "open", "high", "low", "close", "volume"]
+    assert len(first) == len(market_data)
+    assert not first[["open", "high", "low", "close", "volume"]].isna().any().any()
+    assert np.isfinite(first[["open", "high", "low", "close"]].to_numpy()).all()
+    assert (first[["open", "high", "low", "close"]] > 0.0).all().all()
 
-    pd.testing.assert_frame_equal(first, expected)
-    pd.testing.assert_frame_equal(second, expected)
-    assert first["datetime"].tolist()[:2] == expected["datetime"].tolist()[:2]
-    assert first["datetime"].tolist()[0:2] != market_data["datetime"].tolist()[0:2]
-    assert first["datetime"].tolist()[2:4] == expected["datetime"].tolist()[2:4]
-    assert first["datetime"].tolist()[4:] == expected["datetime"].tolist()[4:]
+
+def test_return_block_reconstruction_does_not_stitch_absolute_price_blocks_at_the_anchor() -> None:
+    market_data = pd.DataFrame(
+        {
+            "datetime": pd.date_range("2024-01-01", periods=4, freq="D"),
+            "open": [100.0, 100.0, 1000.0, 1000.0],
+            "high": [100.0, 100.0, 1000.0, 1000.0],
+            "low": [100.0, 100.0, 1000.0, 1000.0],
+            "close": [100.0, 100.0, 1000.0, 1000.0],
+            "volume": [100.0, 101.0, 102.0, 103.0],
+        }
+    )
+
+    reconstructed = _permute_market_data_by_blocks(market_data, block_size=1, seed=0)
+
+    assert reconstructed["close"].iloc[0] == 100.0
+    assert reconstructed["close"].iloc[1] == 100.0
+    assert reconstructed["datetime"].tolist() == market_data["datetime"].tolist()
+    assert reconstructed[["open", "high", "low", "close"]].min().min() > 0.0
+
+
+def test_return_block_reconstruction_preserves_canonical_market_data_integrity() -> None:
+    market_data = pd.DataFrame(
+        {
+            "datetime": pd.date_range("2024-01-01", periods=6, freq="D"),
+            "open": [100.0, 101.0, 103.0, 102.0, 105.0, 106.0],
+            "high": [102.0, 104.0, 104.0, 106.0, 107.0, 108.0],
+            "low": [99.0, 100.0, 101.0, 101.0, 104.0, 105.0],
+            "close": [101.0, 103.0, 102.0, 105.0, 106.0, 107.0],
+            "volume": [100.0, 101.0, 102.0, 103.0, 104.0, 105.0],
+        }
+    )
+
+    reconstructed = _permute_market_data_by_blocks(market_data, block_size=2, seed=3)
+
+    assert len(reconstructed) == len(market_data)
+    assert reconstructed.columns.tolist() == ["datetime", "open", "high", "low", "close", "volume"]
+    assert reconstructed["datetime"].tolist() == market_data["datetime"].tolist()
+    assert not reconstructed.isna().any().any()
+    assert np.isfinite(reconstructed[["open", "high", "low", "close"]].to_numpy()).all()
+    assert (reconstructed[["open", "high", "low", "close"]] > 0.0).all().all()
+    assert (reconstructed["high"] >= reconstructed[["open", "low", "close"]].max(axis=1)).all()
+    assert (reconstructed["low"] <= reconstructed[["open", "high", "close"]].min(axis=1)).all()
 
 
 def test_permutation_test_is_deterministic_for_a_fixed_seed(sample_market_csv: Path) -> None:
@@ -81,6 +122,7 @@ def test_permutation_test_is_deterministic_for_a_fixed_seed(sample_market_csv: P
     )
 
     assert first.permutation_test_summary.target_metric_name == "score"
+    assert first.permutation_test_summary.null_model == NULL_MODEL
     assert first.permutation_test_summary.permutation_mode == "block"
     assert first.permutation_test_summary.block_size == 2
     assert first.permutation_test_summary.permutation_metric_values == second.permutation_test_summary.permutation_metric_values
@@ -217,6 +259,7 @@ def test_save_permutation_test_result_writes_summary_and_score_list(tmp_path: Pa
     assert persisted_summary.artifact_paths["permutation_test_summary_path"] == str(summary_path)
     assert persisted_summary.artifact_paths["permutation_scores_path"] == str(scores_path)
     assert payload["strategy_name"] == "ma_crossover"
+    assert payload["null_model"] == NULL_MODEL
     assert payload["permutation_mode"] == "block"
     assert isinstance(payload["permutation_count"], int)
     assert isinstance(payload["block_size"], int)
@@ -295,6 +338,7 @@ def test_cli_permutation_test_prints_canonical_summary_payload(
     payload = json.loads(capsys.readouterr().out)
     assert payload["strategy_name"] == "ma_crossover"
     assert payload["target_metric_name"] == "sharpe_ratio"
+    assert payload["null_model"] == NULL_MODEL
     assert payload["permutation_mode"] == "block"
     assert payload["block_size"] == 2
     assert payload["real_observed_metric_value"] == 0.42

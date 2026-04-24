@@ -53,6 +53,7 @@ from alphaforge.storage import (
     serialize_walk_forward_result,
     SearchArtifactReceipt,
 )
+from alphaforge.permutation import NULL_MODEL
 
 
 def _make_result(short_window: int, long_window: int, score: float = 0.5) -> ExperimentResult:
@@ -447,6 +448,7 @@ def test_save_permutation_test_result_writes_canonical_summary_and_scores(tmp_pa
     assert summary_path.exists()
     assert scores_path.exists()
     assert summary_payload["strategy_name"] == "ma_crossover"
+    assert summary_payload["null_model"] == NULL_MODEL
     assert summary_payload["permutation_mode"] == "block"
     assert summary_payload["block_size"] == 2
     assert isinstance(summary_payload["permutation_count"], int)

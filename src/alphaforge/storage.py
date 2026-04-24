@@ -290,6 +290,7 @@ def serialize_permutation_test_summary(
         "strategy_name": summary.strategy_name,
         "strategy_parameters": summary.strategy_parameters,
         "target_metric_name": summary.target_metric_name,
+        "null_model": summary.null_model,
         "permutation_mode": summary.permutation_mode,
         "block_size": int(summary.block_size),
         "real_observed_metric_value": float(summary.real_observed_metric_value),
