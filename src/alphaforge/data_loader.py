@@ -28,6 +28,35 @@ def load_market_data(data_spec: DataSpec) -> pd.DataFrame:
     return frame.reset_index(drop=True)
 
 
+def split_holdout_data(
+    market_data: pd.DataFrame,
+    holdout_cutoff_date: str | pd.Timestamp,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Split canonical market data into development and holdout partitions."""
+    if "datetime" not in market_data.columns:
+        raise ValueError("holdout split requires a datetime column")
+
+    cutoff = _coerce_holdout_cutoff_date(holdout_cutoff_date)
+    datetimes = pd.to_datetime(market_data["datetime"], utc=False, errors="raise")
+    development_mask = datetimes < cutoff
+    holdout_mask = ~development_mask
+
+    development_data = market_data.loc[development_mask].copy().reset_index(drop=True)
+    holdout_data = market_data.loc[holdout_mask].copy().reset_index(drop=True)
+
+    if development_data.empty:
+        raise ValueError("holdout_cutoff_date removes all development rows")
+    if holdout_data.empty:
+        raise ValueError("holdout_cutoff_date removes all holdout rows")
+
+    holdout_cutoff_value = cutoff.isoformat()
+    for partition in (development_data, holdout_data):
+        partition.attrs["holdout_cutoff_date"] = holdout_cutoff_value
+        partition.attrs["development_rows"] = len(development_data)
+        partition.attrs["holdout_rows"] = len(holdout_data)
+    return development_data, holdout_data
+
+
 def _standardize_columns(frame: pd.DataFrame, datetime_column: str) -> pd.DataFrame:
     renamed = frame.rename(columns={name: name.strip().lower() for name in frame.columns})
     declared_datetime = datetime_column.strip().lower()
@@ -59,3 +88,13 @@ def _validate_market_data(frame: pd.DataFrame, path: Path) -> None:
     for column in ["open", "high", "low", "close", "volume"]:
         if not pd.api.types.is_numeric_dtype(frame[column]):
             raise ValueError(f"Column must be numeric: {column}")
+
+
+def _coerce_holdout_cutoff_date(holdout_cutoff_date: str | pd.Timestamp) -> pd.Timestamp:
+    try:
+        cutoff = pd.Timestamp(holdout_cutoff_date)
+    except Exception as exc:  # pragma: no cover - pandas raises a variety of parse errors
+        raise ValueError(f"Invalid holdout_cutoff_date: {holdout_cutoff_date!r}") from exc
+    if pd.isna(cutoff):
+        raise ValueError(f"Invalid holdout_cutoff_date: {holdout_cutoff_date!r}")
+    return cutoff

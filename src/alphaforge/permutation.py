@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 
 from .backtest import run_backtest
-from .data_loader import load_market_data
+from .data_loader import load_market_data, split_holdout_data
 from .metrics import compute_metrics
 from .search import SUPPORTED_STRATEGY_FAMILIES
 from .schemas import (
@@ -44,6 +44,7 @@ def run_permutation_test(
     backtest_config: BacktestConfig | None = None,
     output_dir: Path | None = None,
     experiment_name: str = DEFAULT_PERMUTATION_TEST_EXPERIMENT_NAME,
+    holdout_cutoff_date: str | None = None,
 ) -> PermutationTestSummary:
     execution = run_permutation_test_with_details(
         data_spec=data_spec,
@@ -55,6 +56,7 @@ def run_permutation_test(
         backtest_config=backtest_config,
         output_dir=output_dir,
         experiment_name=experiment_name,
+        holdout_cutoff_date=holdout_cutoff_date,
     )
     return execution.permutation_test_summary
 
@@ -69,6 +71,7 @@ def run_permutation_test_with_details(
     backtest_config: BacktestConfig | None = None,
     output_dir: Path | None = None,
     experiment_name: str = DEFAULT_PERMUTATION_TEST_EXPERIMENT_NAME,
+    holdout_cutoff_date: str | None = None,
 ) -> PermutationTestExecutionOutput:
     if permutation_count <= 0:
         raise ValueError("permutation_count must be a positive integer")
@@ -80,6 +83,7 @@ def run_permutation_test_with_details(
 
     backtest_config = backtest_config or _default_backtest_config()
     market_data = load_market_data(data_spec)
+    market_data = _apply_holdout_cutoff_if_requested(market_data, holdout_cutoff_date)
     if block_size > len(market_data):
         raise ValueError("block_size must not exceed the number of market data rows")
     real_result = _evaluate_candidate_on_market_data(
@@ -127,6 +131,7 @@ def run_permutation_test_with_details(
             "real_sharpe_ratio": real_result.metrics.sharpe_ratio,
             "real_target_metric_name": target_metric_name,
             "real_target_metric_value": real_observed_metric_value,
+            **_build_holdout_metadata(market_data),
         },
     )
 
@@ -274,3 +279,24 @@ def _default_backtest_config() -> BacktestConfig:
 
 def _workflow_root(output_dir: Path, experiment_name: str) -> Path:
     return output_dir / experiment_name
+
+
+def _apply_holdout_cutoff_if_requested(
+    market_data: pd.DataFrame,
+    holdout_cutoff_date: str | None,
+) -> pd.DataFrame:
+    if holdout_cutoff_date is None:
+        return market_data
+    development_data, _ = split_holdout_data(market_data, holdout_cutoff_date)
+    return development_data
+
+
+def _build_holdout_metadata(market_data: pd.DataFrame) -> dict[str, object]:
+    holdout_cutoff_date = market_data.attrs.get("holdout_cutoff_date")
+    if holdout_cutoff_date is None:
+        return {}
+    return {
+        "holdout_cutoff_date": holdout_cutoff_date,
+        "development_rows": int(market_data.attrs.get("development_rows", len(market_data))),
+        "holdout_rows": int(market_data.attrs.get("holdout_rows", 0)),
+    }

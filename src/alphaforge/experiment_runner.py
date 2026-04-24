@@ -67,6 +67,7 @@ def run_experiment(
     backtest_config: BacktestConfig | None = None,
     output_dir: Path | None = None,
     experiment_name: str = "single_experiment",
+    holdout_cutoff_date: str | None = None,
 ) -> tuple[ExperimentResult, EquityCurveFrame, pd.DataFrame]:
     execution = run_experiment_with_artifacts(
         data_spec=data_spec,
@@ -74,6 +75,7 @@ def run_experiment(
         backtest_config=backtest_config,
         output_dir=output_dir,
         experiment_name=experiment_name,
+        holdout_cutoff_date=holdout_cutoff_date,
     )
     return execution.result, execution.equity_curve, execution.trade_log
 
@@ -84,6 +86,7 @@ def run_experiment_with_artifacts(
     backtest_config: BacktestConfig | None = None,
     output_dir: Path | None = None,
     experiment_name: str = "single_experiment",
+    holdout_cutoff_date: str | None = None,
 ) -> ExperimentExecutionOutput:
     from .runner_workflows import run_experiment_with_artifacts_workflow
 
@@ -93,6 +96,7 @@ def run_experiment_with_artifacts(
         backtest_config=backtest_config,
         output_dir=output_dir,
         experiment_name=experiment_name,
+        holdout_cutoff_date=holdout_cutoff_date,
     )
 
 
@@ -106,6 +110,7 @@ def run_search(
     max_drawdown_cap: float | None = None,
     min_trade_count: int | None = None,
     generate_best_report: bool = False,
+    holdout_cutoff_date: str | None = None,
 ) -> list[ExperimentResult]:
     return run_search_with_details(
         data_spec=data_spec,
@@ -117,6 +122,7 @@ def run_search(
         max_drawdown_cap=max_drawdown_cap,
         min_trade_count=min_trade_count,
         generate_best_report=generate_best_report,
+        holdout_cutoff_date=holdout_cutoff_date,
     ).ranked_results
 
 
@@ -130,6 +136,7 @@ def run_search_with_details(
     max_drawdown_cap: float | None = None,
     min_trade_count: int | None = None,
     generate_best_report: bool = False,
+    holdout_cutoff_date: str | None = None,
 ) -> SearchExecutionOutput:
     from .runner_workflows import run_search_with_details_workflow
 
@@ -143,6 +150,7 @@ def run_search_with_details(
         max_drawdown_cap=max_drawdown_cap,
         min_trade_count=min_trade_count,
         generate_best_report=generate_best_report,
+        holdout_cutoff_date=holdout_cutoff_date,
     )
 
 
@@ -156,6 +164,7 @@ def run_validate_search(
     experiment_name: str = "validation_experiment",
     max_drawdown_cap: float | None = None,
     min_trade_count: int | None = None,
+    holdout_cutoff_date: str | None = None,
 ) -> ValidationResult:
     return run_validate_search_with_details(
         data_spec=data_spec,
@@ -167,6 +176,7 @@ def run_validate_search(
         experiment_name=experiment_name,
         max_drawdown_cap=max_drawdown_cap,
         min_trade_count=min_trade_count,
+        holdout_cutoff_date=holdout_cutoff_date,
     ).validation_result
 
 
@@ -180,6 +190,7 @@ def run_validate_search_with_details(
     experiment_name: str = "validation_experiment",
     max_drawdown_cap: float | None = None,
     min_trade_count: int | None = None,
+    holdout_cutoff_date: str | None = None,
 ) -> ValidationExecutionOutput:
     from .runner_workflows import run_validate_search_with_details_workflow
 
@@ -193,6 +204,7 @@ def run_validate_search_with_details(
         experiment_name=experiment_name,
         max_drawdown_cap=max_drawdown_cap,
         min_trade_count=min_trade_count,
+        holdout_cutoff_date=holdout_cutoff_date,
     )
 
 
@@ -208,6 +220,7 @@ def run_walk_forward_search(
     experiment_name: str = "walk_forward_experiment",
     max_drawdown_cap: float | None = None,
     min_trade_count: int | None = None,
+    holdout_cutoff_date: str | None = None,
 ) -> WalkForwardResult:
     return run_walk_forward_search_with_details(
         data_spec=data_spec,
@@ -221,6 +234,7 @@ def run_walk_forward_search(
         experiment_name=experiment_name,
         max_drawdown_cap=max_drawdown_cap,
         min_trade_count=min_trade_count,
+        holdout_cutoff_date=holdout_cutoff_date,
     ).walk_forward_result
 
 
@@ -236,6 +250,7 @@ def run_walk_forward_search_with_details(
     experiment_name: str = "walk_forward_experiment",
     max_drawdown_cap: float | None = None,
     min_trade_count: int | None = None,
+    holdout_cutoff_date: str | None = None,
 ) -> WalkForwardExecutionOutput:
     from .runner_workflows import run_walk_forward_search_with_details_workflow
 
@@ -251,4 +266,5 @@ def run_walk_forward_search_with_details(
         experiment_name=experiment_name,
         max_drawdown_cap=max_drawdown_cap,
         min_trade_count=min_trade_count,
+        holdout_cutoff_date=holdout_cutoff_date,
     )

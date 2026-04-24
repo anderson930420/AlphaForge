@@ -35,10 +35,12 @@ def workflow_root(output_dir: Path | None, experiment_name: str) -> Path | None:
 
 def build_execution_metadata(market_data: pd.DataFrame, benchmark_summary: dict[str, float]) -> dict[str, object]:
     """Assemble runner-local execution metadata from canonical owners."""
-    return {
+    metadata: dict[str, object] = {
         "missing_data_policy": market_data.attrs.get("missing_data_policy", ""),
         "benchmark_summary": benchmark_summary,
     }
+    metadata.update(build_holdout_metadata(market_data))
+    return metadata
 
 
 def build_strategy(strategy_spec: StrategySpec) -> Strategy:
@@ -61,9 +63,23 @@ def split_market_data_by_ratio(market_data: pd.DataFrame, split_ratio: float) ->
 
     train_data = market_data.iloc[:split_index].reset_index(drop=True)
     test_data = market_data.iloc[split_index:].reset_index(drop=True)
+    train_data.attrs.update(market_data.attrs)
+    test_data.attrs.update(market_data.attrs)
     if train_data.empty or test_data.empty:
         raise ValueError("split_ratio creates an empty train or test segment")
     return train_data, test_data
+
+
+def build_holdout_metadata(market_data: pd.DataFrame) -> dict[str, object]:
+    """Extract holdout metadata from a market-data frame when available."""
+    holdout_cutoff_date = market_data.attrs.get("holdout_cutoff_date")
+    if holdout_cutoff_date is None:
+        return {}
+    return {
+        "holdout_cutoff_date": holdout_cutoff_date,
+        "development_rows": int(market_data.attrs.get("development_rows", len(market_data))),
+        "holdout_rows": int(market_data.attrs.get("holdout_rows", 0)),
+    }
 
 
 def validate_train_windows(strategy_name: str, train_data: pd.DataFrame, parameter_grid: dict[str, list[int]]) -> None:
@@ -79,7 +95,7 @@ def validate_train_windows(strategy_name: str, train_data: pd.DataFrame, paramet
 
 def build_validation_metadata(train_data: pd.DataFrame, test_data: pd.DataFrame) -> dict[str, object]:
     """Assemble runner-local metadata describing a train/test split."""
-    return {
+    metadata: dict[str, object] = {
         "train_rows": int(len(train_data)),
         "test_rows": int(len(test_data)),
         "train_start": str(train_data["datetime"].iloc[0]),
@@ -87,6 +103,8 @@ def build_validation_metadata(train_data: pd.DataFrame, test_data: pd.DataFrame)
         "test_start": str(test_data["datetime"].iloc[0]),
         "test_end": str(test_data["datetime"].iloc[-1]),
     }
+    metadata.update(build_holdout_metadata(train_data))
+    return metadata
 
 
 def generate_walk_forward_folds(

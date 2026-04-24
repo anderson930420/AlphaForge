@@ -14,7 +14,7 @@ import pandas as pd
 
 from .backtest import run_backtest
 from .benchmark import build_buy_and_hold_equity_curve, normalize_benchmark_summary, summarize_buy_and_hold
-from .data_loader import load_market_data
+from .data_loader import load_market_data, split_holdout_data
 from .evidence import build_candidate_evidence_summary, build_walk_forward_evidence_summary
 from .experiment_runner import (
     ExperimentExecutionOutput,
@@ -27,6 +27,7 @@ from .policy import apply_policy_decision, evaluate_candidate_policy, evaluate_w
 from .report import build_experiment_report_input
 from .runner_protocols import (
     build_execution_metadata,
+    build_holdout_metadata,
     build_strategy,
     build_validation_metadata,
     generate_walk_forward_folds,
@@ -74,9 +75,11 @@ def run_experiment_with_artifacts_workflow(
     backtest_config: BacktestConfig | None = None,
     output_dir: Path | None = None,
     experiment_name: str = "single_experiment",
+    holdout_cutoff_date: str | None = None,
 ) -> ExperimentExecutionOutput:
     backtest_config = resolve_backtest_config(backtest_config)
     market_data = load_market_data(data_spec)
+    market_data = _apply_holdout_cutoff_if_requested(market_data, holdout_cutoff_date)
     return run_experiment_on_market_data(
         market_data=market_data,
         data_spec=data_spec,
@@ -137,9 +140,11 @@ def run_search_with_details_workflow(
     max_drawdown_cap: float | None = None,
     min_trade_count: int | None = None,
     generate_best_report: bool = False,
+    holdout_cutoff_date: str | None = None,
 ) -> SearchExecutionOutput:
     backtest_config = resolve_backtest_config(backtest_config)
     market_data = load_market_data(data_spec)
+    market_data = _apply_holdout_cutoff_if_requested(market_data, holdout_cutoff_date)
     return run_search_on_market_data(
         market_data=market_data,
         data_spec=data_spec,
@@ -236,6 +241,7 @@ def run_validate_search_with_details_workflow(
     experiment_name: str = "validation_experiment",
     max_drawdown_cap: float | None = None,
     min_trade_count: int | None = None,
+    holdout_cutoff_date: str | None = None,
 ) -> ValidationExecutionOutput:
     validation_result, validation_artifact_receipt = run_validate_search_on_market_data(
         data_spec=data_spec,
@@ -247,6 +253,7 @@ def run_validate_search_with_details_workflow(
         experiment_name=experiment_name,
         max_drawdown_cap=max_drawdown_cap,
         min_trade_count=min_trade_count,
+        holdout_cutoff_date=holdout_cutoff_date,
     )
     return ValidationExecutionOutput(
         validation_result=validation_result,
@@ -264,9 +271,11 @@ def run_validate_search_on_market_data(
     experiment_name: str = "validation_experiment",
     max_drawdown_cap: float | None = None,
     min_trade_count: int | None = None,
+    holdout_cutoff_date: str | None = None,
 ) -> tuple[ValidationResult, ValidationArtifactReceipt | None]:
     backtest_config = resolve_backtest_config(backtest_config)
     market_data = load_market_data(data_spec)
+    market_data = _apply_holdout_cutoff_if_requested(market_data, holdout_cutoff_date)
     train_data, test_data = split_market_data_by_ratio(market_data, split_ratio)
     validate_train_windows(strategy_name, train_data, parameter_grid)
 
@@ -345,6 +354,7 @@ def run_validate_search_on_market_data(
         search_summary=search_execution.summary,
         benchmark_summary=normalize_benchmark_summary(test_result.metadata.get("benchmark_summary")),
         artifact_paths=candidate_artifact_paths,
+        metadata=build_holdout_metadata(train_data),
     )
     candidate_decision = evaluate_candidate_policy(candidate_evidence, policy_scope="validate-search")
     candidate_evidence = apply_policy_decision(candidate_evidence, candidate_decision)
@@ -381,6 +391,7 @@ def run_walk_forward_search_with_details_workflow(
     experiment_name: str = "walk_forward_experiment",
     max_drawdown_cap: float | None = None,
     min_trade_count: int | None = None,
+    holdout_cutoff_date: str | None = None,
 ) -> WalkForwardExecutionOutput:
     walk_forward_result, walk_forward_artifact_receipt = run_walk_forward_search_on_market_data(
         data_spec=data_spec,
@@ -394,6 +405,7 @@ def run_walk_forward_search_with_details_workflow(
         experiment_name=experiment_name,
         max_drawdown_cap=max_drawdown_cap,
         min_trade_count=min_trade_count,
+        holdout_cutoff_date=holdout_cutoff_date,
     )
     return WalkForwardExecutionOutput(
         walk_forward_result=walk_forward_result,
@@ -413,9 +425,11 @@ def run_walk_forward_search_on_market_data(
     experiment_name: str = "walk_forward_experiment",
     max_drawdown_cap: float | None = None,
     min_trade_count: int | None = None,
+    holdout_cutoff_date: str | None = None,
 ) -> tuple[WalkForwardResult, WalkForwardArtifactReceipt | None]:
     backtest_config = resolve_backtest_config(backtest_config)
     market_data = load_market_data(data_spec)
+    market_data = _apply_holdout_cutoff_if_requested(market_data, holdout_cutoff_date)
     folds = generate_walk_forward_folds(market_data, train_size=train_size, test_size=test_size, step_size=step_size)
     validate_train_windows(strategy_name, market_data.iloc[:train_size].reset_index(drop=True), parameter_grid)
 
@@ -424,6 +438,8 @@ def run_walk_forward_search_on_market_data(
     for fold_index, (train_start_idx, train_end_idx, test_end_idx) in enumerate(folds, start=1):
         train_data = market_data.iloc[train_start_idx:train_end_idx].reset_index(drop=True)
         test_data = market_data.iloc[train_end_idx:test_end_idx].reset_index(drop=True)
+        train_data.attrs.update(market_data.attrs)
+        test_data.attrs.update(market_data.attrs)
         validate_train_windows(strategy_name, train_data, parameter_grid)
         fold_root = (walk_forward_root / "folds" / f"fold_{fold_index:03d}") if walk_forward_root is not None else None
 
@@ -479,6 +495,7 @@ def run_walk_forward_search_on_market_data(
             search_summary=search_execution.summary,
             benchmark_summary=normalize_benchmark_summary(test_result.metadata.get("benchmark_summary")),
             artifact_paths=fold_candidate_artifact_paths,
+            metadata=build_holdout_metadata(train_data),
         )
         fold_candidate_decision = evaluate_candidate_policy(fold_candidate_evidence, policy_scope="walk-forward")
         fold_candidate_evidence = apply_policy_decision(fold_candidate_evidence, fold_candidate_decision)
@@ -522,9 +539,10 @@ def run_walk_forward_search_on_market_data(
             aggregate_test_metrics=aggregate_test_metrics,
             aggregate_benchmark_metrics=aggregate_benchmark_metrics,
             artifact_paths=walk_forward_evidence_paths,
+            metadata=build_holdout_metadata(market_data),
         ),
         walk_forward_decision=None,
-        metadata={"fold_count": len(fold_results)},
+        metadata={"fold_count": len(fold_results), **build_holdout_metadata(market_data)},
     )
     walk_forward_decision = evaluate_walk_forward_policy(result.walk_forward_evidence)
     walk_forward_evidence = apply_policy_decision(result.walk_forward_evidence, walk_forward_decision)
@@ -553,3 +571,13 @@ def _build_search_summary(search_space: SearchSpaceEvaluation, ranked_results: l
         best_result=best_result,
         top_results=top_results,
     )
+
+
+def _apply_holdout_cutoff_if_requested(
+    market_data: pd.DataFrame,
+    holdout_cutoff_date: str | None,
+) -> pd.DataFrame:
+    if holdout_cutoff_date is None:
+        return market_data
+    development_data, _ = split_holdout_data(market_data, holdout_cutoff_date)
+    return development_data

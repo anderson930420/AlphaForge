@@ -42,6 +42,7 @@ def build_parser() -> argparse.ArgumentParser:
     single.add_argument("--long-window", type=int, default=None)
     single.add_argument("--lookback-window", type=int, default=None)
     single.add_argument("--generate-report", action="store_true")
+    single.add_argument("--holdout-cutoff-date", type=str, default=None)
 
     search = subparsers.add_parser("search", help="Run grid search over a selected strategy family")
     _add_common_arguments(search)
@@ -52,6 +53,7 @@ def build_parser() -> argparse.ArgumentParser:
     search.add_argument("--max-drawdown-cap", type=float, default=None)
     search.add_argument("--min-trade-count", type=int, default=None)
     search.add_argument("--generate-report", action="store_true")
+    search.add_argument("--holdout-cutoff-date", type=str, default=None)
 
     validate_search = subparsers.add_parser("validate-search", help="Run train/test validation for a selected strategy family")
     _add_common_arguments(validate_search)
@@ -62,6 +64,7 @@ def build_parser() -> argparse.ArgumentParser:
     validate_search.add_argument("--split-ratio", type=float, required=True)
     validate_search.add_argument("--max-drawdown-cap", type=float, default=None)
     validate_search.add_argument("--min-trade-count", type=int, default=None)
+    validate_search.add_argument("--holdout-cutoff-date", type=str, default=None)
 
     walk_forward = subparsers.add_parser("walk-forward", help="Run walk-forward validation for a selected strategy family")
     _add_common_arguments(walk_forward)
@@ -74,6 +77,7 @@ def build_parser() -> argparse.ArgumentParser:
     walk_forward.add_argument("--step-size", type=int, required=True)
     walk_forward.add_argument("--max-drawdown-cap", type=float, default=None)
     walk_forward.add_argument("--min-trade-count", type=int, default=None)
+    walk_forward.add_argument("--holdout-cutoff-date", type=str, default=None)
 
     permutation_test = subparsers.add_parser(
         "permutation-test",
@@ -93,6 +97,7 @@ def build_parser() -> argparse.ArgumentParser:
         default=DEFAULT_PERMUTATION_TARGET_METRIC_NAME,
     )
     permutation_test.add_argument("--seed", type=int, default=42)
+    permutation_test.add_argument("--holdout-cutoff-date", type=str, default=None)
 
     fetch_twse = subparsers.add_parser("fetch-twse", help="Fetch TWSE stock-day data and save standardized CSV")
     fetch_twse.add_argument("--stock-no", type=str, required=True)
@@ -116,6 +121,7 @@ def build_parser() -> argparse.ArgumentParser:
     twse_search.add_argument("--fee-rate", type=float, default=config.DEFAULT_FEE_RATE)
     twse_search.add_argument("--slippage-rate", type=float, default=config.DEFAULT_SLIPPAGE_RATE)
     twse_search.add_argument("--annualization-factor", type=int, default=config.DEFAULT_ANNUALIZATION)
+    twse_search.add_argument("--holdout-cutoff-date", type=str, default=None)
     return parser
 
 
@@ -178,6 +184,7 @@ def main() -> None:
                 max_drawdown_cap=args.max_drawdown_cap,
                 min_trade_count=args.min_trade_count,
                 generate_best_report=args.generate_report,
+                holdout_cutoff_date=args.holdout_cutoff_date,
             )
             print(
                 json.dumps(
@@ -207,6 +214,7 @@ def main() -> None:
                 backtest_config=backtest_config,
                 output_dir=args.output_dir,
                 experiment_name=args.experiment_name,
+                holdout_cutoff_date=args.holdout_cutoff_date,
             )
             payload = serialize_experiment_result(execution.result)
             payload["artifacts"] = serialize_artifact_receipt(execution.artifact_receipt)
@@ -229,6 +237,7 @@ def main() -> None:
                 experiment_name=args.experiment_name,
                 max_drawdown_cap=args.max_drawdown_cap,
                 min_trade_count=args.min_trade_count,
+                holdout_cutoff_date=args.holdout_cutoff_date,
             )
             payload = serialize_validation_result(validation_execution.validation_result)
             payload.update(serialize_validation_artifact_receipt(validation_execution.artifact_receipt) or {})
@@ -248,6 +257,7 @@ def main() -> None:
                 experiment_name=args.experiment_name,
                 max_drawdown_cap=args.max_drawdown_cap,
                 min_trade_count=args.min_trade_count,
+                holdout_cutoff_date=args.holdout_cutoff_date,
             )
             payload = serialize_walk_forward_result(walk_forward_execution.walk_forward_result)
             payload.update(serialize_walk_forward_artifact_receipt(walk_forward_execution.artifact_receipt) or {})
@@ -265,6 +275,7 @@ def main() -> None:
                 backtest_config=backtest_config,
                 output_dir=args.output_dir,
                 experiment_name=args.experiment_name,
+                holdout_cutoff_date=args.holdout_cutoff_date,
             )
             payload = serialize_permutation_test_summary(permutation_execution.permutation_test_summary)
             payload.update(serialize_permutation_test_artifact_receipt(permutation_execution.artifact_receipt) or {})
@@ -281,6 +292,7 @@ def main() -> None:
             max_drawdown_cap=args.max_drawdown_cap,
             min_trade_count=args.min_trade_count,
             generate_best_report=args.generate_report,
+            holdout_cutoff_date=args.holdout_cutoff_date,
         )
         print(
             json.dumps(

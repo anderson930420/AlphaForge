@@ -95,7 +95,7 @@ def test_run_validate_search_splits_data_chronologically_and_saves_outputs(sampl
 def test_run_validate_search_uses_train_only_for_search_and_selected_params_for_test(sample_market_csv: Path) -> None:
     train_best = ExperimentResult(
         data_spec=DataSpec(path=sample_market_csv, symbol="TEST"),
-        strategy_spec=StrategySpec(name="ma_crossover", parameters={"short_window": 2, "long_window": 4}),
+        strategy_spec=StrategySpec(name="ma_crossover", parameters={"short_window": 1, "long_window": 2}),
         backtest_config=BacktestConfig(1000.0, 0.0, 0.0, 252),
         metrics=MetricReport(0.1, 0.1, 1.0, -0.1, 1.0, 1.0, 1),
         score=0.9,
@@ -158,8 +158,8 @@ def test_run_validate_search_uses_train_only_for_search_and_selected_params_for_
     tested_market = run_experiment_mock.call_args.kwargs["market_data"]
 
     assert searched_train["datetime"].max() < tested_market["datetime"].min()
-    assert tested_strategy.parameters == {"short_window": 2, "long_window": 4}
-    assert result.selected_strategy_spec.parameters == {"short_window": 2, "long_window": 4}
+    assert tested_strategy.parameters == {"short_window": 1, "long_window": 2}
+    assert result.selected_strategy_spec.parameters == {"short_window": 1, "long_window": 2}
     assert result.test_benchmark_summary == {"total_return": 0.0, "max_drawdown": 0.0}
     assert result.candidate_decision is not None
     assert result.candidate_evidence.verdict == result.candidate_decision.verdict
@@ -167,6 +167,74 @@ def test_run_validate_search_uses_train_only_for_search_and_selected_params_for_
     assert result.candidate_decision.policy_scope == "validate-search"
     assert result.candidate_evidence.search_rank == 1
     assert result.candidate_evidence.search_result_count == 1
+
+
+def test_run_validate_search_with_holdout_cutoff_uses_development_rows_only(sample_market_csv: Path) -> None:
+    train_best = ExperimentResult(
+        data_spec=DataSpec(path=sample_market_csv, symbol="TEST"),
+        strategy_spec=StrategySpec(name="ma_crossover", parameters={"short_window": 2, "long_window": 4}),
+        backtest_config=BacktestConfig(1000.0, 0.0, 0.0, 252),
+        metrics=MetricReport(0.1, 0.1, 1.0, -0.1, 1.0, 1.0, 1),
+        score=0.9,
+    )
+    test_result = ExperimentResult(
+        data_spec=DataSpec(path=sample_market_csv, symbol="TEST"),
+        strategy_spec=train_best.strategy_spec,
+        backtest_config=train_best.backtest_config,
+        metrics=MetricReport(0.05, 0.05, 0.8, -0.08, 0.5, 0.7, 1),
+        score=0.4,
+    )
+    market_data = pd.DataFrame(
+        {
+            "datetime": pd.date_range("2024-01-01", periods=8, freq="D"),
+            "open": [1.0, 2.0, 3.0, 4.0, 100.0, 101.0, 102.0, 103.0],
+            "high": [1.0, 2.0, 3.0, 4.0, 100.0, 101.0, 102.0, 103.0],
+            "low": [1.0, 2.0, 3.0, 4.0, 100.0, 101.0, 102.0, 103.0],
+            "close": [1.0, 2.0, 3.0, 4.0, 100.0, 101.0, 102.0, 103.0],
+            "volume": [1.0] * 8,
+        }
+    )
+    dev_cutoff = pd.Timestamp("2024-01-05")
+    train_data = market_data.iloc[:4].reset_index(drop=True)
+    test_data = market_data.iloc[4:8].reset_index(drop=True)
+
+    with patch("alphaforge.runner_workflows.load_market_data", return_value=market_data), patch(
+        "alphaforge.runner_workflows.run_search_on_market_data",
+        return_value=SearchExecutionOutput(ranked_results=[train_best], summary=_make_search_summary([train_best])),
+    ) as run_search_mock, patch(
+        "alphaforge.runner_workflows.run_experiment_on_market_data",
+        return_value=ExperimentExecutionOutput(
+            result=test_result,
+            equity_curve=pd.DataFrame(),
+            trade_log=pd.DataFrame(),
+            report_input=ExperimentReportInput(
+                result=test_result,
+                equity_curve=pd.DataFrame(),
+                trades=pd.DataFrame(),
+                benchmark_summary={"total_return": 0.0, "max_drawdown": 0.0},
+                benchmark_curve=pd.DataFrame(),
+            ),
+            artifact_receipt=None,
+        ),
+    ) as run_experiment_mock:
+        result = run_validate_search(
+            data_spec=DataSpec(path=sample_market_csv, symbol="TEST"),
+            parameter_grid={"short_window": [1], "long_window": [2]},
+            split_ratio=0.5,
+            holdout_cutoff_date="2024-01-05",
+        )
+
+    searched_train = run_search_mock.call_args.kwargs["market_data"]
+    tested_market = run_experiment_mock.call_args.kwargs["market_data"]
+
+    assert searched_train["datetime"].max() < dev_cutoff
+    assert tested_market["datetime"].max() < dev_cutoff
+    assert result.metadata["holdout_cutoff_date"] == dev_cutoff.isoformat()
+    assert result.metadata["development_rows"] == len(train_data)
+    assert result.metadata["holdout_rows"] == len(test_data)
+    assert result.candidate_evidence.metadata["holdout_cutoff_date"] == dev_cutoff.isoformat()
+    assert result.candidate_evidence.metadata["development_rows"] == len(train_data)
+    assert result.candidate_evidence.metadata["holdout_rows"] == len(test_data)
 
 
 def test_run_validate_search_rejects_invalid_split_ratio(sample_market_csv: Path) -> None:

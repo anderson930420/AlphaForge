@@ -160,6 +160,50 @@ def test_run_search_with_details_returns_explicit_artifact_paths(sample_market_c
     assert not hasattr(search_execution, "comparison_report_path")
 
 
+def test_run_search_with_details_without_holdout_cutoff_uses_full_dataset(sample_market_csv: Path) -> None:
+    market_data = pd.DataFrame(
+        {
+            "datetime": pd.date_range("2024-01-01", periods=6, freq="D"),
+            "open": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+            "high": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+            "low": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+            "close": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+            "volume": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+        }
+    )
+    train_best = ExperimentResult(
+        data_spec=DataSpec(path=sample_market_csv, symbol="TEST"),
+        strategy_spec=StrategySpec(name="ma_crossover", parameters={"short_window": 2, "long_window": 4}),
+        backtest_config=BacktestConfig(1000.0, 0.0, 0.0, 252),
+        metrics=MetricReport(0.1, 0.1, 1.0, -0.1, 1.0, 1.0, 1),
+        score=0.9,
+    )
+
+    with patch("alphaforge.runner_workflows.load_market_data", return_value=market_data), patch(
+        "alphaforge.runner_workflows.run_search_on_market_data",
+        return_value=SearchExecutionOutput(
+            ranked_results=[train_best],
+            summary=SearchSummary(
+                strategy_name="ma_crossover",
+                search_parameter_names=["short_window", "long_window"],
+                attempted_combinations=1,
+                valid_combinations=1,
+                invalid_combinations=0,
+                result_count=1,
+                ranking_score="score",
+                best_result=train_best,
+                top_results=[train_best],
+            ),
+        ),
+    ) as run_search_mock:
+        run_search_with_details(
+            data_spec=DataSpec(path=sample_market_csv, symbol="TEST"),
+            parameter_grid={"short_window": [2], "long_window": [4]},
+        )
+
+    assert run_search_mock.call_args.kwargs["market_data"].equals(market_data)
+
+
 def test_run_search_summary_counts_invalid_combinations_and_top_results_prefix(
     sample_market_csv: Path,
     tmp_path: Path,

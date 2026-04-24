@@ -4,6 +4,7 @@ import json
 import sys
 from pathlib import Path
 from unittest.mock import patch
+from unittest.mock import patch
 
 import numpy as np
 import pandas as pd
@@ -14,6 +15,8 @@ from alphaforge.permutation import NULL_MODEL, _permute_market_data_by_blocks, r
 from alphaforge.schemas import (
     BacktestConfig,
     DataSpec,
+    ExperimentResult,
+    MetricReport,
     PermutationTestArtifactReceipt,
     PermutationTestExecutionOutput,
     PermutationTestSummary,
@@ -174,6 +177,45 @@ def test_permutation_test_supports_breakout_strategy(sample_market_csv: Path) ->
     assert summary.strategy_name == "breakout"
     assert summary.strategy_parameters == {"lookback_window": 3}
     assert len(summary.permutation_metric_values) == 4
+
+
+def test_permutation_test_with_holdout_cutoff_uses_development_rows_only(sample_market_csv: Path) -> None:
+    market_data = pd.DataFrame(
+        {
+            "datetime": pd.date_range("2024-01-01", periods=8, freq="D"),
+            "open": [1.0, 2.0, 3.0, 4.0, 100.0, 101.0, 102.0, 103.0],
+            "high": [1.0, 2.0, 3.0, 4.0, 100.0, 101.0, 102.0, 103.0],
+            "low": [1.0, 2.0, 3.0, 4.0, 100.0, 101.0, 102.0, 103.0],
+            "close": [1.0, 2.0, 3.0, 4.0, 100.0, 101.0, 102.0, 103.0],
+            "volume": [1.0] * 8,
+        }
+    )
+    expected_cutoff = pd.Timestamp("2024-01-05")
+    dummy_result = ExperimentResult(
+        data_spec=DataSpec(path=sample_market_csv, symbol="TEST"),
+        strategy_spec=StrategySpec(name="ma_crossover", parameters={"short_window": 2, "long_window": 4}),
+        backtest_config=BacktestConfig(1000.0, 0.0, 0.0, 252),
+        metrics=MetricReport(0.1, 0.1, 1.0, -0.1, 1.0, 1.0, 1),
+        score=0.9,
+    )
+
+    with patch("alphaforge.permutation.load_market_data", return_value=market_data), patch(
+        "alphaforge.permutation._evaluate_candidate_on_market_data",
+        return_value=dummy_result,
+    ) as evaluate_mock:
+        summary = run_permutation_test_with_details(
+            data_spec=DataSpec(path=sample_market_csv, symbol="TEST"),
+            strategy_spec=StrategySpec(name="ma_crossover", parameters={"short_window": 2, "long_window": 4}),
+            permutation_count=2,
+            block_size=1,
+            holdout_cutoff_date="2024-01-05",
+        ).permutation_test_summary
+
+    first_market_data = evaluate_mock.call_args_list[0].kwargs["market_data"]
+    assert first_market_data["datetime"].max() < expected_cutoff
+    assert summary.metadata["holdout_cutoff_date"] == expected_cutoff.isoformat()
+    assert summary.metadata["development_rows"] == 4
+    assert summary.metadata["holdout_rows"] == 4
 
 
 def test_permutation_test_summary_uses_the_empirical_p_value_formula(sample_market_csv: Path) -> None:
