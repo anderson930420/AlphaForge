@@ -25,6 +25,7 @@ from .experiment_runner import (
 from .metrics import compute_metrics
 from .policy import apply_policy_decision, evaluate_candidate_policy, evaluate_walk_forward_policy
 from .report import build_experiment_report_input
+from .research_policy import ResearchPolicyConfig, evaluate_candidate_policy as evaluate_research_policy
 from .runner_protocols import (
     build_execution_metadata,
     build_holdout_metadata,
@@ -242,6 +243,7 @@ def run_validate_search_with_details_workflow(
     max_drawdown_cap: float | None = None,
     min_trade_count: int | None = None,
     holdout_cutoff_date: str | None = None,
+    policy_config: ResearchPolicyConfig | None = None,
 ) -> ValidationExecutionOutput:
     validation_result, validation_artifact_receipt = run_validate_search_on_market_data(
         data_spec=data_spec,
@@ -254,6 +256,7 @@ def run_validate_search_with_details_workflow(
         max_drawdown_cap=max_drawdown_cap,
         min_trade_count=min_trade_count,
         holdout_cutoff_date=holdout_cutoff_date,
+        policy_config=policy_config,
     )
     return ValidationExecutionOutput(
         validation_result=validation_result,
@@ -272,6 +275,7 @@ def run_validate_search_on_market_data(
     max_drawdown_cap: float | None = None,
     min_trade_count: int | None = None,
     holdout_cutoff_date: str | None = None,
+    policy_config: ResearchPolicyConfig | None = None,
 ) -> tuple[ValidationResult, ValidationArtifactReceipt | None]:
     backtest_config = resolve_backtest_config(backtest_config)
     market_data = load_market_data(data_spec)
@@ -356,6 +360,16 @@ def run_validate_search_on_market_data(
         artifact_paths=candidate_artifact_paths,
         metadata=build_holdout_metadata(train_data),
     )
+    research_policy_config = _resolve_research_policy_config(
+        policy_config=policy_config,
+        max_drawdown_cap=max_drawdown_cap,
+        min_trade_count=min_trade_count,
+    )
+    research_policy_decision = evaluate_research_policy(
+        candidate_evidence,
+        config=research_policy_config,
+        candidate_id=_build_research_policy_candidate_id(selected_strategy_spec, train_data, test_data),
+    )
     candidate_decision = evaluate_candidate_policy(candidate_evidence, policy_scope="validate-search")
     candidate_evidence = apply_policy_decision(candidate_evidence, candidate_decision)
     validation_result = ValidationResult(
@@ -367,6 +381,8 @@ def run_validate_search_on_market_data(
         test_benchmark_summary=normalize_benchmark_summary(test_result.metadata.get("benchmark_summary")),
         candidate_evidence=candidate_evidence,
         candidate_decision=candidate_decision,
+        research_policy_decision=research_policy_decision,
+        research_policy_config=_serialize_research_policy_config(research_policy_config),
         metadata=build_validation_metadata(train_data, test_data),
     )
     validation_artifact_receipt: ValidationArtifactReceipt | None = None
@@ -570,6 +586,50 @@ def _build_search_summary(search_space: SearchSpaceEvaluation, ranked_results: l
         ranking_score=RANKING_SCORE_FIELD,
         best_result=best_result,
         top_results=top_results,
+    )
+
+
+def _resolve_research_policy_config(
+    *,
+    policy_config: ResearchPolicyConfig | None,
+    max_drawdown_cap: float | None,
+    min_trade_count: int | None,
+) -> ResearchPolicyConfig:
+    if policy_config is not None:
+        return policy_config
+    return ResearchPolicyConfig(
+        max_reruns=0,
+        min_trade_count=min_trade_count if min_trade_count is not None else 1,
+        max_drawdown_cap=max_drawdown_cap,
+        min_return_degradation=0.0,
+        max_permutation_p_value=None,
+        required_permutation_null_model=None,
+        required_permutation_scope=None,
+    )
+
+
+def _serialize_research_policy_config(config: ResearchPolicyConfig) -> dict[str, object]:
+    return {
+        "max_reruns": config.max_reruns,
+        "min_trade_count": config.min_trade_count,
+        "max_drawdown_cap": config.max_drawdown_cap,
+        "min_return_degradation": config.min_return_degradation,
+        "max_permutation_p_value": config.max_permutation_p_value,
+        "required_permutation_null_model": config.required_permutation_null_model,
+        "required_permutation_scope": config.required_permutation_scope,
+    }
+
+
+def _build_research_policy_candidate_id(
+    selected_strategy_spec: StrategySpec,
+    train_data: pd.DataFrame,
+    test_data: pd.DataFrame,
+) -> str:
+    parameter_items = ",".join(f"{key}={value}" for key, value in sorted(selected_strategy_spec.parameters.items()))
+    return (
+        f"{selected_strategy_spec.name}:"
+        f"{parameter_items}:"
+        f"{train_data['datetime'].iloc[0]}-{test_data['datetime'].iloc[-1]}"
     )
 
 

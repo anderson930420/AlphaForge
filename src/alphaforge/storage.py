@@ -46,6 +46,7 @@ CANONICAL_SINGLE_RUN_FILENAMES = (
 CANONICAL_VALIDATION_FILENAMES = (
     "validation_summary.json",
     "train_ranked_results.csv",
+    "policy_decision.json",
 )
 
 CANONICAL_WALK_FORWARD_FILENAMES = (
@@ -73,6 +74,7 @@ TRADE_LOG_FILENAME = "trade_log.csv"
 EQUITY_CURVE_FILENAME = "equity_curve.csv"
 RANKED_RESULTS_FILENAME = "ranked_results.csv"
 VALIDATION_SUMMARY_FILENAME = "validation_summary.json"
+POLICY_DECISION_FILENAME = "policy_decision.json"
 WALK_FORWARD_SUMMARY_FILENAME = "walk_forward_summary.json"
 FOLD_RESULTS_FILENAME = "fold_results.csv"
 WALK_FORWARD_FOLD_PATH_COLUMN = "fold_path"
@@ -106,6 +108,7 @@ class ValidationArtifactReceipt:
 
     validation_summary_path: Path
     train_ranked_results_path: Path | None = None
+    policy_decision_path: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -191,6 +194,25 @@ def serialize_candidate_policy_decision(decision: CandidatePolicyDecision | None
     }
 
 
+def serialize_research_policy_config(config: dict[str, Any] | None) -> dict[str, Any] | None:
+    if config is None:
+        return None
+    return dict(config)
+
+
+def serialize_research_policy_decision(decision: Any | None) -> dict[str, Any] | None:
+    if decision is None:
+        return None
+    return {
+        "candidate_id": getattr(decision, "candidate_id", None),
+        "verdict": getattr(decision, "verdict", None),
+        "reasons": list(getattr(decision, "reasons", [])),
+        "checks": dict(getattr(decision, "checks", {})),
+        "max_reruns": int(getattr(decision, "max_reruns", 0)),
+        "rerun_count": int(getattr(decision, "rerun_count", 0)),
+    }
+
+
 def serialize_artifact_receipt(receipt: ArtifactReceipt | None) -> dict[str, Any] | None:
     """Serialize storage-owned artifact references and optional report refs."""
     if receipt is None:
@@ -215,6 +237,8 @@ def serialize_validation_result(result: ValidationResult) -> dict[str, Any]:
         "test_benchmark_summary": result.test_benchmark_summary,
         "candidate_evidence": serialize_candidate_evidence_summary(result.candidate_evidence),
         "candidate_decision": serialize_candidate_policy_decision(result.candidate_decision),
+        "research_policy_decision": serialize_research_policy_decision(result.research_policy_decision),
+        "research_policy_config": serialize_research_policy_config(result.research_policy_config),
         "metadata": result.metadata,
     }
 
@@ -225,6 +249,7 @@ def serialize_validation_artifact_receipt(receipt: ValidationArtifactReceipt | N
     return {
         "validation_summary_path": str(receipt.validation_summary_path),
         "train_ranked_results_path": _serialize_path(receipt.train_ranked_results_path),
+        "policy_decision_path": _serialize_path(receipt.policy_decision_path),
     }
 
 
@@ -443,11 +468,20 @@ def save_validation_result(
     """
     ensure_output_dir(output_dir)
     summary_path = output_dir / VALIDATION_SUMMARY_FILENAME
+    policy_decision_path = output_dir / POLICY_DECISION_FILENAME
     receipt = ValidationArtifactReceipt(
         validation_summary_path=summary_path,
         train_ranked_results_path=train_ranked_results_path,
+        policy_decision_path=policy_decision_path,
     )
     receipt_payload = serialize_validation_artifact_receipt(receipt) or {}
+    _write_json(
+        policy_decision_path,
+        {
+            "research_policy_decision": serialize_research_policy_decision(validation_result.research_policy_decision),
+            "research_policy_config": serialize_research_policy_config(validation_result.research_policy_config),
+        },
+    )
     _write_json(
         summary_path,
         {

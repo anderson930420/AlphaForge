@@ -6,6 +6,7 @@ from pathlib import Path
 import pandas as pd
 
 from alphaforge.evidence import build_candidate_evidence_summary, build_walk_forward_evidence_summary
+from alphaforge.research_policy import PolicyDecision
 from alphaforge.schemas import (
     BacktestConfig,
     DataSpec,
@@ -33,6 +34,7 @@ from alphaforge.storage import (
     PERMUTATION_SCORES_FILENAME,
     PERMUTATION_TEST_SUMMARY_FILENAME,
     RANKED_RESULTS_FILENAME,
+    POLICY_DECISION_FILENAME,
     TRAIN_RANKED_RESULTS_FILENAME,
     TRADE_LOG_FILENAME,
     VALIDATION_SUMMARY_FILENAME,
@@ -216,6 +218,23 @@ def test_save_validation_result_writes_summary_and_train_ranked_reference(tmp_pa
         train_best_result=train_best_result,
         test_result=test_result,
         test_benchmark_summary={"total_return": 0.1, "max_drawdown": -0.05},
+        research_policy_decision=PolicyDecision(
+            candidate_id="ma_crossover:{'short_window': 2, 'long_window': 4}",
+            verdict="promote",
+            reasons=["trade_count 4 meets minimum 1", "all configured research policy checks passed"],
+            checks={"rerun_count_within_limit": True, "test_metrics_present": True, "min_trade_count": True},
+            max_reruns=0,
+            rerun_count=0,
+        ),
+        research_policy_config={
+            "max_reruns": 0,
+            "min_trade_count": 1,
+            "max_drawdown_cap": None,
+            "min_return_degradation": 0.0,
+            "max_permutation_p_value": None,
+            "required_permutation_null_model": None,
+            "required_permutation_scope": None,
+        },
         candidate_evidence=build_candidate_evidence_summary(
             strategy_spec=train_best_result.strategy_spec,
             train_result=train_best_result,
@@ -253,11 +272,66 @@ def test_save_validation_result_writes_summary_and_train_ranked_reference(tmp_pa
     assert summary_payload["validation_summary_path"] == str(summary_path)
     assert summary_payload["candidate_evidence"]["verdict"] == "validated"
     assert summary_payload["candidate_decision"]["verdict"] == "validated"
+    assert summary_payload["research_policy_decision"]["verdict"] == "promote"
+    assert summary_payload["policy_decision_path"] == str(validation_root / POLICY_DECISION_FILENAME)
     assert summary_payload["candidate_evidence"]["search_rank"] == 1
     assert summary_payload["candidate_evidence"]["artifact_paths"]["validation_summary_path"] == str(summary_path)
     assert "train_ranked_results_path" not in serialized_validation
     assert serialized_receipt["train_ranked_results_path"] == str(train_ranked_results_path)
     assert serialized_receipt["validation_summary_path"] == str(summary_path)
+    assert serialized_receipt["policy_decision_path"] == str(validation_root / POLICY_DECISION_FILENAME)
+
+
+def test_save_validation_result_writes_policy_decision_artifact(tmp_path: Path) -> None:
+    validation_root = tmp_path / "validation_policy_case"
+    train_best_result = _make_result(short_window=2, long_window=4, score=0.9)
+    test_result = _make_result(short_window=2, long_window=4, score=0.4)
+    validation_result = ValidationResult(
+        data_spec=DataSpec(path=Path("sample_data/example.csv"), symbol="2330"),
+        split_config=ValidationSplitConfig(split_ratio=0.5),
+        selected_strategy_spec=train_best_result.strategy_spec,
+        train_best_result=train_best_result,
+        test_result=test_result,
+        test_benchmark_summary={"total_return": 0.1, "max_drawdown": -0.05},
+        research_policy_decision=PolicyDecision(
+            candidate_id="candidate-123",
+            verdict="reject",
+            reasons=["trade_count 0 below minimum 2"],
+            checks={"rerun_count_within_limit": True, "test_metrics_present": True, "min_trade_count": False},
+            max_reruns=0,
+            rerun_count=0,
+        ),
+        research_policy_config={
+            "max_reruns": 0,
+            "min_trade_count": 2,
+            "max_drawdown_cap": None,
+            "min_return_degradation": 0.0,
+            "max_permutation_p_value": None,
+            "required_permutation_null_model": None,
+            "required_permutation_scope": None,
+        },
+        candidate_evidence=build_candidate_evidence_summary(
+            strategy_spec=train_best_result.strategy_spec,
+            train_result=train_best_result,
+            test_result=test_result,
+            search_summary=_make_search_summary(train_best_result),
+            benchmark_summary={"total_return": 0.1, "max_drawdown": -0.05},
+            artifact_paths={
+                "validation_summary_path": str(validation_root / VALIDATION_SUMMARY_FILENAME),
+            },
+        ),
+    )
+
+    _, receipt = save_validation_result(validation_root, validation_result)
+    summary_payload = json.loads((validation_root / VALIDATION_SUMMARY_FILENAME).read_text(encoding="utf-8"))
+    policy_payload = json.loads((validation_root / POLICY_DECISION_FILENAME).read_text(encoding="utf-8"))
+
+    assert (validation_root / POLICY_DECISION_FILENAME).exists()
+    assert summary_payload["policy_decision_path"] == str(validation_root / POLICY_DECISION_FILENAME)
+    assert policy_payload["research_policy_decision"]["candidate_id"] == "candidate-123"
+    assert policy_payload["research_policy_decision"]["verdict"] == "reject"
+    assert policy_payload["research_policy_config"]["min_trade_count"] == 2
+    assert receipt.policy_decision_path == validation_root / POLICY_DECISION_FILENAME
 
 
 def test_save_walk_forward_result_writes_summary_and_fold_results_contract(tmp_path: Path) -> None:

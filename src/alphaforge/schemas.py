@@ -135,6 +135,8 @@ class ValidationResult:
     test_benchmark_summary: dict[str, float] = field(default_factory=dict)
     candidate_evidence: CandidateEvidenceSummary | None = None
     candidate_decision: CandidatePolicyDecision | None = None
+    research_policy_decision: Any | None = None
+    research_policy_config: dict[str, Any] = field(default_factory=dict)
     metadata: dict[str, Any] = field(default_factory=dict)
 
 

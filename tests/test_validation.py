@@ -18,6 +18,7 @@ from alphaforge.experiment_runner import (
     run_walk_forward_search,
     run_walk_forward_search_with_details,
 )
+from alphaforge.research_policy import ResearchPolicyConfig
 from alphaforge.report import ExperimentReportInput
 from alphaforge.schemas import BacktestConfig, DataSpec, ExperimentResult, MetricReport, SearchSummary, StrategySpec
 from alphaforge.storage import (
@@ -74,12 +75,18 @@ def test_run_validate_search_splits_data_chronologically_and_saves_outputs(sampl
     assert "max_drawdown" in summary_payload["test_benchmark_summary"]
     assert summary_payload["candidate_decision"]["verdict"] == summary_payload["candidate_evidence"]["verdict"]
     assert summary_payload["candidate_decision"]["decision_reasons"]
+    assert summary_payload["policy_decision_path"].endswith("policy_decision.json")
     assert summary_payload["candidate_evidence"]["degradation_summary"]["return_degradation"] == result.candidate_evidence.degradation_summary["return_degradation"]
     assert result.candidate_evidence.search_rank == 1
     assert result.candidate_evidence.search_result_count == 1
     assert result.candidate_decision is not None
     assert result.candidate_decision.verdict == result.candidate_evidence.verdict
     assert result.candidate_decision.policy_scope == "validate-search"
+    assert result.research_policy_decision is not None
+    assert result.research_policy_decision.verdict == "promote"
+    assert result.research_policy_decision.reasons
+    assert result.research_policy_decision.checks
+    assert result.research_policy_config["required_permutation_null_model"] is None
     assert (
         result.candidate_evidence.degradation_summary["return_degradation"]
         == result.test_result.metrics.annualized_return - result.train_best_result.metrics.annualized_return
@@ -167,6 +174,81 @@ def test_run_validate_search_uses_train_only_for_search_and_selected_params_for_
     assert result.candidate_decision.policy_scope == "validate-search"
     assert result.candidate_evidence.search_rank == 1
     assert result.candidate_evidence.search_result_count == 1
+
+
+def test_run_validate_search_with_research_policy_threshold_rejects_weak_trade_count(
+    sample_market_csv: Path,
+) -> None:
+    train_best = ExperimentResult(
+        data_spec=DataSpec(path=sample_market_csv, symbol="TEST"),
+        strategy_spec=StrategySpec(name="ma_crossover", parameters={"short_window": 2, "long_window": 4}),
+        backtest_config=BacktestConfig(1000.0, 0.0, 0.0, 252),
+        metrics=MetricReport(0.1, 0.1, 1.0, -0.1, 1.0, 1.0, 1),
+        score=0.9,
+    )
+    test_result = ExperimentResult(
+        data_spec=DataSpec(path=sample_market_csv, symbol="TEST"),
+        strategy_spec=train_best.strategy_spec,
+        backtest_config=train_best.backtest_config,
+        metrics=MetricReport(0.05, 0.05, 0.8, -0.08, 0.5, 0.7, 1),
+        score=0.4,
+    )
+    train_data = pd.DataFrame(
+        {
+            "datetime": pd.date_range("2024-01-01", periods=4, freq="D"),
+            "open": [1.0, 2.0, 3.0, 4.0],
+            "high": [1.0, 2.0, 3.0, 4.0],
+            "low": [1.0, 2.0, 3.0, 4.0],
+            "close": [1.0, 2.0, 3.0, 4.0],
+            "volume": [1.0, 1.0, 1.0, 1.0],
+        }
+    )
+    test_data = pd.DataFrame(
+        {
+            "datetime": pd.date_range("2024-01-05", periods=4, freq="D"),
+            "open": [5.0, 6.0, 7.0, 8.0],
+            "high": [5.0, 6.0, 7.0, 8.0],
+            "low": [5.0, 6.0, 7.0, 8.0],
+            "close": [5.0, 6.0, 7.0, 8.0],
+            "volume": [1.0, 1.0, 1.0, 1.0],
+        }
+    )
+
+    with patch("alphaforge.runner_workflows.load_market_data", return_value=pd.concat([train_data, test_data], ignore_index=True)), patch(
+        "alphaforge.runner_workflows.run_search_on_market_data",
+        return_value=SearchExecutionOutput(ranked_results=[train_best], summary=_make_search_summary([train_best])),
+    ), patch(
+        "alphaforge.runner_workflows.run_experiment_on_market_data",
+        return_value=ExperimentExecutionOutput(
+            result=test_result,
+            equity_curve=pd.DataFrame(),
+            trade_log=pd.DataFrame(),
+            report_input=ExperimentReportInput(
+                result=test_result,
+                equity_curve=pd.DataFrame(),
+                trades=pd.DataFrame(),
+                benchmark_summary={"total_return": 0.0, "max_drawdown": 0.0},
+                benchmark_curve=pd.DataFrame(),
+            ),
+            artifact_receipt=None,
+        ),
+    ):
+        result = run_validate_search(
+            data_spec=DataSpec(path=sample_market_csv, symbol="TEST"),
+            parameter_grid={"short_window": [2], "long_window": [4]},
+            split_ratio=0.5,
+            policy_config=ResearchPolicyConfig(
+                min_trade_count=2,
+                required_permutation_null_model=None,
+                max_permutation_p_value=None,
+                required_permutation_scope=None,
+            ),
+        )
+
+    assert result.research_policy_decision is not None
+    assert result.research_policy_decision.verdict == "reject"
+    assert result.research_policy_decision.checks["min_trade_count"] is False
+    assert any("trade_count 1 below minimum 2" in reason for reason in result.research_policy_decision.reasons)
 
 
 def test_run_validate_search_with_holdout_cutoff_uses_development_rows_only(sample_market_csv: Path) -> None:
@@ -323,6 +405,7 @@ def test_cli_validate_search_prints_validation_summary_payload(
             artifact_receipt=ValidationArtifactReceipt(
                 validation_summary_path=tmp_path / "validation_case" / "validation_summary.json",
                 train_ranked_results_path=tmp_path / "validation_case" / "train_ranked_results.csv",
+                policy_decision_path=tmp_path / "validation_case" / "policy_decision.json",
             ),
         ),
     ) as run_validate_mock, patch(
@@ -335,6 +418,7 @@ def test_cli_validate_search_prints_validation_summary_payload(
     assert payload["selected_strategy_spec"]["parameters"] == {"short_window": 2, "long_window": 3}
     assert Path(payload["train_ranked_results_path"]).name == "train_ranked_results.csv"
     assert Path(payload["validation_summary_path"]).name == "validation_summary.json"
+    assert Path(payload["policy_decision_path"]).name == "policy_decision.json"
     assert payload["candidate_decision"]["verdict"] == payload["candidate_evidence"]["verdict"]
 
 

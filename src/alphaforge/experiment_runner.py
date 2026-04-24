@@ -23,6 +23,7 @@ from .schemas import (
     WalkForwardResult,
 )
 from .storage import ArtifactReceipt, SearchArtifactReceipt, ValidationArtifactReceipt, WalkForwardArtifactReceipt
+from .research_policy import ResearchPolicyConfig
 
 
 @dataclass(frozen=True)
@@ -165,6 +166,7 @@ def run_validate_search(
     max_drawdown_cap: float | None = None,
     min_trade_count: int | None = None,
     holdout_cutoff_date: str | None = None,
+    policy_config: ResearchPolicyConfig | None = None,
 ) -> ValidationResult:
     return run_validate_search_with_details(
         data_spec=data_spec,
@@ -177,6 +179,7 @@ def run_validate_search(
         max_drawdown_cap=max_drawdown_cap,
         min_trade_count=min_trade_count,
         holdout_cutoff_date=holdout_cutoff_date,
+        policy_config=policy_config,
     ).validation_result
 
 
@@ -191,6 +194,7 @@ def run_validate_search_with_details(
     max_drawdown_cap: float | None = None,
     min_trade_count: int | None = None,
     holdout_cutoff_date: str | None = None,
+    policy_config: ResearchPolicyConfig | None = None,
 ) -> ValidationExecutionOutput:
     from .runner_workflows import run_validate_search_with_details_workflow
 
@@ -205,6 +209,7 @@ def run_validate_search_with_details(
         max_drawdown_cap=max_drawdown_cap,
         min_trade_count=min_trade_count,
         holdout_cutoff_date=holdout_cutoff_date,
+        policy_config=policy_config,
     )
 
 
