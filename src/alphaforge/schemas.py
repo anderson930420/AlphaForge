@@ -54,6 +54,7 @@ class MetricReport:
     win_rate: float
     turnover: float
     trade_count: int
+    bar_count: int = 0
 
 
 @dataclass(frozen=True)
@@ -186,7 +187,7 @@ class PermutationTestSummary:
     permutation_count: int
     seed: int
     null_ge_count: int
-    empirical_p_value: float
+    empirical_p_value: float | None
     null_model: str = "return_block_reconstruction"
     artifact_paths: dict[str, str] = field(default_factory=dict)
     metadata: dict[str, Any] = field(default_factory=dict)

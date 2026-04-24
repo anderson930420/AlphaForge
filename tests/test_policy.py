@@ -139,6 +139,7 @@ def test_walk_forward_policy_validates_complete_positive_aggregate() -> None:
             "fold_count": 3,
             "mean_test_total_return": 0.12,
             "mean_test_sharpe_ratio": 1.1,
+            "pooled_test_sharpe_ratio": 1.2,
             "mean_test_max_drawdown": -0.05,
             "worst_test_max_drawdown": -0.12,
         },
@@ -158,9 +159,38 @@ def test_walk_forward_policy_validates_complete_positive_aggregate() -> None:
     assert decision.decision_reasons == [
         "fold_coverage_complete",
         "aggregate_return_positive",
-        "aggregate_sharpe_positive",
+        "aggregate_pooled_sharpe_positive",
         "aggregate_return_excess_non_negative",
         "aggregate_drawdown_non_worsening",
+    ]
+
+
+def test_walk_forward_policy_requires_pooled_sharpe_over_mean_sharpe() -> None:
+    summary = build_walk_forward_evidence_summary(
+        fold_count=3,
+        validated_fold_count=3,
+        skipped_fold_count=0,
+        aggregate_test_metrics={
+            "fold_count": 3,
+            "mean_test_total_return": 0.12,
+            "mean_test_sharpe_ratio": 1.1,
+            "mean_test_max_drawdown": -0.05,
+            "worst_test_max_drawdown": -0.12,
+        },
+        aggregate_benchmark_metrics={
+            "fold_count": 3,
+            "mean_benchmark_total_return": 0.08,
+            "mean_benchmark_max_drawdown": -0.08,
+            "mean_excess_return": 0.04,
+        },
+    )
+
+    decision = evaluate_walk_forward_policy(summary)
+
+    assert decision.verdict == "inconclusive"
+    assert decision.decision_reasons == [
+        "fold_coverage_complete",
+        "missing_pooled_test_sharpe_ratio",
     ]
 
 
@@ -173,6 +203,7 @@ def test_walk_forward_policy_rejects_clear_failure() -> None:
             "fold_count": 2,
             "mean_test_total_return": -0.03,
             "mean_test_sharpe_ratio": -0.2,
+            "pooled_test_sharpe_ratio": -0.15,
             "mean_test_max_drawdown": -0.14,
             "worst_test_max_drawdown": -0.2,
         },

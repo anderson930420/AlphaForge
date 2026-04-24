@@ -15,7 +15,7 @@ class ResearchPolicyConfig:
     min_trade_count: int = 1
     max_drawdown_cap: float | None = None
     min_return_degradation: float = 0.0
-    max_permutation_p_value: float | None = None
+    max_permutation_p_value: float | None = 0.05
     required_permutation_null_model: str | None = "return_block_reconstruction"
     required_permutation_scope: str | None = None
 
@@ -100,16 +100,17 @@ def evaluate_candidate_policy(
         if permutation_summary is None:
             reasons.append("missing permutation summary for p-value check")
         else:
-            checks["max_permutation_p_value"] = (
-                float(permutation_summary.empirical_p_value) <= config.max_permutation_p_value
-            )
-            if checks["max_permutation_p_value"]:
+            empirical_p_value = permutation_summary.empirical_p_value
+            checks["max_permutation_p_value"] = empirical_p_value is not None and float(empirical_p_value) <= config.max_permutation_p_value
+            if empirical_p_value is None:
+                reasons.append("missing permutation p-value")
+            elif checks["max_permutation_p_value"]:
                 reasons.append(
-                    f"permutation p-value {permutation_summary.empirical_p_value} within maximum {config.max_permutation_p_value}"
+                    f"permutation p-value {empirical_p_value} within maximum {config.max_permutation_p_value}"
                 )
             else:
                 reasons.append(
-                    f"permutation p-value {permutation_summary.empirical_p_value} above maximum {config.max_permutation_p_value}"
+                    f"permutation p-value {empirical_p_value} above maximum {config.max_permutation_p_value}"
                 )
 
     if config.required_permutation_null_model is not None:

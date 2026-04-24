@@ -628,14 +628,14 @@ def test_cli_walk_forward_prints_summary_payload(
             "artifact_paths": {"walk_forward_summary_path": str(tmp_path / "walk_forward_case" / "walk_forward_summary.json"), "fold_results_path": str(tmp_path / "walk_forward_case" / "fold_results.csv")},
             "metadata": {},
         },
-        "walk_forward_decision": {
+            "walk_forward_decision": {
             "policy_name": "post_search_candidate_policy",
             "policy_scope": "walk-forward",
             "verdict": "validated",
             "decision_reasons": [
                 "fold_coverage_complete",
                 "aggregate_return_positive",
-                "aggregate_sharpe_positive",
+                "aggregate_pooled_sharpe_positive",
                 "aggregate_return_excess_non_negative",
                 "aggregate_drawdown_non_worsening",
             ],

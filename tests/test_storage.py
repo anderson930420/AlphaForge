@@ -142,6 +142,7 @@ def test_save_single_experiment_writes_canonical_persisted_files_and_receipt_ref
     trades = _make_trade_log()
 
     persisted_result, receipt = save_single_experiment(tmp_path, "single_case", result, equity_curve, trades)
+    metrics_payload = json.loads((tmp_path / "single_case" / METRICS_SUMMARY_FILENAME).read_text(encoding="utf-8"))
 
     run_dir = tmp_path / "single_case"
     assert run_dir.exists()
@@ -153,6 +154,7 @@ def test_save_single_experiment_writes_canonical_persisted_files_and_receipt_ref
     assert receipt.metrics_summary_path.name == METRICS_SUMMARY_FILENAME
     assert receipt.best_report_path is None
     assert receipt.comparison_report_path is None
+    assert metrics_payload["bar_count"] == result.metrics.bar_count
     assert not hasattr(persisted_result, "equity_curve_path")
     assert not hasattr(persisted_result, "trade_log_path")
     assert not hasattr(persisted_result, "metrics_path")
@@ -392,7 +394,7 @@ def test_save_walk_forward_result_writes_summary_and_fold_results_contract(tmp_p
             decision_reasons=[
                 "fold_coverage_complete",
                 "aggregate_return_positive",
-                "aggregate_sharpe_positive",
+                "aggregate_pooled_sharpe_positive",
                 "aggregate_return_excess_non_negative",
                 "aggregate_drawdown_non_worsening",
             ],

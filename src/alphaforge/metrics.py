@@ -22,6 +22,7 @@ def compute_metrics(
     risk_free_rate: float = 0.0,
 ) -> MetricReport:
     returns = equity_curve["strategy_return"].astype(float)
+    bar_count = int(len(equity_curve))
     total_return = (equity_curve["equity"].iloc[-1] / equity_curve["equity"].iloc[0]) - 1.0
     periods = max(len(equity_curve) - 1, 1)
     annualized_return = (1.0 + total_return) ** (annualization_factor / periods) - 1.0
@@ -37,14 +38,17 @@ def compute_metrics(
         max_drawdown=max_drawdown,
         win_rate=win_rate,
         turnover=turnover,
+        bar_count=bar_count,
         trade_count=trade_count,
     )
 
 
 def _compute_sharpe_ratio(returns: pd.Series, annualization_factor: int, risk_free_rate: float = 0.0) -> float:
     excess_returns = returns.astype(float) - float(risk_free_rate)
-    std = float(excess_returns.std(ddof=0))
-    if math.isclose(std, 0.0):
+    if len(excess_returns) < 2:
+        return 0.0
+    std = float(excess_returns.std(ddof=1))
+    if not np.isfinite(std) or math.isclose(std, 0.0):
         return 0.0
     return float((excess_returns.mean() / std) * math.sqrt(annualization_factor))
 

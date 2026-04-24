@@ -151,14 +151,23 @@ def evaluate_walk_forward_policy(
         )
 
     mean_test_total_return = float(aggregate_test_metrics["mean_test_total_return"])
-    mean_test_sharpe_ratio = float(aggregate_test_metrics["mean_test_sharpe_ratio"])
     mean_test_max_drawdown = float(aggregate_test_metrics["mean_test_max_drawdown"])
     mean_benchmark_max_drawdown = float(aggregate_benchmark_metrics["mean_benchmark_max_drawdown"])
     mean_excess_return = float(aggregate_benchmark_metrics["mean_excess_return"])
+    pooled_test_sharpe_ratio = aggregate_test_metrics.get("pooled_test_sharpe_ratio")
+    if pooled_test_sharpe_ratio is None:
+        return _decision(
+            policy_scope="walk-forward",
+            verdict="inconclusive",
+            reasons=[
+                "fold_coverage_complete",
+                "missing_pooled_test_sharpe_ratio",
+            ],
+        )
 
     if _walk_forward_passes(
         mean_test_total_return=mean_test_total_return,
-        mean_test_sharpe_ratio=mean_test_sharpe_ratio,
+        pooled_test_sharpe_ratio=float(pooled_test_sharpe_ratio),
         mean_test_max_drawdown=mean_test_max_drawdown,
         mean_benchmark_max_drawdown=mean_benchmark_max_drawdown,
         mean_excess_return=mean_excess_return,
@@ -169,7 +178,7 @@ def evaluate_walk_forward_policy(
             reasons=[
                 "fold_coverage_complete",
                 "aggregate_return_positive",
-                "aggregate_sharpe_positive",
+                "aggregate_pooled_sharpe_positive",
                 "aggregate_return_excess_non_negative",
                 "aggregate_drawdown_non_worsening",
             ],
@@ -185,13 +194,13 @@ def evaluate_walk_forward_policy(
             ],
         )
 
-    if mean_test_sharpe_ratio <= 0.0:
+    if float(pooled_test_sharpe_ratio) <= 0.0:
         return _decision(
             policy_scope="walk-forward",
             verdict="rejected",
             reasons=[
                 "fold_coverage_complete",
-                "aggregate_sharpe_non_positive",
+                "aggregate_pooled_sharpe_non_positive",
             ],
         )
 
@@ -244,14 +253,14 @@ def _validation_passes(
 def _walk_forward_passes(
     *,
     mean_test_total_return: float,
-    mean_test_sharpe_ratio: float,
+    pooled_test_sharpe_ratio: float,
     mean_test_max_drawdown: float,
     mean_benchmark_max_drawdown: float,
     mean_excess_return: float,
 ) -> bool:
     return (
         mean_test_total_return > 0.0
-        and mean_test_sharpe_ratio > 0.0
+        and pooled_test_sharpe_ratio > 0.0
         and mean_excess_return >= 0.0
         and mean_test_max_drawdown >= mean_benchmark_max_drawdown
     )

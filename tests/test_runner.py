@@ -72,6 +72,7 @@ def test_run_experiment_saved_artifacts_match_returned_metrics_and_trades(
     trade_log_frame = pd.read_csv(tmp_path / "artifact_match_case" / "trade_log.csv")
 
     assert metrics_payload["trade_count"] == result.metrics.trade_count
+    assert metrics_payload["bar_count"] == result.metrics.bar_count
     assert metrics_payload["turnover"] == result.metrics.turnover
     assert metrics_payload["total_return"] == result.metrics.total_return
     assert len(trade_log_frame) == len(trades)

@@ -228,6 +228,11 @@ def _reconstruct_market_data_from_relative_rows(
         }
     ]
     previous_synthetic_close = float(anchor_row["close"])
+    # The reconstruction is path dependent: each row's OHLC values are derived
+    # from the previously synthesized close, so this stays as a sequential loop.
+    # The current high/low reconstruction is acceptable for close-only strategies,
+    # but it must be revisited before using the null model for ATR, stop-loss, or
+    # intrabar breakout logic that depends on intrabar extremes.
     for index, relative_row in enumerate(relative_rows.itertuples(index=False), start=1):
         synthetic_open = previous_synthetic_close * float(relative_row.open_rel)
         synthetic_high = previous_synthetic_close * float(relative_row.high_rel)

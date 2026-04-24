@@ -76,6 +76,7 @@ def test_aggregate_walk_forward_test_metrics_returns_expected_summary() -> None:
         "mean_test_turnover": 1.25,
         "total_test_trade_count": 6,
     }
+    assert "pooled_test_sharpe_ratio" not in summary
 
 
 def test_aggregate_walk_forward_benchmark_metrics_returns_expected_summary() -> None:

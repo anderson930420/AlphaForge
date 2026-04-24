@@ -17,6 +17,8 @@ def aggregate_walk_forward_test_metrics(folds: list[WalkForwardFoldResult]) -> d
         }
 
     test_metrics = [fold.test_result.metrics for fold in folds]
+    # The current fold contract only exposes scalar metrics, so this mean Sharpe
+    # is descriptive output rather than a pooled decision-grade statistic.
     return {
         "fold_count": len(folds),
         "mean_test_total_return": float(sum(metric.total_return for metric in test_metrics) / len(test_metrics)),

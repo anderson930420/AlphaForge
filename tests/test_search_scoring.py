@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from alphaforge.scoring import passes_thresholds, rank_results, select_best_result, select_top_results
+from alphaforge.scoring import passes_thresholds, rank_results, score_metrics, select_best_result, select_top_results
 from alphaforge.schemas import BacktestConfig, DataSpec, ExperimentResult, MetricReport, StrategySpec
 from alphaforge.search import build_strategy_specs, evaluate_strategy_search_space
 
@@ -151,3 +151,28 @@ def test_select_top_results_returns_prefix_of_canonical_ranking() -> None:
 
     assert [result.score for result in top_results] == [0.9, 0.8]
     assert select_best_result(results) == top_results[0]
+
+
+def test_score_metrics_normalizes_turnover_penalty_by_bar_count() -> None:
+    short_window_metrics = MetricReport(
+        total_return=0.2,
+        annualized_return=0.3,
+        sharpe_ratio=1.0,
+        max_drawdown=-0.08,
+        win_rate=0.6,
+        turnover=10.0,
+        trade_count=4,
+        bar_count=10,
+    )
+    long_window_metrics = MetricReport(
+        total_return=0.2,
+        annualized_return=0.3,
+        sharpe_ratio=1.0,
+        max_drawdown=-0.08,
+        win_rate=0.6,
+        turnover=20.0,
+        trade_count=4,
+        bar_count=20,
+    )
+
+    assert score_metrics(short_window_metrics) == score_metrics(long_window_metrics)

@@ -22,7 +22,8 @@ def passes_thresholds(
 
 def score_metrics(metrics: MetricReport) -> float:
     drawdown_penalty = abs(metrics.max_drawdown) * 2.0
-    turnover_penalty = metrics.turnover * 0.01
+    turnover_per_bar = metrics.turnover / max(metrics.bar_count, 1)
+    turnover_penalty = turnover_per_bar * 0.01
     return (
         metrics.annualized_return
         + (metrics.sharpe_ratio * 0.2)

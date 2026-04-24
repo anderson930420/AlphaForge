@@ -33,7 +33,7 @@ def _make_evidence(
 
 def _make_permutation_summary(
     *,
-    empirical_p_value: float = 0.04,
+    empirical_p_value: float | None = 0.04,
     null_model: str = "return_block_reconstruction",
     permutation_scope: str = "candidate_fixed",
 ) -> PermutationTestSummary:
@@ -57,8 +57,8 @@ def _make_permutation_summary(
 def test_research_policy_promotes_when_all_configured_checks_pass() -> None:
     decision = evaluate_candidate_policy(
         _make_evidence(),
-        permutation_summary=_make_permutation_summary(),
-        config=ResearchPolicyConfig(max_permutation_p_value=0.05, required_permutation_scope="candidate_fixed"),
+        permutation_summary=_make_permutation_summary(empirical_p_value=0.05),
+        config=ResearchPolicyConfig(required_permutation_scope="candidate_fixed"),
         candidate_id="candidate-1",
     )
 
@@ -66,6 +66,18 @@ def test_research_policy_promotes_when_all_configured_checks_pass() -> None:
     assert decision.verdict == "promote"
     assert all(decision.checks.values())
     assert "all configured research policy checks passed" in decision.reasons
+
+
+def test_research_policy_rejects_when_default_p_value_threshold_is_exceeded() -> None:
+    decision = evaluate_candidate_policy(
+        _make_evidence(),
+        permutation_summary=_make_permutation_summary(empirical_p_value=0.2),
+        config=ResearchPolicyConfig(required_permutation_scope="candidate_fixed"),
+    )
+
+    assert decision.verdict == "reject"
+    assert decision.checks["max_permutation_p_value"] is False
+    assert any("permutation p-value 0.2 above maximum 0.05" == reason for reason in decision.reasons)
 
 
 def test_research_policy_rejects_when_trade_count_is_below_threshold() -> None:
@@ -102,6 +114,29 @@ def test_research_policy_rejects_when_permutation_p_value_exceeds_threshold() ->
     assert decision.verdict == "reject"
     assert decision.checks["max_permutation_p_value"] is False
     assert any("permutation p-value 0.2 above maximum 0.05" == reason for reason in decision.reasons)
+
+
+def test_research_policy_rejects_when_permutation_p_value_is_missing() -> None:
+    decision = evaluate_candidate_policy(
+        _make_evidence(),
+        permutation_summary=_make_permutation_summary(empirical_p_value=None),
+        config=ResearchPolicyConfig(required_permutation_null_model="return_block_reconstruction"),
+    )
+
+    assert decision.verdict == "reject"
+    assert decision.checks["max_permutation_p_value"] is False
+    assert any("missing permutation p-value" == reason for reason in decision.reasons)
+
+
+def test_research_policy_skips_p_value_enforcement_when_explicitly_disabled() -> None:
+    decision = evaluate_candidate_policy(
+        _make_evidence(),
+        permutation_summary=_make_permutation_summary(empirical_p_value=0.2),
+        config=ResearchPolicyConfig(max_permutation_p_value=None, required_permutation_scope="candidate_fixed"),
+    )
+
+    assert decision.verdict == "promote"
+    assert "max_permutation_p_value" not in decision.checks
 
 
 def test_research_policy_rejects_when_required_null_model_mismatches() -> None:
