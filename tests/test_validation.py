@@ -9,6 +9,7 @@ import pandas as pd
 import pytest
 
 from alphaforge.cli import main
+from alphaforge.policy_types import ParameterGrid
 from alphaforge.experiment_runner import (
     ExperimentExecutionOutput,
     SearchExecutionOutput,
@@ -226,7 +227,7 @@ def test_run_validate_search_uses_train_only_for_search_and_selected_params_for_
 def test_run_validate_search_runs_permutation_diagnostic_for_selected_candidate(
     sample_market_csv: Path,
     strategy_name: str,
-    parameter_grid: dict[str, list[int]],
+    parameter_grid: ParameterGrid,
     selected_parameters: dict[str, int],
 ) -> None:
     train_best = ExperimentResult(

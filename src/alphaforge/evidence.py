@@ -3,9 +3,9 @@ from __future__ import annotations
 from typing import Any
 
 from .benchmark import normalize_benchmark_summary
+from .policy_types import CandidateVerdict
 from .schemas import (
     CandidateEvidenceSummary,
-    CandidateVerdict,
     ExperimentResult,
     MetricReport,
     PermutationTestSummary,

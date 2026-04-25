@@ -3,10 +3,10 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import Iterable
 
+from .policy_types import CandidateVerdict
 from .schemas import (
     CandidateEvidenceSummary,
     CandidatePolicyDecision,
-    CandidateVerdict,
     PolicyScope,
     WalkForwardEvidenceSummary,
 )

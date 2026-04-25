@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Literal
 
+from .policy_types import ResearchPolicyVerdict
 from .schemas import CandidateEvidenceSummary, PermutationTestSummary
 
-ResearchPolicyVerdict = Literal["promote", "reject", "blocked"]
 DEFAULT_PERMUTATION_SCOPE = "candidate_fixed"
 
 

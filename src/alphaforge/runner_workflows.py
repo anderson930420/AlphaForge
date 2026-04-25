@@ -25,6 +25,7 @@ from .experiment_runner import (
 )
 from .metrics import compute_metrics
 from .permutation import run_permutation_test_with_details
+from .policy_types import ParameterGrid
 from .policy import apply_policy_decision, evaluate_candidate_policy, evaluate_walk_forward_policy
 from .report import build_experiment_report_input
 from .research_policy import ResearchPolicyConfig, evaluate_candidate_policy as evaluate_research_policy
@@ -144,7 +145,7 @@ def run_experiment_on_market_data(
 
 def run_search_with_details_workflow(
     data_spec: DataSpec,
-    parameter_grid: dict[str, list[int]],
+    parameter_grid: ParameterGrid,
     strategy_name: str = "ma_crossover",
     backtest_config: BacktestConfig | None = None,
     output_dir: Path | None = None,
@@ -174,7 +175,7 @@ def run_search_with_details_workflow(
 def run_search_on_market_data(
     market_data: pd.DataFrame,
     data_spec: DataSpec,
-    parameter_grid: dict[str, list[int]],
+    parameter_grid: ParameterGrid,
     backtest_config: BacktestConfig,
     strategy_name: str = "ma_crossover",
     output_dir: Path | None = None,
@@ -245,7 +246,7 @@ def run_search_on_market_data(
 
 def run_validate_search_with_details_workflow(
     data_spec: DataSpec,
-    parameter_grid: dict[str, list[int]],
+    parameter_grid: ParameterGrid,
     split_ratio: float,
     strategy_name: str = "ma_crossover",
     backtest_config: BacktestConfig | None = None,
@@ -279,7 +280,7 @@ def run_validate_search_with_details_workflow(
 
 def run_validate_search_on_market_data(
     data_spec: DataSpec,
-    parameter_grid: dict[str, list[int]],
+    parameter_grid: ParameterGrid,
     split_ratio: float,
     strategy_name: str = "ma_crossover",
     backtest_config: BacktestConfig | None = None,
@@ -509,7 +510,7 @@ def run_strategy_comparison_with_details_workflow(
 
 def run_walk_forward_search_with_details_workflow(
     data_spec: DataSpec,
-    parameter_grid: dict[str, list[int]],
+    parameter_grid: ParameterGrid,
     train_size: int,
     test_size: int,
     step_size: int,
@@ -543,7 +544,7 @@ def run_walk_forward_search_with_details_workflow(
 
 def run_walk_forward_search_on_market_data(
     data_spec: DataSpec,
-    parameter_grid: dict[str, list[int]],
+    parameter_grid: ParameterGrid,
     train_size: int,
     test_size: int,
     step_size: int,

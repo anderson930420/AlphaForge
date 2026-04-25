@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from .policy_types import ParameterGrid
 from .report import ExperimentReportInput
 from .schemas import (
     BacktestConfig,
@@ -120,7 +121,7 @@ def run_experiment_with_artifacts(
 
 def run_search(
     data_spec: DataSpec,
-    parameter_grid: dict[str, list[int]],
+    parameter_grid: ParameterGrid,
     strategy_name: str = "ma_crossover",
     backtest_config: BacktestConfig | None = None,
     output_dir: Path | None = None,
@@ -146,7 +147,7 @@ def run_search(
 
 def run_search_with_details(
     data_spec: DataSpec,
-    parameter_grid: dict[str, list[int]],
+    parameter_grid: ParameterGrid,
     strategy_name: str = "ma_crossover",
     backtest_config: BacktestConfig | None = None,
     output_dir: Path | None = None,
@@ -174,7 +175,7 @@ def run_search_with_details(
 
 def run_validate_search(
     data_spec: DataSpec,
-    parameter_grid: dict[str, list[int]],
+    parameter_grid: ParameterGrid,
     split_ratio: float,
     strategy_name: str = "ma_crossover",
     backtest_config: BacktestConfig | None = None,
@@ -204,7 +205,7 @@ def run_validate_search(
 
 def run_validate_search_with_details(
     data_spec: DataSpec,
-    parameter_grid: dict[str, list[int]],
+    parameter_grid: ParameterGrid,
     split_ratio: float,
     strategy_name: str = "ma_crossover",
     backtest_config: BacktestConfig | None = None,
@@ -244,7 +245,7 @@ def run_strategy_comparison_with_details(
 
 def run_walk_forward_search(
     data_spec: DataSpec,
-    parameter_grid: dict[str, list[int]],
+    parameter_grid: ParameterGrid,
     train_size: int,
     test_size: int,
     step_size: int,
@@ -274,7 +275,7 @@ def run_walk_forward_search(
 
 def run_walk_forward_search_with_details(
     data_spec: DataSpec,
-    parameter_grid: dict[str, list[int]],
+    parameter_grid: ParameterGrid,
     train_size: int,
     test_size: int,
     step_size: int,

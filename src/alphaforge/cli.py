@@ -13,6 +13,7 @@ from .experiment_runner import (
     run_validate_search_with_details,
     run_walk_forward_search_with_details,
 )
+from .policy_types import ParameterGrid
 from .permutation import run_permutation_test_with_details
 from .permutation import DEFAULT_PERMUTATION_TARGET_METRIC_NAME, SUPPORTED_PERMUTATION_TARGET_METRICS
 from .report import render_experiment_report, save_experiment_report
@@ -400,7 +401,7 @@ def _build_strategy_spec_from_args(args: argparse.Namespace, parser: argparse.Ar
 def _build_strategy_parameter_grid_from_args(
     args: argparse.Namespace,
     parser: argparse.ArgumentParser,
-) -> dict[str, list[int]]:
+) -> ParameterGrid:
     if args.strategy == "ma_crossover":
         return {
             "short_window": args.short_windows,

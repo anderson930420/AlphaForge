@@ -12,6 +12,7 @@ from pathlib import Path
 import pandas as pd
 
 from . import config
+from .policy_types import ParameterGrid
 from .schemas import BacktestConfig, StrategySpec
 from .strategy.base import Strategy
 from .strategy.breakout import BreakoutStrategy
@@ -82,7 +83,7 @@ def build_holdout_metadata(market_data: pd.DataFrame) -> dict[str, object]:
     }
 
 
-def validate_train_windows(strategy_name: str, train_data: pd.DataFrame, parameter_grid: dict[str, list[int]]) -> None:
+def validate_train_windows(strategy_name: str, train_data: pd.DataFrame, parameter_grid: ParameterGrid) -> None:
     """Ensure the train segment can support the requested family-specific history length."""
     required_parameter_name = _required_history_parameter_name(strategy_name)
     window_values = parameter_grid.get(required_parameter_name, [])

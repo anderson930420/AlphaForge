@@ -6,6 +6,8 @@ from typing import Any, Literal
 
 import pandas as pd
 
+from .policy_types import CandidateVerdict, ParameterGrid, ResearchPolicyVerdict
+
 # AlphaForge intentionally uses pandas.DataFrame as the shared in-memory
 # equity-curve interface. Runtime-owned column contracts live in backtest.py.
 EquityCurveFrame = pd.DataFrame
@@ -73,7 +75,6 @@ class ExperimentResult:
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
-CandidateVerdict = Literal["candidate", "validated", "rejected", "inconclusive"]
 PolicyScope = Literal["validate-search", "walk-forward"]
 ValidationPermutationStatus = Literal["skipped", "completed_passed", "completed_failed", "error"]
 
@@ -165,7 +166,7 @@ class ValidationResult:
 @dataclass(frozen=True)
 class StrategyFamilySearchConfig:
     strategy_name: str
-    parameter_grid: dict[str, list[int]]
+    parameter_grid: ParameterGrid
 
 
 @dataclass(frozen=True)
@@ -191,7 +192,7 @@ class StrategyComparisonResult:
     train_score: float
     test_score: float
     permutation_status: ValidationPermutationStatus
-    research_policy_verdict: str | None = None
+    research_policy_verdict: ResearchPolicyVerdict | None = None
     candidate_policy_verdict: CandidateVerdict | None = None
     artifact_paths: dict[str, str] = field(default_factory=dict)
 

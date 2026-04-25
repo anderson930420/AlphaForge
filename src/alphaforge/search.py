@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from itertools import product
 from typing import Any
 
+from .policy_types import ParameterGrid
 from .schemas import StrategySpec
 from .strategy.breakout import validate_candidate_parameters as validate_breakout_candidate_parameters
 from .strategy.ma_crossover import validate_candidate_parameters as validate_ma_crossover_candidate_parameters
@@ -34,14 +35,14 @@ class SearchSpaceEvaluation:
         return len(self.invalid_combinations)
 
 
-def grid_search_parameters(parameter_grid: dict[str, list[Any]]) -> list[dict[str, Any]]:
+def grid_search_parameters(parameter_grid: ParameterGrid) -> list[dict[str, Any]]:
     if not parameter_grid:
         return [{}]
     keys = list(parameter_grid)
     return [dict(zip(keys, values, strict=True)) for values in product(*(parameter_grid[key] for key in keys))]
 
 
-def evaluate_strategy_search_space(strategy_name: str, parameter_grid: dict[str, list[Any]]) -> SearchSpaceEvaluation:
+def evaluate_strategy_search_space(strategy_name: str, parameter_grid: ParameterGrid) -> SearchSpaceEvaluation:
     parameter_names = tuple(parameter_grid)
     attempted = grid_search_parameters(parameter_grid)
     strategy_specs: list[StrategySpec] = []
@@ -64,12 +65,12 @@ def evaluate_strategy_search_space(strategy_name: str, parameter_grid: dict[str,
     )
 
 
-def build_strategy_specs(strategy_name: str, parameter_grid: dict[str, list[Any]]) -> list[StrategySpec]:
+def build_strategy_specs(strategy_name: str, parameter_grid: ParameterGrid) -> list[StrategySpec]:
     evaluation = evaluate_strategy_search_space(strategy_name, parameter_grid)
     return list(evaluation.strategy_specs)
 
 
-def _validate_search_parameter_grid(strategy_name: str, parameter_grid: dict[str, list[Any]]) -> None:
+def _validate_search_parameter_grid(strategy_name: str, parameter_grid: ParameterGrid) -> None:
     expected_names = SEARCH_PARAMETER_NAMES_BY_STRATEGY.get(strategy_name)
     if expected_names is None:
         raise ValueError(f"Unsupported strategy: {strategy_name}")
