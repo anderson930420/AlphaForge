@@ -79,7 +79,7 @@ from .storage import (
     save_walk_forward_result,
     serialize_validation_artifact_receipt,
 )
-from .strategy_registry import get_strategy_registration
+from .strategy_registry import validate_parameter_grid_for_strategy
 from .walk_forward_aggregation import aggregate_walk_forward_benchmark_metrics, aggregate_walk_forward_test_metrics
 
 
@@ -806,7 +806,7 @@ def _validate_strategy_comparison_families(comparison_config: StrategyComparison
         raise ValueError("Strategy comparison requires at least one strategy family")
     seen: set[str] = set()
     for strategy_family in comparison_config.strategy_families:
-        get_strategy_registration(strategy_family.strategy_name)
+        validate_parameter_grid_for_strategy(strategy_family.strategy_name, strategy_family.parameter_grid)
         if strategy_family.strategy_name in seen:
             raise ValueError(f"Duplicate strategy family in comparison: {strategy_family.strategy_name}")
         seen.add(strategy_family.strategy_name)

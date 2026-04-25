@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Callable
 
+from .policy_types import ParameterGrid
 from .schemas import StrategySpec
 from .strategy.base import Strategy
 from .strategy.breakout import BreakoutStrategy
@@ -49,3 +50,17 @@ def get_strategy_registration(strategy_name: str) -> StrategyFamilyRegistration:
 def build_strategy_from_registry(strategy_spec: StrategySpec) -> Strategy:
     registration = get_strategy_registration(strategy_spec.name)
     return registration.builder(strategy_spec)
+
+
+def validate_parameter_grid_for_strategy(strategy_name: str, parameter_grid: ParameterGrid) -> None:
+    registration = get_strategy_registration(strategy_name)
+    expected = set(registration.parameter_names)
+    provided = set(parameter_grid)
+    missing = sorted(expected - provided)
+    unexpected = sorted(provided - expected)
+    if missing:
+        names = ", ".join(missing)
+        raise ValueError(f"{strategy_name} parameter grid is missing required parameters: {names}")
+    if unexpected:
+        names = ", ".join(unexpected)
+        raise ValueError(f"{strategy_name} parameter grid contains unexpected parameters: {names}")

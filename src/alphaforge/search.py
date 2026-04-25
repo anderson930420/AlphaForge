@@ -6,7 +6,7 @@ from typing import Any
 
 from .policy_types import ParameterGrid
 from .schemas import StrategySpec
-from .strategy_registry import build_strategy_from_registry, get_strategy_registration
+from .strategy_registry import build_strategy_from_registry, validate_parameter_grid_for_strategy
 
 
 @dataclass(frozen=True)
@@ -39,7 +39,7 @@ def evaluate_strategy_search_space(strategy_name: str, parameter_grid: Parameter
     strategy_specs: list[StrategySpec] = []
     invalid_combinations: list[dict[str, Any]] = []
 
-    _validate_search_parameter_grid(strategy_name, parameter_grid)
+    validate_parameter_grid_for_strategy(strategy_name, parameter_grid)
     for params in attempted:
         if not _validate_strategy_candidate(strategy_name, params):
             invalid_combinations.append(dict(params))
@@ -59,20 +59,6 @@ def evaluate_strategy_search_space(strategy_name: str, parameter_grid: Parameter
 def build_strategy_specs(strategy_name: str, parameter_grid: ParameterGrid) -> list[StrategySpec]:
     evaluation = evaluate_strategy_search_space(strategy_name, parameter_grid)
     return list(evaluation.strategy_specs)
-
-
-def _validate_search_parameter_grid(strategy_name: str, parameter_grid: ParameterGrid) -> None:
-    registration = get_strategy_registration(strategy_name)
-    expected_names = registration.parameter_names
-    expected = set(expected_names)
-    provided = set(parameter_grid)
-    missing = sorted(expected - provided)
-    unexpected = sorted(provided - expected)
-    family_label = "MA crossover" if strategy_name == "ma_crossover" else "breakout"
-    if missing:
-        raise ValueError(f"{family_label} search requires parameter grids for: {', '.join(missing)}")
-    if unexpected:
-        raise ValueError(f"{family_label} search does not accept parameters: {', '.join(unexpected)}")
 
 
 def _validate_strategy_candidate(strategy_name: str, parameters: dict[str, Any]) -> bool:

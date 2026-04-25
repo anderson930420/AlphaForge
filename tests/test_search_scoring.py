@@ -47,7 +47,7 @@ def test_evaluate_strategy_search_space_reports_attempted_valid_and_invalid_coun
 
 
 def test_evaluate_strategy_search_space_rejects_missing_ma_parameter_grid_keys() -> None:
-    with pytest.raises(ValueError, match="requires parameter grids for: long_window"):
+    with pytest.raises(ValueError, match="ma_crossover.*missing required parameters: long_window"):
         evaluate_strategy_search_space("ma_crossover", {"short_window": [2, 3]})
 
 
