@@ -60,7 +60,7 @@ from .schemas import (
     ValidationPermutationStatus,
 )
 from .scoring import RANKING_SCORE_FIELD, rank_results, score_metrics, select_best_result, select_top_results
-from .search import SUPPORTED_STRATEGY_FAMILIES, SearchSpaceEvaluation, evaluate_strategy_search_space
+from .search import SearchSpaceEvaluation, evaluate_strategy_search_space
 from .search_reporting import save_best_search_report, save_search_comparison_report
 from .storage import (
     ArtifactReceipt,
@@ -79,6 +79,7 @@ from .storage import (
     save_walk_forward_result,
     serialize_validation_artifact_receipt,
 )
+from .strategy_registry import get_strategy_registration
 from .walk_forward_aggregation import aggregate_walk_forward_benchmark_metrics, aggregate_walk_forward_test_metrics
 
 
@@ -805,8 +806,7 @@ def _validate_strategy_comparison_families(comparison_config: StrategyComparison
         raise ValueError("Strategy comparison requires at least one strategy family")
     seen: set[str] = set()
     for strategy_family in comparison_config.strategy_families:
-        if strategy_family.strategy_name not in SUPPORTED_STRATEGY_FAMILIES:
-            raise ValueError(f"Unsupported strategy: {strategy_family.strategy_name}")
+        get_strategy_registration(strategy_family.strategy_name)
         if strategy_family.strategy_name in seen:
             raise ValueError(f"Duplicate strategy family in comparison: {strategy_family.strategy_name}")
         seen.add(strategy_family.strategy_name)

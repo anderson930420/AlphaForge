@@ -6,16 +6,7 @@ from typing import Any
 
 from .policy_types import ParameterGrid
 from .schemas import StrategySpec
-from .strategy.breakout import validate_candidate_parameters as validate_breakout_candidate_parameters
-from .strategy.ma_crossover import validate_candidate_parameters as validate_ma_crossover_candidate_parameters
-
-SUPPORTED_STRATEGY_FAMILIES = ("ma_crossover", "breakout")
-MA_CROSSOVER_SEARCH_PARAMETER_NAMES = ("short_window", "long_window")
-BREAKOUT_SEARCH_PARAMETER_NAMES = ("lookback_window",)
-SEARCH_PARAMETER_NAMES_BY_STRATEGY = {
-    "ma_crossover": MA_CROSSOVER_SEARCH_PARAMETER_NAMES,
-    "breakout": BREAKOUT_SEARCH_PARAMETER_NAMES,
-}
+from .strategy_registry import build_strategy_from_registry, get_strategy_registration
 
 
 @dataclass(frozen=True)
@@ -71,9 +62,8 @@ def build_strategy_specs(strategy_name: str, parameter_grid: ParameterGrid) -> l
 
 
 def _validate_search_parameter_grid(strategy_name: str, parameter_grid: ParameterGrid) -> None:
-    expected_names = SEARCH_PARAMETER_NAMES_BY_STRATEGY.get(strategy_name)
-    if expected_names is None:
-        raise ValueError(f"Unsupported strategy: {strategy_name}")
+    registration = get_strategy_registration(strategy_name)
+    expected_names = registration.parameter_names
     expected = set(expected_names)
     provided = set(parameter_grid)
     missing = sorted(expected - provided)
@@ -86,14 +76,8 @@ def _validate_search_parameter_grid(strategy_name: str, parameter_grid: Paramete
 
 
 def _validate_strategy_candidate(strategy_name: str, parameters: dict[str, Any]) -> bool:
-    validator = {
-        "ma_crossover": validate_ma_crossover_candidate_parameters,
-        "breakout": validate_breakout_candidate_parameters,
-    }.get(strategy_name)
-    if validator is None:
-        raise ValueError(f"Unsupported strategy: {strategy_name}")
     try:
-        validator(parameters)
+        build_strategy_from_registry(StrategySpec(name=strategy_name, parameters=parameters))
     except ValueError:
         return False
     return True

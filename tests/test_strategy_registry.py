@@ -1,0 +1,101 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+import pandas as pd
+import pytest
+
+from alphaforge.runner_protocols import build_strategy, validate_train_windows
+from alphaforge.schemas import StrategySpec
+from alphaforge.search import evaluate_strategy_search_space
+from alphaforge.strategy.breakout import BreakoutStrategy
+from alphaforge.strategy.ma_crossover import MovingAverageCrossoverStrategy
+from alphaforge.strategy_registry import (
+    build_strategy_from_registry,
+    get_strategy_registration,
+    supported_strategy_families,
+)
+
+
+def test_supported_strategy_families_are_exact_current_registry_set() -> None:
+    assert supported_strategy_families() == ("ma_crossover", "breakout")
+
+
+def test_registry_exposes_expected_ma_parameter_metadata() -> None:
+    registration = get_strategy_registration("ma_crossover")
+
+    assert registration.name == "ma_crossover"
+    assert registration.parameter_names == ("short_window", "long_window")
+    assert registration.integer_window_parameters == ("long_window",)
+
+
+def test_registry_exposes_expected_breakout_parameter_metadata() -> None:
+    registration = get_strategy_registration("breakout")
+
+    assert registration.name == "breakout"
+    assert registration.parameter_names == ("lookback_window",)
+    assert registration.integer_window_parameters == ("lookback_window",)
+
+
+def test_registry_unknown_strategy_error_names_supported_families() -> None:
+    with pytest.raises(ValueError) as exc_info:
+        get_strategy_registration("unknown_strategy")
+
+    message = str(exc_info.value)
+    assert "unknown_strategy" in message
+    assert "ma_crossover" in message
+    assert "breakout" in message
+
+
+def test_registry_backed_construction_matches_existing_strategy_behavior() -> None:
+    market_data = pd.DataFrame(
+        {
+            "datetime": pd.date_range("2024-01-01", periods=5, freq="D"),
+            "open": [10.0, 11.0, 12.0, 13.0, 14.0],
+            "high": [10.5, 11.5, 12.5, 13.5, 14.5],
+            "low": [9.5, 10.5, 11.5, 12.5, 13.5],
+            "close": [10.0, 11.0, 12.0, 13.0, 14.0],
+            "volume": [100, 110, 120, 130, 140],
+        }
+    )
+    ma_spec = StrategySpec(name="ma_crossover", parameters={"short_window": 2, "long_window": 3})
+    breakout_spec = StrategySpec(name="breakout", parameters={"lookback_window": 2})
+
+    ma_strategy = build_strategy_from_registry(ma_spec)
+    breakout_strategy = build_strategy_from_registry(breakout_spec)
+
+    assert isinstance(ma_strategy, MovingAverageCrossoverStrategy)
+    assert isinstance(breakout_strategy, BreakoutStrategy)
+    assert ma_strategy.generate_signals(market_data).equals(MovingAverageCrossoverStrategy(ma_spec).generate_signals(market_data))
+    assert breakout_strategy.generate_signals(market_data).equals(BreakoutStrategy(breakout_spec).generate_signals(market_data))
+    assert isinstance(build_strategy(ma_spec), MovingAverageCrossoverStrategy)
+
+
+def test_search_space_evaluation_uses_registry_for_existing_families() -> None:
+    ma_evaluation = evaluate_strategy_search_space("ma_crossover", {"short_window": [2], "long_window": [3]})
+    breakout_evaluation = evaluate_strategy_search_space("breakout", {"lookback_window": [2]})
+
+    assert ma_evaluation.parameter_names == ("short_window", "long_window")
+    assert [spec.name for spec in ma_evaluation.strategy_specs] == ["ma_crossover"]
+    assert breakout_evaluation.parameter_names == ("lookback_window",)
+    assert [spec.name for spec in breakout_evaluation.strategy_specs] == ["breakout"]
+
+
+def test_train_window_validation_uses_registry_integer_window_metadata() -> None:
+    train_data = pd.DataFrame({"datetime": pd.date_range("2024-01-01", periods=3, freq="D")})
+
+    with pytest.raises(ValueError, match="long_window"):
+        validate_train_windows("ma_crossover", train_data, {"short_window": [2], "long_window": [5]})
+    with pytest.raises(ValueError, match="lookback_window"):
+        validate_train_windows("breakout", train_data, {"lookback_window": [5]})
+
+
+def test_no_stale_supported_strategy_family_source_outside_registry() -> None:
+    source_root = Path(__file__).resolve().parents[1] / "src" / "alphaforge"
+    offenders = [
+        path
+        for path in source_root.rglob("*.py")
+        if path.name != "strategy_registry.py" and "SUPPORTED_STRATEGY_FAMILIES" in path.read_text(encoding="utf-8")
+    ]
+
+    assert offenders == []

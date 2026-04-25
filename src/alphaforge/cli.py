@@ -27,7 +27,7 @@ from .schemas import (
     ValidationPermutationConfig,
     ValidationSplitConfig,
 )
-from .search import SUPPORTED_STRATEGY_FAMILIES
+from .strategy_registry import supported_strategy_families
 from .storage import (
     ensure_output_dir,
     serialize_artifact_receipt,
@@ -43,7 +43,8 @@ from .storage import (
     REPORT_FILENAME,
 )
 
-DEFAULT_COMPARISON_STRATEGIES = ["ma_crossover", "breakout"]
+STRATEGY_FAMILY_CHOICES = supported_strategy_families()
+DEFAULT_COMPARISON_STRATEGIES = list(STRATEGY_FAMILY_CHOICES)
 DEFAULT_BREAKOUT_LOOKBACK_WINDOWS = [10, 20, 30, 40, 60]
 
 
@@ -53,7 +54,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     single = subparsers.add_parser("run", help="Run a single strategy experiment")
     _add_common_arguments(single)
-    single.add_argument("--strategy", type=str, choices=SUPPORTED_STRATEGY_FAMILIES, default="ma_crossover")
+    single.add_argument("--strategy", type=str, choices=STRATEGY_FAMILY_CHOICES, default="ma_crossover")
     single.add_argument("--short-window", type=int, default=None)
     single.add_argument("--long-window", type=int, default=None)
     single.add_argument("--lookback-window", type=int, default=None)
@@ -62,7 +63,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     search = subparsers.add_parser("search", help="Run grid search over a selected strategy family")
     _add_common_arguments(search)
-    search.add_argument("--strategy", type=str, choices=SUPPORTED_STRATEGY_FAMILIES, default="ma_crossover")
+    search.add_argument("--strategy", type=str, choices=STRATEGY_FAMILY_CHOICES, default="ma_crossover")
     search.add_argument("--short-windows", type=int, nargs="+", default=config.SHORT_WINDOW_RANGE)
     search.add_argument("--long-windows", type=int, nargs="+", default=config.LONG_WINDOW_RANGE)
     search.add_argument("--lookback-windows", type=int, nargs="+", default=None)
@@ -73,7 +74,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     validate_search = subparsers.add_parser("validate-search", help="Run train/test validation for a selected strategy family")
     _add_common_arguments(validate_search)
-    validate_search.add_argument("--strategy", type=str, choices=SUPPORTED_STRATEGY_FAMILIES, default="ma_crossover")
+    validate_search.add_argument("--strategy", type=str, choices=STRATEGY_FAMILY_CHOICES, default="ma_crossover")
     validate_search.add_argument("--short-windows", type=int, nargs="+", default=config.SHORT_WINDOW_RANGE)
     validate_search.add_argument("--long-windows", type=int, nargs="+", default=config.LONG_WINDOW_RANGE)
     validate_search.add_argument("--lookback-windows", type=int, nargs="+", default=None)
@@ -98,7 +99,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_common_arguments(compare_strategies)
     compare_strategies.add_argument("--split-ratio", type=float, required=True)
-    compare_strategies.add_argument("--strategies", type=str, nargs="+", choices=SUPPORTED_STRATEGY_FAMILIES, default=None)
+    compare_strategies.add_argument("--strategies", type=str, nargs="+", choices=STRATEGY_FAMILY_CHOICES, default=None)
     compare_strategies.add_argument("--short-windows", type=int, nargs="+", default=config.SHORT_WINDOW_RANGE)
     compare_strategies.add_argument("--long-windows", type=int, nargs="+", default=config.LONG_WINDOW_RANGE)
     compare_strategies.add_argument("--lookback-windows", type=int, nargs="+", default=DEFAULT_BREAKOUT_LOOKBACK_WINDOWS)
@@ -118,7 +119,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     walk_forward = subparsers.add_parser("walk-forward", help="Run walk-forward validation for a selected strategy family")
     _add_common_arguments(walk_forward)
-    walk_forward.add_argument("--strategy", type=str, choices=SUPPORTED_STRATEGY_FAMILIES, default="ma_crossover")
+    walk_forward.add_argument("--strategy", type=str, choices=STRATEGY_FAMILY_CHOICES, default="ma_crossover")
     walk_forward.add_argument("--short-windows", type=int, nargs="+", default=config.SHORT_WINDOW_RANGE)
     walk_forward.add_argument("--long-windows", type=int, nargs="+", default=config.LONG_WINDOW_RANGE)
     walk_forward.add_argument("--lookback-windows", type=int, nargs="+", default=None)
@@ -134,7 +135,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Run a permutation/null-comparison diagnostic for a fixed strategy candidate",
     )
     _add_common_arguments(permutation_test)
-    permutation_test.add_argument("--strategy", type=str, choices=SUPPORTED_STRATEGY_FAMILIES, default="ma_crossover")
+    permutation_test.add_argument("--strategy", type=str, choices=STRATEGY_FAMILY_CHOICES, default="ma_crossover")
     permutation_test.add_argument("--short-window", type=int, default=None)
     permutation_test.add_argument("--long-window", type=int, default=None)
     permutation_test.add_argument("--lookback-window", type=int, default=None)

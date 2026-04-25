@@ -8,7 +8,6 @@ import pandas as pd
 from .backtest import run_backtest
 from .data_loader import load_market_data, split_holdout_data
 from .metrics import compute_metrics
-from .search import SUPPORTED_STRATEGY_FAMILIES
 from .schemas import (
     BacktestConfig,
     DataSpec,
@@ -21,9 +20,7 @@ from .schemas import (
 )
 from .scoring import score_metrics
 from .storage import save_permutation_test_result
-from .strategy.base import Strategy
-from .strategy.breakout import BreakoutStrategy
-from .strategy.ma_crossover import MovingAverageCrossoverStrategy
+from .strategy_registry import build_strategy_from_registry
 
 SUPPORTED_PERMUTATION_TARGET_METRICS: tuple[PermutationTargetMetricName, ...] = ("score", "sharpe_ratio")
 DEFAULT_PERMUTATION_TARGET_METRIC_NAME: PermutationTargetMetricName = "score"
@@ -159,7 +156,7 @@ def _evaluate_candidate_on_market_data(
     strategy_spec: StrategySpec,
     backtest_config: BacktestConfig,
 ) -> ExperimentResult:
-    strategy = _build_strategy(strategy_spec)
+    strategy = build_strategy_from_registry(strategy_spec)
     target_positions = strategy.generate_signals(market_data)
     equity_curve, trade_log = run_backtest(market_data, target_positions, backtest_config)
     metrics = compute_metrics(equity_curve, trade_log, backtest_config.annualization_factor)
@@ -270,15 +267,6 @@ def _validate_positive_finite_ohlc(market_data: pd.DataFrame) -> None:
         raise ValueError("Permutation null construction requires finite OHLC prices")
     if (ohlc_values <= 0.0).any():
         raise ValueError("Permutation null construction requires positive OHLC prices")
-
-
-def _build_strategy(strategy_spec: StrategySpec) -> Strategy:
-    if strategy_spec.name == "ma_crossover":
-        return MovingAverageCrossoverStrategy(strategy_spec)
-    if strategy_spec.name == "breakout":
-        return BreakoutStrategy(strategy_spec)
-    supported = ", ".join(SUPPORTED_STRATEGY_FAMILIES)
-    raise ValueError(f"Unsupported strategy: {strategy_spec.name}. Supported strategies: {supported}")
 
 
 def _default_backtest_config() -> BacktestConfig:
