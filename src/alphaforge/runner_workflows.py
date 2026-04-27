@@ -18,6 +18,7 @@ from .data_loader import load_market_data, split_holdout_data
 from .evidence import build_candidate_evidence_summary, build_walk_forward_evidence_summary
 from .experiment_runner import (
     ExperimentExecutionOutput,
+    ResearchProtocolExecutionOutput,
     SearchExecutionOutput,
     StrategyComparisonExecutionOutput,
     ValidationExecutionOutput,
@@ -36,6 +37,7 @@ from .runner_protocols import (
     build_validation_metadata,
     generate_walk_forward_folds,
     resolve_backtest_config,
+    split_development_holdout_data,
     split_market_data_by_ratio,
     validate_train_windows,
     workflow_root,
@@ -44,6 +46,9 @@ from .schemas import (
     BacktestConfig,
     DataSpec,
     ExperimentResult,
+    ResearchProtocolPlan,
+    ResearchProtocolSummary,
+    ResearchValidationConfig,
     SearchSummary,
     StrategySpec,
     StrategyComparisonConfig,
@@ -73,11 +78,16 @@ from .storage import (
     WalkForwardArtifactReceipt,
     save_ranked_results_artifact,
     save_ranked_results_with_columns,
+    save_research_protocol_summary,
     save_single_experiment,
     save_strategy_comparison_summary,
     save_validation_result,
     save_walk_forward_result,
+    serialize_artifact_receipt,
+    serialize_permutation_test_artifact_receipt,
+    serialize_search_artifact_receipt,
     serialize_validation_artifact_receipt,
+    serialize_walk_forward_artifact_receipt,
 )
 from .strategy_registry import validate_parameter_grid_for_strategy
 from .walk_forward_aggregation import aggregate_walk_forward_benchmark_metrics, aggregate_walk_forward_test_metrics
@@ -509,6 +519,150 @@ def run_strategy_comparison_with_details_workflow(
     )
 
 
+def run_research_validation_protocol_with_details_workflow(
+    research_config: ResearchValidationConfig,
+) -> ResearchProtocolExecutionOutput:
+    backtest_config = resolve_backtest_config(research_config.backtest_config)
+    market_data = load_market_data(research_config.data_spec)
+    development_data, holdout_data = split_development_holdout_data(
+        market_data,
+        research_config.development_period,
+        research_config.holdout_period,
+    )
+    validate_train_windows(research_config.strategy_name, development_data, research_config.parameter_grid)
+
+    protocol_root = workflow_root(research_config.output_dir, research_config.experiment_name)
+    development_search_execution = run_search_on_market_data(
+        market_data=development_data,
+        data_spec=research_config.data_spec,
+        parameter_grid=research_config.parameter_grid,
+        strategy_name=research_config.strategy_name,
+        backtest_config=backtest_config,
+        output_dir=protocol_root,
+        experiment_name="development_search",
+        max_drawdown_cap=research_config.max_drawdown_cap,
+        min_trade_count=research_config.min_trade_count,
+        generate_best_report=False,
+    )
+    ranked = development_search_execution.ranked_results
+    if not ranked:
+        raise ValueError("No development-period results remain after ranking and threshold filters")
+    selected_result = select_best_result(ranked)
+    assert selected_result is not None
+    selected_strategy_spec = selected_result.strategy_spec
+
+    walk_forward_result, walk_forward_artifact_receipt = run_walk_forward_search_on_market_data(
+        data_spec=research_config.data_spec,
+        parameter_grid=research_config.parameter_grid,
+        train_size=research_config.walk_forward_config.train_size,
+        test_size=research_config.walk_forward_config.test_size,
+        step_size=research_config.walk_forward_config.step_size,
+        strategy_name=research_config.strategy_name,
+        backtest_config=backtest_config,
+        output_dir=protocol_root,
+        experiment_name="development_walk_forward",
+        max_drawdown_cap=research_config.max_drawdown_cap,
+        min_trade_count=research_config.min_trade_count,
+        market_data=development_data,
+    )
+
+    permutation_summary = None
+    permutation_artifact_receipt = None
+    if research_config.permutation_config is not None and research_config.permutation_config.enabled:
+        permutation_execution = run_permutation_test_with_details(
+            data_spec=research_config.data_spec,
+            strategy_spec=selected_strategy_spec,
+            permutation_count=research_config.permutation_config.permutations,
+            block_size=research_config.permutation_config.block_size,
+            target_metric_name=research_config.permutation_config.target_metric_name,
+            seed=research_config.permutation_config.seed,
+            backtest_config=backtest_config,
+            output_dir=protocol_root,
+            experiment_name="development_permutation_test",
+            market_data=development_data,
+            permutation_scope=research_config.permutation_config.scope,
+        )
+        permutation_summary = permutation_execution.permutation_test_summary
+        permutation_artifact_receipt = permutation_execution.artifact_receipt
+
+    transaction_cost_assumptions = {
+        "initial_capital": backtest_config.initial_capital,
+        "fee_rate": backtest_config.fee_rate,
+        "slippage_rate": backtest_config.slippage_rate,
+        "annualization_factor": backtest_config.annualization_factor,
+    }
+    selection_rule = "highest_development_score_after_configured_filters"
+    frozen_plan = ResearchProtocolPlan(
+        strategy_family=selected_strategy_spec.name,
+        selected_parameters=dict(selected_strategy_spec.parameters),
+        parameter_selection_rule=selection_rule,
+        scoring_formula_name=RANKING_SCORE_FIELD,
+        transaction_cost_assumptions=transaction_cost_assumptions,
+        development_period=research_config.development_period,
+        holdout_period=research_config.holdout_period,
+        search_space_size=development_search_execution.summary.attempted_combinations,
+        tried_strategy_family_count=1,
+        tried_parameter_combination_count=development_search_execution.summary.result_count,
+        walk_forward_config=research_config.walk_forward_config,
+        permutation_config=research_config.permutation_config,
+    )
+
+    final_holdout_execution = run_experiment_on_market_data(
+        market_data=holdout_data,
+        data_spec=research_config.data_spec,
+        strategy_spec=selected_strategy_spec,
+        backtest_config=backtest_config,
+        output_dir=protocol_root,
+        experiment_name="final_holdout",
+    )
+    artifact_paths = _build_research_protocol_artifact_paths(
+        protocol_root=protocol_root,
+        development_search_receipt=development_search_execution.artifact_receipt,
+        walk_forward_receipt=walk_forward_artifact_receipt,
+        permutation_receipt=permutation_artifact_receipt,
+        final_holdout_receipt=final_holdout_execution.artifact_receipt,
+    )
+    summary = ResearchProtocolSummary(
+        data_spec=research_config.data_spec,
+        backtest_config=backtest_config,
+        development_period=research_config.development_period,
+        holdout_period=research_config.holdout_period,
+        development_row_count=len(development_data),
+        holdout_row_count=len(holdout_data),
+        selected_strategy=selected_strategy_spec.name,
+        selected_parameters=dict(selected_strategy_spec.parameters),
+        selection_rule=selection_rule,
+        scoring_formula_name=RANKING_SCORE_FIELD,
+        development_search_data_window=_build_protocol_data_window("development_period", development_data),
+        walk_forward_data_window=_build_protocol_data_window("development_period_oos", development_data),
+        final_holdout_data_window=_build_protocol_data_window("final_holdout", holdout_data),
+        search_space_size=development_search_execution.summary.attempted_combinations,
+        tried_strategy_family_count=1,
+        tried_parameter_combination_count=development_search_execution.summary.result_count,
+        development_search_summary=development_search_execution.summary,
+        walk_forward_summary=walk_forward_result,
+        permutation_summary=permutation_summary,
+        frozen_plan=frozen_plan,
+        final_holdout_result=final_holdout_execution.result,
+        transaction_cost_assumptions=transaction_cost_assumptions,
+        artifact_paths=artifact_paths,
+        metadata={
+            "protocol": "research_validation_protocol",
+            "development_evidence_label": "development_period",
+            "walk_forward_oos_label": "development_period_oos",
+            "final_holdout_evidence_label": "final_holdout",
+            "holdout_feedback_rule": "final_holdout_metrics_do_not_update_frozen_plan",
+        },
+    )
+    artifact_receipt = None
+    if protocol_root is not None:
+        summary, artifact_receipt = save_research_protocol_summary(protocol_root, summary)
+    return ResearchProtocolExecutionOutput(
+        research_protocol_summary=summary,
+        artifact_receipt=artifact_receipt,
+    )
+
+
 def run_walk_forward_search_with_details_workflow(
     data_spec: DataSpec,
     parameter_grid: ParameterGrid,
@@ -556,9 +710,11 @@ def run_walk_forward_search_on_market_data(
     max_drawdown_cap: float | None = None,
     min_trade_count: int | None = None,
     holdout_cutoff_date: str | None = None,
+    market_data: pd.DataFrame | None = None,
 ) -> tuple[WalkForwardResult, WalkForwardArtifactReceipt | None]:
     backtest_config = resolve_backtest_config(backtest_config)
-    market_data = load_market_data(data_spec)
+    if market_data is None:
+        market_data = load_market_data(data_spec)
     market_data = _apply_holdout_cutoff_if_requested(market_data, holdout_cutoff_date)
     folds = generate_walk_forward_folds(market_data, train_size=train_size, test_size=test_size, step_size=step_size)
     validate_train_windows(strategy_name, market_data.iloc[:train_size].reset_index(drop=True), parameter_grid)
@@ -701,6 +857,41 @@ def _build_search_summary(search_space: SearchSpaceEvaluation, ranked_results: l
         best_result=best_result,
         top_results=top_results,
     )
+
+
+def _build_research_protocol_artifact_paths(
+    *,
+    protocol_root: Path | None,
+    development_search_receipt: SearchArtifactReceipt | None,
+    walk_forward_receipt: WalkForwardArtifactReceipt | None,
+    permutation_receipt: PermutationTestArtifactReceipt | None,
+    final_holdout_receipt: ArtifactReceipt | None,
+) -> dict[str, str]:
+    artifact_paths: dict[str, str] = {}
+    if protocol_root is not None:
+        artifact_paths["protocol_root"] = str(protocol_root)
+    for key, value in (serialize_search_artifact_receipt(development_search_receipt) or {}).items():
+        if isinstance(value, str):
+            artifact_paths[f"development_search_{key}"] = value
+    for key, value in (serialize_walk_forward_artifact_receipt(walk_forward_receipt) or {}).items():
+        if isinstance(value, str):
+            artifact_paths[f"development_walk_forward_{key}"] = value
+    for key, value in (serialize_permutation_test_artifact_receipt(permutation_receipt) or {}).items():
+        if isinstance(value, str):
+            artifact_paths[f"development_permutation_{key}"] = value
+    for key, value in (serialize_artifact_receipt(final_holdout_receipt) or {}).items():
+        if isinstance(value, str):
+            artifact_paths[f"final_holdout_{key}"] = value
+    return artifact_paths
+
+
+def _build_protocol_data_window(label: str, market_data: pd.DataFrame) -> dict[str, object]:
+    return {
+        "label": label,
+        "start": str(market_data["datetime"].iloc[0]),
+        "end": str(market_data["datetime"].iloc[-1]),
+        "row_count": int(len(market_data)),
+    }
 
 
 def _resolve_research_policy_config(

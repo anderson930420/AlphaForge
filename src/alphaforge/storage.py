@@ -25,6 +25,8 @@ from .schemas import (
     MetricReport,
     PermutationTestArtifactReceipt,
     PermutationTestSummary,
+    ResearchProtocolPlan,
+    ResearchProtocolSummary,
     StrategySpec,
     StrategyComparisonResult,
     StrategyComparisonSummary,
@@ -84,6 +86,7 @@ PERMUTATION_TEST_SUMMARY_FILENAME = "permutation_test_summary.json"
 PERMUTATION_SCORES_FILENAME = "permutation_scores.csv"
 COMPARISON_SUMMARY_FILENAME = "comparison_summary.json"
 COMPARISON_RESULTS_FILENAME = "comparison_results.csv"
+RESEARCH_PROTOCOL_SUMMARY_FILENAME = "research_protocol_summary.json"
 
 CANONICAL_SEARCH_FILENAMES = (RANKED_RESULTS_FILENAME,)
 CANONICAL_SEARCH_REPORT_FILENAMES = (BEST_REPORT_FILENAME, SEARCH_REPORT_FILENAME)
@@ -142,6 +145,13 @@ class StrategyComparisonArtifactReceipt:
     comparison_summary_path: Path
     comparison_results_path: Path
     strategy_validation_artifacts: dict[str, ValidationArtifactReceipt] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class ResearchProtocolArtifactReceipt:
+    """Storage-owned receipt for persisted research protocol artifacts."""
+
+    research_protocol_summary_path: Path
 
 
 def ensure_output_dir(path: Path) -> Path:
@@ -339,6 +349,70 @@ def serialize_strategy_comparison_artifact_receipt(
     }
 
 
+def serialize_research_protocol_plan(plan: ResearchProtocolPlan) -> dict[str, Any]:
+    return {
+        "strategy_family": plan.strategy_family,
+        "selected_parameters": dict(plan.selected_parameters),
+        "parameter_selection_rule": plan.parameter_selection_rule,
+        "scoring_formula_name": plan.scoring_formula_name,
+        "transaction_cost_assumptions": dict(plan.transaction_cost_assumptions),
+        "development_period": asdict(plan.development_period),
+        "holdout_period": asdict(plan.holdout_period),
+        "search_space_size": int(plan.search_space_size),
+        "tried_strategy_family_count": int(plan.tried_strategy_family_count),
+        "tried_parameter_combination_count": int(plan.tried_parameter_combination_count),
+        "walk_forward_config": asdict(plan.walk_forward_config),
+        "permutation_config": asdict(plan.permutation_config) if plan.permutation_config is not None else None,
+    }
+
+
+def serialize_research_protocol_summary(summary: ResearchProtocolSummary) -> dict[str, Any]:
+    return {
+        "data_spec": serialize_data_spec(summary.data_spec),
+        "backtest_config": serialize_backtest_config(summary.backtest_config),
+        "development_start": summary.development_period.start,
+        "development_end": summary.development_period.end,
+        "holdout_start": summary.holdout_period.start,
+        "holdout_end": summary.holdout_period.end,
+        "development_period": asdict(summary.development_period),
+        "holdout_period": asdict(summary.holdout_period),
+        "development_row_count": int(summary.development_row_count),
+        "holdout_row_count": int(summary.holdout_row_count),
+        "selected_strategy": summary.selected_strategy,
+        "selected_parameters": dict(summary.selected_parameters),
+        "selection_rule": summary.selection_rule,
+        "scoring_formula_name": summary.scoring_formula_name,
+        "development_search_data_window": dict(summary.development_search_data_window),
+        "walk_forward_data_window": dict(summary.walk_forward_data_window),
+        "final_holdout_data_window": dict(summary.final_holdout_data_window),
+        "search_space_size": int(summary.search_space_size),
+        "tried_strategy_family_count": int(summary.tried_strategy_family_count),
+        "tried_parameter_combination_count": int(summary.tried_parameter_combination_count),
+        "development_search_summary": serialize_search_summary(summary.development_search_summary),
+        "walk_forward_summary": serialize_walk_forward_result(summary.walk_forward_summary),
+        "walk_forward_oos_label": "development_period_oos",
+        "permutation_summary": serialize_permutation_test_summary(summary.permutation_summary),
+        "permutation_evidence_label": "development_period_diagnostic" if summary.permutation_summary is not None else None,
+        "frozen_plan": serialize_research_protocol_plan(summary.frozen_plan),
+        "final_holdout_result": serialize_experiment_result(summary.final_holdout_result),
+        "final_holdout_metrics": serialize_metric_report(summary.final_holdout_result.metrics),
+        "final_holdout_evidence_label": "final_holdout",
+        "transaction_cost_assumptions": dict(summary.transaction_cost_assumptions),
+        "artifact_paths": summary.artifact_paths,
+        "metadata": summary.metadata,
+    }
+
+
+def serialize_research_protocol_artifact_receipt(
+    receipt: ResearchProtocolArtifactReceipt | None,
+) -> dict[str, Any] | None:
+    if receipt is None:
+        return None
+    return {
+        "research_protocol_summary_path": str(receipt.research_protocol_summary_path),
+    }
+
+
 def serialize_walk_forward_fold_result(fold: WalkForwardFoldResult) -> dict[str, Any]:
     return {
         "fold_index": fold.fold_index,
@@ -380,6 +454,20 @@ def serialize_walk_forward_result(result: WalkForwardResult) -> dict[str, Any]:
         "walk_forward_evidence": serialize_walk_forward_evidence_summary(result.walk_forward_evidence),
         "walk_forward_decision": serialize_candidate_policy_decision(result.walk_forward_decision),
         "metadata": result.metadata,
+    }
+
+
+def serialize_search_summary(summary: Any) -> dict[str, Any]:
+    return {
+        "strategy_name": summary.strategy_name,
+        "search_parameter_names": list(summary.search_parameter_names),
+        "attempted_combinations": int(summary.attempted_combinations),
+        "valid_combinations": int(summary.valid_combinations),
+        "invalid_combinations": int(summary.invalid_combinations),
+        "result_count": int(summary.result_count),
+        "ranking_score": summary.ranking_score,
+        "best_result": serialize_experiment_result(summary.best_result) if summary.best_result is not None else None,
+        "top_results": [serialize_experiment_result(result) for result in summary.top_results],
     }
 
 
@@ -641,6 +729,31 @@ def save_walk_forward_result(
     )
     _write_walk_forward_fold_results_csv(fold_results_path, walk_forward_result)
     return walk_forward_result, receipt
+
+
+def save_research_protocol_summary(
+    output_dir: Path,
+    summary: ResearchProtocolSummary,
+) -> tuple[ResearchProtocolSummary, ResearchProtocolArtifactReceipt]:
+    """Write the canonical persisted research protocol summary artifact."""
+    ensure_output_dir(output_dir)
+    summary_path = output_dir / RESEARCH_PROTOCOL_SUMMARY_FILENAME
+    receipt = ResearchProtocolArtifactReceipt(research_protocol_summary_path=summary_path)
+    persisted_summary = replace(
+        summary,
+        artifact_paths={
+            **summary.artifact_paths,
+            "research_protocol_summary_path": str(summary_path),
+        },
+    )
+    _write_json(
+        summary_path,
+        {
+            **serialize_research_protocol_summary(persisted_summary),
+            **(serialize_research_protocol_artifact_receipt(receipt) or {}),
+        },
+    )
+    return persisted_summary, receipt
 
 
 def save_permutation_test_result(

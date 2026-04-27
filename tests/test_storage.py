@@ -15,6 +15,9 @@ from alphaforge.schemas import (
     CandidatePolicyDecision,
     PermutationTestArtifactReceipt,
     PermutationTestSummary,
+    ResearchPeriod,
+    ResearchProtocolPlan,
+    ResearchProtocolSummary,
     SearchSummary,
     StrategyComparisonResult,
     StrategyComparisonSummary,
@@ -40,6 +43,7 @@ from alphaforge.storage import (
     PERMUTATION_TEST_SUMMARY_FILENAME,
     COMPARISON_RESULTS_FILENAME,
     COMPARISON_SUMMARY_FILENAME,
+    RESEARCH_PROTOCOL_SUMMARY_FILENAME,
     RANKED_RESULTS_FILENAME,
     POLICY_DECISION_FILENAME,
     TRAIN_RANKED_RESULTS_FILENAME,
@@ -50,6 +54,7 @@ from alphaforge.storage import (
     save_ranked_results_artifact,
     save_ranked_results_with_columns,
     save_permutation_test_result,
+    save_research_protocol_summary,
     save_single_experiment,
     save_strategy_comparison_summary,
     save_validation_result,
@@ -57,6 +62,8 @@ from alphaforge.storage import (
     serialize_artifact_receipt,
     serialize_search_artifact_receipt,
     serialize_permutation_test_artifact_receipt,
+    serialize_research_protocol_artifact_receipt,
+    serialize_research_protocol_summary,
     serialize_strategy_comparison_artifact_receipt,
     serialize_validation_artifact_receipt,
     serialize_validation_result,
@@ -252,6 +259,104 @@ def test_save_ranked_results_writes_canonical_search_contract(tmp_path: Path) ->
     assert (runs_root / "run_001" / EQUITY_CURVE_FILENAME).exists()
     assert (runs_root / "run_001" / TRADE_LOG_FILENAME).exists()
     assert (runs_root / "run_002" / METRICS_SUMMARY_FILENAME).exists()
+
+
+def test_save_research_protocol_summary_writes_storage_owned_artifact(tmp_path: Path) -> None:
+    result = _make_result(short_window=2, long_window=4, score=0.9)
+    development_period = ResearchPeriod(start="2024-01-01", end="2024-01-08")
+    holdout_period = ResearchPeriod(start="2024-01-09", end="2024-01-12")
+    walk_forward_config = WalkForwardConfig(train_size=3, test_size=2, step_size=2)
+    frozen_plan = ResearchProtocolPlan(
+        strategy_family="ma_crossover",
+        selected_parameters={"short_window": 2, "long_window": 4},
+        parameter_selection_rule="highest_development_score_after_configured_filters",
+        scoring_formula_name="score",
+        transaction_cost_assumptions={"fee_rate": 0.001, "slippage_rate": 0.0005},
+        development_period=development_period,
+        holdout_period=holdout_period,
+        search_space_size=1,
+        tried_strategy_family_count=1,
+        tried_parameter_combination_count=1,
+        walk_forward_config=walk_forward_config,
+    )
+    summary = ResearchProtocolSummary(
+        data_spec=result.data_spec,
+        backtest_config=result.backtest_config,
+        development_period=development_period,
+        holdout_period=holdout_period,
+        development_row_count=8,
+        holdout_row_count=4,
+        selected_strategy="ma_crossover",
+        selected_parameters={"short_window": 2, "long_window": 4},
+        selection_rule="highest_development_score_after_configured_filters",
+        scoring_formula_name="score",
+        development_search_data_window={
+            "label": "development_period",
+            "start": "2024-01-01 00:00:00",
+            "end": "2024-01-08 00:00:00",
+            "row_count": 8,
+        },
+        walk_forward_data_window={
+            "label": "development_period_oos",
+            "start": "2024-01-01 00:00:00",
+            "end": "2024-01-08 00:00:00",
+            "row_count": 8,
+        },
+        final_holdout_data_window={
+            "label": "final_holdout",
+            "start": "2024-01-09 00:00:00",
+            "end": "2024-01-12 00:00:00",
+            "row_count": 4,
+        },
+        search_space_size=1,
+        tried_strategy_family_count=1,
+        tried_parameter_combination_count=1,
+        development_search_summary=_make_search_summary(result),
+        walk_forward_summary=WalkForwardResult(
+            data_spec=result.data_spec,
+            walk_forward_config=walk_forward_config,
+            folds=[],
+            aggregate_test_metrics={"fold_count": 0},
+        ),
+        frozen_plan=frozen_plan,
+        final_holdout_result=result,
+        transaction_cost_assumptions={"fee_rate": 0.001, "slippage_rate": 0.0005},
+    )
+
+    persisted_summary, receipt = save_research_protocol_summary(tmp_path, summary)
+    payload = json.loads((tmp_path / RESEARCH_PROTOCOL_SUMMARY_FILENAME).read_text(encoding="utf-8"))
+
+    assert receipt.research_protocol_summary_path == tmp_path / RESEARCH_PROTOCOL_SUMMARY_FILENAME
+    assert persisted_summary.artifact_paths["research_protocol_summary_path"] == str(receipt.research_protocol_summary_path)
+    assert payload["development_start"] == "2024-01-01"
+    assert payload["holdout_end"] == "2024-01-12"
+    assert payload["development_search_data_window"] == {
+        "label": "development_period",
+        "start": "2024-01-01 00:00:00",
+        "end": "2024-01-08 00:00:00",
+        "row_count": 8,
+    }
+    assert payload["walk_forward_data_window"] == {
+        "label": "development_period_oos",
+        "start": "2024-01-01 00:00:00",
+        "end": "2024-01-08 00:00:00",
+        "row_count": 8,
+    }
+    assert payload["final_holdout_data_window"] == {
+        "label": "final_holdout",
+        "start": "2024-01-09 00:00:00",
+        "end": "2024-01-12 00:00:00",
+        "row_count": 4,
+    }
+    assert payload["walk_forward_oos_label"] == "development_period_oos"
+    assert payload["final_holdout_evidence_label"] == "final_holdout"
+    assert payload["final_holdout_metrics"]["bar_count"] == result.metrics.bar_count
+    assert serialize_research_protocol_artifact_receipt(receipt)["research_protocol_summary_path"] == str(
+        receipt.research_protocol_summary_path
+    )
+    assert serialize_research_protocol_summary(persisted_summary)["artifact_paths"]["research_protocol_summary_path"] == str(
+        receipt.research_protocol_summary_path
+    )
 
 
 def test_save_validation_result_writes_summary_and_train_ranked_reference(tmp_path: Path) -> None:

@@ -19,6 +19,8 @@ from .schemas import (
     EquityCurveFrame,
     ExperimentResult,
     SearchSummary,
+    ResearchProtocolSummary,
+    ResearchValidationConfig,
     StrategyComparisonConfig,
     StrategyComparisonSummary,
     StrategySpec,
@@ -29,6 +31,7 @@ from .schemas import (
 from .storage import (
     ArtifactReceipt,
     SearchArtifactReceipt,
+    ResearchProtocolArtifactReceipt,
     StrategyComparisonArtifactReceipt,
     ValidationArtifactReceipt,
     WalkForwardArtifactReceipt,
@@ -78,6 +81,14 @@ class WalkForwardExecutionOutput:
 
     walk_forward_result: WalkForwardResult
     artifact_receipt: WalkForwardArtifactReceipt | None = None
+
+
+@dataclass(frozen=True)
+class ResearchProtocolExecutionOutput:
+    """Public compatibility bundle for research protocol validation results."""
+
+    research_protocol_summary: ResearchProtocolSummary
+    artifact_receipt: ResearchProtocolArtifactReceipt | None = None
 
 
 def run_experiment(
@@ -241,6 +252,14 @@ def run_strategy_comparison_with_details(
     from .runner_workflows import run_strategy_comparison_with_details_workflow
 
     return run_strategy_comparison_with_details_workflow(comparison_config)
+
+
+def run_research_validation_protocol_with_details(
+    research_config: ResearchValidationConfig,
+) -> ResearchProtocolExecutionOutput:
+    from .runner_workflows import run_research_validation_protocol_with_details_workflow
+
+    return run_research_validation_protocol_with_details_workflow(research_config)
 
 
 def run_walk_forward_search(

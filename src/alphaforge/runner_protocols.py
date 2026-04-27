@@ -13,7 +13,7 @@ import pandas as pd
 
 from . import config
 from .policy_types import ParameterGrid
-from .schemas import BacktestConfig, StrategySpec
+from .schemas import BacktestConfig, ResearchPeriod, StrategySpec
 from .strategy.base import Strategy
 from .strategy_registry import build_strategy_from_registry, get_strategy_registration
 
@@ -64,6 +64,60 @@ def split_market_data_by_ratio(market_data: pd.DataFrame, split_ratio: float) ->
     if train_data.empty or test_data.empty:
         raise ValueError("split_ratio creates an empty train or test segment")
     return train_data, test_data
+
+
+def split_development_holdout_data(
+    market_data: pd.DataFrame,
+    development_period: ResearchPeriod,
+    holdout_period: ResearchPeriod,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Split canonical market data into explicit development and holdout periods."""
+    if "datetime" not in market_data.columns:
+        raise ValueError("development/holdout split requires a datetime column")
+
+    development_start = _coerce_period_timestamp(development_period.start, "development_start")
+    development_end = _coerce_period_timestamp(development_period.end, "development_end")
+    holdout_start = _coerce_period_timestamp(holdout_period.start, "holdout_start")
+    holdout_end = _coerce_period_timestamp(holdout_period.end, "holdout_end")
+
+    if development_start > development_end:
+        raise ValueError("development_start must be on or before development_end")
+    if holdout_start > holdout_end:
+        raise ValueError("holdout_start must be on or before holdout_end")
+    if _periods_overlap(development_start, development_end, holdout_start, holdout_end):
+        raise ValueError("development and holdout date ranges must not overlap")
+    if holdout_start <= development_end:
+        raise ValueError("holdout period must occur after development period")
+
+    datetimes = pd.to_datetime(market_data["datetime"], utc=False, errors="raise")
+    development_mask = (datetimes >= development_start) & (datetimes <= development_end)
+    holdout_mask = (datetimes >= holdout_start) & (datetimes <= holdout_end)
+    development_data = market_data.loc[development_mask].copy().reset_index(drop=True)
+    holdout_data = market_data.loc[holdout_mask].copy().reset_index(drop=True)
+
+    if development_data.empty:
+        raise ValueError("development period contains no rows")
+    if holdout_data.empty:
+        raise ValueError("holdout period contains no rows")
+
+    overlap = set(pd.to_datetime(development_data["datetime"], utc=False)) & set(pd.to_datetime(holdout_data["datetime"], utc=False))
+    if overlap:
+        raise ValueError("development and holdout rows must be disjoint")
+
+    split_attrs = {
+        "development_start": development_start.isoformat(),
+        "development_end": development_end.isoformat(),
+        "holdout_start": holdout_start.isoformat(),
+        "holdout_end": holdout_end.isoformat(),
+        "development_rows": len(development_data),
+        "holdout_rows": len(holdout_data),
+    }
+    for partition in (development_data, holdout_data):
+        partition.attrs.update(market_data.attrs)
+        partition.attrs.update(split_attrs)
+    development_data.attrs["research_period_role"] = "development"
+    holdout_data.attrs["research_period_role"] = "final_holdout"
+    return development_data, holdout_data
 
 
 def build_holdout_metadata(market_data: pd.DataFrame) -> dict[str, object]:
@@ -128,3 +182,21 @@ def generate_walk_forward_folds(
         start_index += step_size
     return folds
 
+
+def _coerce_period_timestamp(value: str, field_name: str) -> pd.Timestamp:
+    try:
+        timestamp = pd.Timestamp(value)
+    except Exception as exc:  # pragma: no cover - pandas exposes multiple parse errors
+        raise ValueError(f"Invalid {field_name}: {value!r}") from exc
+    if pd.isna(timestamp):
+        raise ValueError(f"Invalid {field_name}: {value!r}")
+    return timestamp
+
+
+def _periods_overlap(
+    first_start: pd.Timestamp,
+    first_end: pd.Timestamp,
+    second_start: pd.Timestamp,
+    second_end: pd.Timestamp,
+) -> bool:
+    return max(first_start, second_start) <= min(first_end, second_end)

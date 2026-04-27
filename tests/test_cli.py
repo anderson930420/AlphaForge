@@ -231,6 +231,102 @@ def test_cli_search_prints_summary_payload(
     assert "search_report_path" not in payload
 
 
+def test_cli_research_validate_help_works(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    monkeypatch.setattr(sys, "argv", ["alphaforge", "research-validate", "--help"])
+
+    with pytest.raises(SystemExit) as exc_info:
+        main()
+
+    assert exc_info.value.code == 0
+    assert "research-validate" in capsys.readouterr().out
+
+
+def test_cli_research_validate_smoke_writes_protocol_summary(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    data_path = tmp_path / "research.csv"
+    pd.DataFrame(
+        {
+            "datetime": pd.date_range("2024-01-01", periods=16, freq="D"),
+            "open": [100.0 + index for index in range(16)],
+            "high": [101.0 + index for index in range(16)],
+            "low": [99.0 + index for index in range(16)],
+            "close": [100.0 + index for index in range(16)],
+            "volume": [1000.0] * 16,
+        }
+    ).to_csv(data_path, index=False)
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "alphaforge",
+            "research-validate",
+            "--data",
+            str(data_path),
+            "--symbol",
+            "TEST",
+            "--output-dir",
+            str(tmp_path),
+            "--experiment-name",
+            "research_case",
+            "--strategy",
+            "ma_crossover",
+            "--development-start",
+            "2024-01-01",
+            "--development-end",
+            "2024-01-12",
+            "--holdout-start",
+            "2024-01-13",
+            "--holdout-end",
+            "2024-01-16",
+            "--short-windows",
+            "2",
+            "--long-windows",
+            "4",
+            "--train-size",
+            "4",
+            "--test-size",
+            "2",
+            "--step-size",
+            "2",
+        ],
+    )
+
+    main()
+    payload = json.loads(capsys.readouterr().out)
+
+    assert payload["development_row_count"] == 12
+    assert payload["holdout_row_count"] == 4
+    assert payload["development_search_data_window"] == {
+        "label": "development_period",
+        "start": "2024-01-01 00:00:00",
+        "end": "2024-01-12 00:00:00",
+        "row_count": 12,
+    }
+    assert payload["walk_forward_data_window"] == {
+        "label": "development_period_oos",
+        "start": "2024-01-01 00:00:00",
+        "end": "2024-01-12 00:00:00",
+        "row_count": 12,
+    }
+    assert payload["final_holdout_data_window"] == {
+        "label": "final_holdout",
+        "start": "2024-01-13 00:00:00",
+        "end": "2024-01-16 00:00:00",
+        "row_count": 4,
+    }
+    assert payload["selected_strategy"] == "ma_crossover"
+    assert payload["selected_parameters"] == {"short_window": 2, "long_window": 4}
+    assert payload["walk_forward_oos_label"] == "development_period_oos"
+    assert payload["final_holdout_evidence_label"] == "final_holdout"
+    summary_path = tmp_path / "research_case" / "research_protocol_summary.json"
+    assert Path(payload["research_protocol_summary_path"]) == summary_path
+    assert summary_path.exists()
+
+
 def test_cli_search_supports_breakout_strategy(
     sample_market_csv: Path,
     tmp_path: Path,

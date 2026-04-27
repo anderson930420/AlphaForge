@@ -13,25 +13,91 @@ from alphaforge.experiment_runner import (
     run_strategy_comparison_with_details,
     run_experiment,
     run_experiment_with_artifacts,
+    run_research_validation_protocol_with_details,
     run_search,
     run_search_with_details,
     run_validate_search,
     run_walk_forward_search,
 )
+from alphaforge.report import ExperimentReportInput
 from alphaforge.search_reporting import save_best_search_report
 from alphaforge.schemas import (
     BacktestConfig,
     DataSpec,
     ExperimentResult,
     MetricReport,
+    ResearchPeriod,
+    ResearchValidationConfig,
     SearchSummary,
     StrategyComparisonConfig,
     StrategyFamilySearchConfig,
     StrategySpec,
     ValidationPermutationConfig,
     ValidationSplitConfig,
+    WalkForwardConfig,
+    WalkForwardResult,
 )
 from alphaforge.storage import ArtifactReceipt, serialize_experiment_result
+
+
+def _make_research_protocol_market_data() -> pd.DataFrame:
+    return pd.DataFrame(
+        {
+            "datetime": pd.date_range("2024-01-01", periods=12, freq="D"),
+            "open": [100.0 + index for index in range(12)],
+            "high": [101.0 + index for index in range(12)],
+            "low": [99.0 + index for index in range(12)],
+            "close": [100.0 + index for index in range(12)],
+            "volume": [1000.0] * 12,
+        }
+    )
+
+
+def _make_protocol_result(sample_market_csv: Path, parameters: dict[str, int], score: float) -> ExperimentResult:
+    return ExperimentResult(
+        data_spec=DataSpec(path=sample_market_csv, symbol="TEST"),
+        strategy_spec=StrategySpec(name="ma_crossover", parameters=parameters),
+        backtest_config=BacktestConfig(1000.0, 0.0, 0.0, 252),
+        metrics=MetricReport(
+            total_return=score / 10.0,
+            annualized_return=score / 10.0,
+            sharpe_ratio=score,
+            max_drawdown=-0.01,
+            win_rate=1.0,
+            turnover=1.0,
+            trade_count=1,
+            bar_count=3,
+        ),
+        score=score,
+    )
+
+
+def _make_protocol_execution(result: ExperimentResult) -> ExperimentExecutionOutput:
+    return ExperimentExecutionOutput(
+        result=result,
+        equity_curve=pd.DataFrame(),
+        trade_log=pd.DataFrame(),
+        report_input=ExperimentReportInput(
+            result=result,
+            equity_curve=pd.DataFrame(),
+            trades=pd.DataFrame(),
+            benchmark_summary={"total_return": 0.0, "max_drawdown": 0.0},
+            benchmark_curve=pd.DataFrame(),
+        ),
+        artifact_receipt=None,
+    )
+
+
+def _make_research_validation_config(sample_market_csv: Path) -> ResearchValidationConfig:
+    return ResearchValidationConfig(
+        data_spec=DataSpec(path=sample_market_csv, symbol="TEST"),
+        strategy_name="ma_crossover",
+        parameter_grid={"short_window": [2], "long_window": [4]},
+        development_period=ResearchPeriod(start="2024-01-01", end="2024-01-08"),
+        holdout_period=ResearchPeriod(start="2024-01-09", end="2024-01-12"),
+        walk_forward_config=WalkForwardConfig(train_size=3, test_size=2, step_size=2),
+        backtest_config=BacktestConfig(1000.0, 0.0, 0.0, 252),
+    )
 
 
 def test_run_experiment_saves_outputs(sample_market_csv: Path, tmp_path: Path) -> None:
@@ -241,6 +307,126 @@ def test_run_search_summary_counts_invalid_combinations_and_top_results_prefix(
     assert search_execution.summary.result_count == len(search_execution.ranked_results)
     assert search_execution.summary.best_result == search_execution.ranked_results[0]
     assert search_execution.summary.top_results == search_execution.ranked_results[:3]
+
+
+def test_research_validation_workflow_uses_development_data_for_search_and_walk_forward(
+    sample_market_csv: Path,
+) -> None:
+    market_data = _make_research_protocol_market_data()
+    selected_result = _make_protocol_result(sample_market_csv, {"short_window": 2, "long_window": 4}, score=0.8)
+    final_result = _make_protocol_result(sample_market_csv, {"short_window": 2, "long_window": 4}, score=0.2)
+
+    def fake_search(**kwargs):
+        passed_data = kwargs["market_data"]
+        assert passed_data["datetime"].max() <= pd.Timestamp("2024-01-08")
+        assert passed_data["datetime"].min() >= pd.Timestamp("2024-01-01")
+        return SearchExecutionOutput(
+            ranked_results=[selected_result],
+            summary=SearchSummary(
+                strategy_name="ma_crossover",
+                search_parameter_names=["short_window", "long_window"],
+                attempted_combinations=1,
+                valid_combinations=1,
+                invalid_combinations=0,
+                result_count=1,
+                ranking_score="score",
+                best_result=selected_result,
+                top_results=[selected_result],
+            ),
+        )
+
+    def fake_walk_forward(**kwargs):
+        passed_data = kwargs["market_data"]
+        assert passed_data["datetime"].max() <= pd.Timestamp("2024-01-08")
+        return (
+            WalkForwardResult(
+                data_spec=DataSpec(path=sample_market_csv, symbol="TEST"),
+                walk_forward_config=WalkForwardConfig(train_size=3, test_size=2, step_size=2),
+                folds=[],
+                aggregate_test_metrics={"fold_count": 0},
+                metadata={"evidence_label": "development_period_oos"},
+            ),
+            None,
+        )
+
+    with patch("alphaforge.runner_workflows.load_market_data", return_value=market_data), patch(
+        "alphaforge.runner_workflows.run_search_on_market_data",
+        side_effect=fake_search,
+    ), patch(
+        "alphaforge.runner_workflows.run_walk_forward_search_on_market_data",
+        side_effect=fake_walk_forward,
+    ), patch(
+        "alphaforge.runner_workflows.run_experiment_on_market_data",
+        return_value=_make_protocol_execution(final_result),
+    ) as final_holdout_mock:
+        execution = run_research_validation_protocol_with_details(
+            _make_research_validation_config(sample_market_csv)
+        )
+
+    final_market_data = final_holdout_mock.call_args.kwargs["market_data"]
+    assert final_market_data["datetime"].min() >= pd.Timestamp("2024-01-09")
+    assert execution.research_protocol_summary.development_search_data_window == {
+        "label": "development_period",
+        "start": "2024-01-01 00:00:00",
+        "end": "2024-01-08 00:00:00",
+        "row_count": 8,
+    }
+    assert execution.research_protocol_summary.walk_forward_data_window["label"] == "development_period_oos"
+    assert execution.research_protocol_summary.final_holdout_data_window == {
+        "label": "final_holdout",
+        "start": "2024-01-09 00:00:00",
+        "end": "2024-01-12 00:00:00",
+        "row_count": 4,
+    }
+    assert execution.research_protocol_summary.selected_parameters == {"short_window": 2, "long_window": 4}
+    assert execution.research_protocol_summary.walk_forward_summary.metadata["evidence_label"] == "development_period_oos"
+
+
+def test_research_validation_workflow_evaluates_holdout_with_frozen_selected_candidate(
+    sample_market_csv: Path,
+) -> None:
+    market_data = _make_research_protocol_market_data()
+    selected_result = _make_protocol_result(sample_market_csv, {"short_window": 2, "long_window": 4}, score=0.8)
+    lower_result = _make_protocol_result(sample_market_csv, {"short_window": 3, "long_window": 5}, score=0.7)
+    final_result = _make_protocol_result(sample_market_csv, {"short_window": 2, "long_window": 4}, score=99.0)
+    search_summary = SearchSummary(
+        strategy_name="ma_crossover",
+        search_parameter_names=["short_window", "long_window"],
+        attempted_combinations=2,
+        valid_combinations=2,
+        invalid_combinations=0,
+        result_count=2,
+        ranking_score="score",
+        best_result=selected_result,
+        top_results=[selected_result, lower_result],
+    )
+
+    with patch("alphaforge.runner_workflows.load_market_data", return_value=market_data), patch(
+        "alphaforge.runner_workflows.run_search_on_market_data",
+        return_value=SearchExecutionOutput(ranked_results=[selected_result, lower_result], summary=search_summary),
+    ), patch(
+        "alphaforge.runner_workflows.run_walk_forward_search_on_market_data",
+        return_value=(
+            WalkForwardResult(
+                data_spec=DataSpec(path=sample_market_csv, symbol="TEST"),
+                walk_forward_config=WalkForwardConfig(train_size=3, test_size=2, step_size=2),
+                folds=[],
+                aggregate_test_metrics={},
+            ),
+            None,
+        ),
+    ), patch(
+        "alphaforge.runner_workflows.run_experiment_on_market_data",
+        return_value=_make_protocol_execution(final_result),
+    ) as final_holdout_mock:
+        execution = run_research_validation_protocol_with_details(
+            _make_research_validation_config(sample_market_csv)
+        )
+
+    assert final_holdout_mock.call_args.kwargs["strategy_spec"].parameters == {"short_window": 2, "long_window": 4}
+    assert execution.research_protocol_summary.frozen_plan.selected_parameters == {"short_window": 2, "long_window": 4}
+    assert execution.research_protocol_summary.final_holdout_result.score == 99.0
+    assert execution.research_protocol_summary.selected_parameters == {"short_window": 2, "long_window": 4}
 
 
 def test_run_search_with_details_supports_breakout_family(sample_market_csv: Path, tmp_path: Path) -> None:

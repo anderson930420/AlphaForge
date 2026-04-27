@@ -8,9 +8,11 @@ from alphaforge.runner_protocols import (
     build_strategy,
     build_validation_metadata,
     generate_walk_forward_folds,
+    split_development_holdout_data,
     split_market_data_by_ratio,
     validate_train_windows,
 )
+from alphaforge.schemas import ResearchPeriod
 from alphaforge.strategy.breakout import BreakoutStrategy
 from alphaforge.strategy.ma_crossover import MovingAverageCrossoverStrategy
 
@@ -39,6 +41,60 @@ def test_split_market_data_by_ratio_rejects_invalid_ratio() -> None:
 
     with pytest.raises(ValueError, match="split_ratio"):
         split_market_data_by_ratio(market_data, 1.0)
+
+
+def test_split_development_holdout_data_returns_disjoint_periods() -> None:
+    market_data = pd.DataFrame(
+        {
+            "datetime": pd.date_range("2024-01-01", periods=8, freq="D"),
+            "close": range(8),
+        }
+    )
+
+    development_data, holdout_data = split_development_holdout_data(
+        market_data,
+        ResearchPeriod(start="2024-01-02", end="2024-01-05"),
+        ResearchPeriod(start="2024-01-06", end="2024-01-08"),
+    )
+
+    assert development_data["datetime"].tolist() == list(pd.date_range("2024-01-02", periods=4, freq="D"))
+    assert holdout_data["datetime"].tolist() == list(pd.date_range("2024-01-06", periods=3, freq="D"))
+    assert set(development_data["datetime"]).isdisjoint(set(holdout_data["datetime"]))
+    assert development_data.attrs["research_period_role"] == "development"
+    assert holdout_data.attrs["research_period_role"] == "final_holdout"
+
+
+def test_split_development_holdout_data_rejects_overlapping_ranges() -> None:
+    market_data = pd.DataFrame({"datetime": pd.date_range("2024-01-01", periods=8, freq="D")})
+
+    with pytest.raises(ValueError, match="must not overlap"):
+        split_development_holdout_data(
+            market_data,
+            ResearchPeriod(start="2024-01-01", end="2024-01-05"),
+            ResearchPeriod(start="2024-01-05", end="2024-01-08"),
+        )
+
+
+def test_split_development_holdout_data_rejects_empty_development_period() -> None:
+    market_data = pd.DataFrame({"datetime": pd.date_range("2024-01-01", periods=8, freq="D")})
+
+    with pytest.raises(ValueError, match="development period contains no rows"):
+        split_development_holdout_data(
+            market_data,
+            ResearchPeriod(start="2023-01-01", end="2023-01-31"),
+            ResearchPeriod(start="2024-01-03", end="2024-01-08"),
+        )
+
+
+def test_split_development_holdout_data_rejects_empty_holdout_period() -> None:
+    market_data = pd.DataFrame({"datetime": pd.date_range("2024-01-01", periods=8, freq="D")})
+
+    with pytest.raises(ValueError, match="holdout period contains no rows"):
+        split_development_holdout_data(
+            market_data,
+            ResearchPeriod(start="2024-01-01", end="2024-01-05"),
+            ResearchPeriod(start="2025-01-01", end="2025-01-31"),
+        )
 
 
 def test_validate_train_windows_rejects_insufficient_history() -> None:

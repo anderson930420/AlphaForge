@@ -272,3 +272,69 @@ class PermutationTestArtifactReceipt:
 class PermutationTestExecutionOutput:
     permutation_test_summary: PermutationTestSummary
     artifact_receipt: PermutationTestArtifactReceipt | None = None
+
+
+@dataclass(frozen=True)
+class ResearchPeriod:
+    start: str
+    end: str
+
+
+@dataclass(frozen=True)
+class ResearchProtocolPlan:
+    strategy_family: str
+    selected_parameters: dict[str, Any]
+    parameter_selection_rule: str
+    scoring_formula_name: str
+    transaction_cost_assumptions: dict[str, Any]
+    development_period: ResearchPeriod
+    holdout_period: ResearchPeriod
+    search_space_size: int
+    tried_strategy_family_count: int
+    tried_parameter_combination_count: int
+    walk_forward_config: WalkForwardConfig
+    permutation_config: ValidationPermutationConfig | None = None
+
+
+@dataclass(frozen=True)
+class ResearchValidationConfig:
+    data_spec: DataSpec
+    strategy_name: str
+    parameter_grid: ParameterGrid
+    development_period: ResearchPeriod
+    holdout_period: ResearchPeriod
+    walk_forward_config: WalkForwardConfig
+    backtest_config: BacktestConfig
+    permutation_config: ValidationPermutationConfig | None = None
+    max_drawdown_cap: float | None = None
+    min_trade_count: int | None = None
+    output_dir: Path | None = None
+    experiment_name: str = "research_validation"
+
+
+@dataclass(frozen=True)
+class ResearchProtocolSummary:
+    data_spec: DataSpec
+    backtest_config: BacktestConfig
+    development_period: ResearchPeriod
+    holdout_period: ResearchPeriod
+    development_row_count: int
+    holdout_row_count: int
+    selected_strategy: str
+    selected_parameters: dict[str, Any]
+    selection_rule: str
+    scoring_formula_name: str
+    development_search_data_window: dict[str, Any]
+    walk_forward_data_window: dict[str, Any]
+    final_holdout_data_window: dict[str, Any]
+    search_space_size: int
+    tried_strategy_family_count: int
+    tried_parameter_combination_count: int
+    development_search_summary: SearchSummary
+    walk_forward_summary: WalkForwardResult
+    frozen_plan: ResearchProtocolPlan
+    final_holdout_result: ExperimentResult
+    transaction_cost_assumptions: dict[str, Any]
+    permutation_summary: PermutationTestSummary | None = None
+    artifact_paths: dict[str, str] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)

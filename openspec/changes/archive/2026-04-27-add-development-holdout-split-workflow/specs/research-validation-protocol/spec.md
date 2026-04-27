@@ -1,8 +1,7 @@
 # research-validation-protocol Specification
 
-## Purpose
-TBD - created by archiving change formalize-research-validation-protocol. Update Purpose after archive.
-## Requirements
+## MODIFIED Requirements
+
 ### Requirement: Multi-year research data is split into development and final holdout periods
 
 AlphaForge MUST provide a runtime research validation workflow that loads canonical multi-year OHLCV data and splits it into explicit development and final holdout periods before any protocol-governed research evidence is generated.
@@ -38,42 +37,6 @@ The workflow MUST select the final candidate from development-period evidence on
 - THEN those development evidence workflows MUST receive only development-frame rows
 - AND they MUST NOT receive final holdout rows
 - AND candidate selection MUST be based only on development-period search evidence
-
-### Requirement: Walk-forward validation produces multiple development-period OOS folds
-
-Walk-forward validation under the research protocol MUST produce multiple out-of-sample folds entirely inside the development period.
-
-Walk-forward evidence MUST be treated as development-period out-of-sample evidence and MUST NOT be represented as final holdout evidence.
-
-#### Scenario: walk-forward OOS remains inside development
-
-- GIVEN development data has been separated from final holdout data
-- WHEN walk-forward validation runs under the research protocol
-- THEN it MUST create multiple out-of-sample folds within the development period
-- AND every training fold and out-of-sample fold MUST be contained inside the development period
-- AND no walk-forward fold MUST include final holdout rows
-- AND the resulting walk-forward summary MUST be labeled or represented as development-period evidence rather than final holdout evidence
-
-### Requirement: Permutation diagnostics are robustness diagnostics, not standalone profitability proof
-
-Permutation diagnostics SHOULD be used as robustness diagnostics for candidate evidence and MUST NOT be treated as standalone proof that a strategy is profitable.
-
-Permutation diagnostics under this protocol SHOULD prefer block permutation or block shuffle over naive independent row shuffling because financial time series may contain local autocorrelation, volatility clustering, and regime structure.
-
-#### Scenario: permutation result is diagnostic evidence
-
-- GIVEN a candidate has development-period validation evidence
-- WHEN permutation diagnostics are run for the candidate
-- THEN the permutation result MUST be represented as robustness diagnostic evidence
-- AND the permutation result MUST NOT by itself prove profitability
-- AND policy, comparison, or reporting layers MUST NOT promote a candidate solely because its permutation diagnostic passes
-
-#### Scenario: block permutation is preferred for financial time series
-
-- GIVEN permutation diagnostics are configured for protocol-level research evidence
-- WHEN the null construction method is selected
-- THEN AlphaForge SHOULD prefer block permutation or block shuffle over naive independent row shuffling
-- AND the rationale SHOULD preserve local autocorrelation, volatility clustering, and regime structure better than independent row shuffling
 
 ### Requirement: Pre-holdout decisions are frozen before final holdout evaluation
 
@@ -132,4 +95,3 @@ The runtime research validation workflow MUST coordinate existing data loading, 
 - AND it MUST NOT redefine market data schema or strategy signal generation
 - AND it MUST NOT implement report rendering
 - AND it MUST NOT put storage-owned artifact schema in CLI code
-

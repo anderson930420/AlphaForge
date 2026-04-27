@@ -8,6 +8,7 @@ from pathlib import Path
 from . import config
 from .experiment_runner import (
     run_experiment_with_artifacts,
+    run_research_validation_protocol_with_details,
     run_search_with_details,
     run_strategy_comparison_with_details,
     run_validate_search_with_details,
@@ -20,12 +21,15 @@ from .report import render_experiment_report, save_experiment_report
 from .schemas import (
     BacktestConfig,
     DataSpec,
+    ResearchPeriod,
+    ResearchValidationConfig,
     SearchSummary,
     StrategyComparisonConfig,
     StrategyFamilySearchConfig,
     StrategySpec,
     ValidationPermutationConfig,
     ValidationSplitConfig,
+    WalkForwardConfig,
 )
 from .strategy_registry import supported_strategy_families
 from .storage import (
@@ -34,6 +38,8 @@ from .storage import (
     serialize_experiment_result,
     serialize_permutation_test_artifact_receipt,
     serialize_permutation_test_summary,
+    serialize_research_protocol_artifact_receipt,
+    serialize_research_protocol_summary,
     serialize_strategy_comparison_artifact_receipt,
     serialize_strategy_comparison_summary,
     serialize_validation_artifact_receipt,
@@ -129,6 +135,34 @@ def build_parser() -> argparse.ArgumentParser:
     walk_forward.add_argument("--max-drawdown-cap", type=float, default=None)
     walk_forward.add_argument("--min-trade-count", type=int, default=None)
     walk_forward.add_argument("--holdout-cutoff-date", type=str, default=None)
+
+    research_validate = subparsers.add_parser(
+        "research-validate",
+        help="Run development/holdout research validation with a frozen final holdout candidate",
+    )
+    _add_common_arguments(research_validate)
+    research_validate.add_argument("--strategy", type=str, choices=STRATEGY_FAMILY_CHOICES, default="ma_crossover")
+    research_validate.add_argument("--development-start", type=str, required=True)
+    research_validate.add_argument("--development-end", type=str, required=True)
+    research_validate.add_argument("--holdout-start", type=str, required=True)
+    research_validate.add_argument("--holdout-end", type=str, required=True)
+    research_validate.add_argument("--short-windows", type=int, nargs="+", default=config.SHORT_WINDOW_RANGE)
+    research_validate.add_argument("--long-windows", type=int, nargs="+", default=config.LONG_WINDOW_RANGE)
+    research_validate.add_argument("--lookback-windows", type=int, nargs="+", default=None)
+    research_validate.add_argument("--train-size", type=int, required=True)
+    research_validate.add_argument("--test-size", type=int, required=True)
+    research_validate.add_argument("--step-size", type=int, required=True)
+    research_validate.add_argument("--max-drawdown-cap", type=float, default=None)
+    research_validate.add_argument("--min-trade-count", type=int, default=None)
+    research_validate.add_argument("--permutations", type=int, default=0)
+    research_validate.add_argument("--seed", type=int, default=42)
+    research_validate.add_argument("--block-size", type=int, default=2)
+    research_validate.add_argument(
+        "--permutation-null-model",
+        type=str,
+        default="return_block_reconstruction",
+    )
+    research_validate.add_argument("--permutation-scope", type=str, default="development")
 
     permutation_test = subparsers.add_parser(
         "permutation-test",
@@ -336,6 +370,32 @@ def main() -> None:
             print(json.dumps(payload, indent=2, default=str))
             return
 
+        if args.command == "research-validate":
+            research_execution = run_research_validation_protocol_with_details(
+                ResearchValidationConfig(
+                    data_spec=data_spec,
+                    strategy_name=args.strategy,
+                    parameter_grid=_build_strategy_parameter_grid_from_args(args, parser),
+                    development_period=ResearchPeriod(start=args.development_start, end=args.development_end),
+                    holdout_period=ResearchPeriod(start=args.holdout_start, end=args.holdout_end),
+                    walk_forward_config=WalkForwardConfig(
+                        train_size=args.train_size,
+                        test_size=args.test_size,
+                        step_size=args.step_size,
+                    ),
+                    backtest_config=backtest_config,
+                    permutation_config=_build_research_validation_permutation_config_from_args(args),
+                    max_drawdown_cap=args.max_drawdown_cap,
+                    min_trade_count=args.min_trade_count,
+                    output_dir=args.output_dir,
+                    experiment_name=args.experiment_name,
+                )
+            )
+            payload = serialize_research_protocol_summary(research_execution.research_protocol_summary)
+            payload.update(serialize_research_protocol_artifact_receipt(research_execution.artifact_receipt) or {})
+            print(json.dumps(payload, indent=2, default=str))
+            return
+
         if args.command == "permutation-test":
             permutation_execution = run_permutation_test_with_details(
                 data_spec=data_spec,
@@ -441,6 +501,19 @@ def _build_validation_permutation_config_from_args(args: argparse.Namespace) -> 
         permutations=args.permutations,
         seed=args.permutation_seed,
         block_size=args.permutation_block_size,
+        null_model=args.permutation_null_model,
+        scope=args.permutation_scope,
+    )
+
+
+def _build_research_validation_permutation_config_from_args(args: argparse.Namespace) -> ValidationPermutationConfig | None:
+    if args.permutations <= 0:
+        return None
+    return ValidationPermutationConfig(
+        enabled=True,
+        permutations=args.permutations,
+        seed=args.seed,
+        block_size=args.block_size,
         null_model=args.permutation_null_model,
         scope=args.permutation_scope,
     )

@@ -5,151 +5,24 @@ Define the canonical persisted artifact schema and output layout for AlphaForge 
 ## Requirements
 ### Requirement: `storage.py` is the canonical owner of persisted artifact schema and output layout
 
-`src/alphaforge/storage.py` SHALL be the single authoritative owner of persisted artifact schema, artifact naming, artifact path derivation, and output directory layout for AlphaForge persisted workflow artifacts.
+`src/alphaforge/storage.py` SHALL own the persisted artifact schema, filename, and output layout for the research validation protocol summary artifact.
 
-#### Purpose
+The research validation protocol workflow SHALL persist a top-level `research_protocol_summary.json` artifact under `output_dir / experiment_name` when persistence is requested.
 
-- Freeze one persistence contract so search, validation, walk-forward, and single-run outputs all follow the same storage-owned rules.
-- Prevent `experiment_runner.py`, `report.py`, `search_reporting.py`, `cli.py`, or runtime dataclasses from becoming parallel owners of filenames or directory trees.
+#### Scenario: research protocol summary uses storage-owned filename and payload
 
-#### Canonical owner
+- GIVEN the research validation protocol workflow is run with an output directory and experiment name
+- WHEN the workflow persists its protocol summary
+- THEN storage MUST write `research_protocol_summary.json` under the workflow root
+- AND storage MUST define the JSON payload fields for development evidence, walk-forward evidence, optional permutation evidence, frozen plan, final holdout result, transaction cost assumptions, row counts, periods, and artifact references
+- AND CLI and runner code MUST consume storage-owned receipt paths rather than hardcoding a separate persisted schema
 
-- `src/alphaforge/storage.py` is the only authoritative owner of:
-  - persisted artifact schema,
-  - artifact naming,
-  - artifact filename generation,
-  - output directory layout,
-  - run-directory layout,
-  - search-output layout,
-  - validation-output layout,
-  - walk-forward-output layout,
-  - report file placement as a persisted artifact concern,
-  - artifact path derivation rules intended to be canonical.
-- `src/alphaforge/schemas.py` remains the authoritative owner of in-memory runtime contracts only.
-- `src/alphaforge/experiment_runner.py`, `src/alphaforge/report.py`, `src/alphaforge/search_reporting.py`, `src/alphaforge/visualization.py`, and `src/alphaforge/cli.py` are downstream consumers only.
+#### Scenario: protocol summary artifact does not redefine lower-level artifact schemas
 
-#### Allowed responsibilities
-
-- `storage.py` MAY:
-  - define canonical filenames,
-  - define root/output directory composition rules,
-  - write persisted JSON/CSV payloads,
-  - construct storage-owned receipts and path references,
-  - convert runtime objects into persisted artifact payloads,
-  - attach optional presentation refs to receipts when the caller has already materialized them,
-  - define compatibility metadata for persisted artifacts if needed later.
-
-#### Explicit non-responsibilities
-
-- `storage.py` MUST NOT own execution semantics, market-data acceptance, benchmark semantics, report rendering, or strategy semantics.
-- `experiment_runner.py` MUST NOT own persisted artifact schema or layout rules, even when it sequences writes.
-- `report.py` and `search_reporting.py` MUST NOT become canonical owners of filename or directory conventions.
-- `cli.py` MUST NOT hardcode output layout as business truth.
-- Runtime dataclasses and helper serializers MUST NOT become the authoritative persistence schema owner unless a later spec explicitly delegates that ownership.
-
-#### Inputs / outputs / contracts
-
-- Inputs:
-  - runtime objects such as `ExperimentResult`, `ValidationResult`, `WalkForwardResult`, and storage-owned receipts
-  - frames and tables produced by canonical runtime modules
-  - base output directory and experiment name or workflow label
-- Persisted artifact taxonomy:
-  - single-run artifacts:
-    - `experiment_config.json`
-    - `metrics_summary.json`
-    - `trade_log.csv`
-    - `equity_curve.csv`
-    - `report.html` when a single-run report is generated
-  - search artifacts:
-    - `ranked_results.csv`
-    - `runs/run_###/experiment_config.json`
-    - `runs/run_###/metrics_summary.json`
-    - `runs/run_###/trade_log.csv`
-    - `runs/run_###/equity_curve.csv`
-    - `best_report.html` when a best-search report is generated
-    - `search_report.html` when a search comparison report is generated
-  - validation artifacts:
-    - `validation_summary.json`
-    - `train_ranked_results.csv`
-    - `train_best/experiment_config.json`
-    - `train_best/metrics_summary.json`
-    - `train_best/trade_log.csv`
-    - `train_best/equity_curve.csv`
-    - `test_selected/experiment_config.json`
-    - `test_selected/metrics_summary.json`
-    - `test_selected/trade_log.csv`
-    - `test_selected/equity_curve.csv`
-- walk-forward artifacts:
-    - `walk_forward_summary.json`
-    - `fold_results.csv`
-    - `folds/fold_###/train_search/ranked_results.csv`
-    - `folds/fold_###/train_search/runs/run_###/experiment_config.json`
-    - `folds/fold_###/train_search/runs/run_###/metrics_summary.json`
-    - `folds/fold_###/train_search/runs/run_###/trade_log.csv`
-    - `folds/fold_###/train_search/runs/run_###/equity_curve.csv`
-    - `folds/fold_###/test_selected/experiment_config.json`
-    - `folds/fold_###/test_selected/metrics_summary.json`
-    - `folds/fold_###/test_selected/trade_log.csv`
-    - `folds/fold_###/test_selected/equity_curve.csv`
-- diagnostic artifacts:
-    - `permutation_test_summary.json`
-    - `permutation_scores.csv`
-- Canonical output root semantics:
-  - `output_dir / experiment_name` is the root for each top-level workflow.
-  - nested workflow-specific subdirectories are derived from that root by storage-owned rules.
-- Figure placement semantics:
-  - no standalone figure/image files are canonical in the current storage contract;
-  - figures are embedded in persisted HTML report artifacts unless a later storage spec explicitly adds separate image output.
-
-#### Invariants
-
-- Persisted artifact filenames are stable storage-owned contracts.
-- Canonical path derivation happens once in storage-owned code, not separately in runner, CLI, or report code.
-- The same workflow mode always writes to the same conceptual directory structure regardless of which caller triggered it.
-- Storage outputs may include presentation refs, but those refs do not change the canonical persisted artifact set.
-
-#### Cross-module dependencies
-
-- `experiment_runner.py` requests persistence and consumes returned receipts and derived path references.
-- `report.py` and `search_reporting.py` may write HTML report files, but they must do so using storage-owned path conventions.
-- `cli.py` may print storage-owned paths, but it must not invent new filename or directory rules.
-- `schemas.py` provides runtime objects that storage serializes, but it does not own the persisted schema.
-- `README.md`, `PROJECT_BRIEF.md`, and docstrings are derived documentation and must not redefine the layout contract.
-
-#### Failure modes if this boundary is violated
-
-- Search, validation, and walk-forward layouts drift because each workflow reconstructs its own path tree.
-- Report links break because presentation modules guess a different root or filename than storage actually wrote.
-- CLI payloads advertise artifact paths that do not exist because they were assembled from ad hoc path logic.
-- Runtime result objects gain persistence-specific fields that callers then mistake for canonical result truth.
-- Backward compatibility becomes impossible to reason about because the storage contract is split across multiple modules.
-
-#### Migration notes from current implementation
-
-- `storage.py` already writes the canonical single-run, search, validation, and walk-forward files, but some path naming is still surfaced or reconstructed elsewhere.
-- `storage.py` now derives family-specific walk-forward fold-result parameter columns from the selected strategy specs rather than hardcoding MA-only columns.
-- `storage.py` also owns the canonical permutation/null-comparison summary and metric-value-list artifacts once that diagnostic is enabled.
-- The permutation summary now records the block-based null semantics explicitly via `permutation_mode` and `block_size`, plus the selected target metric and metric-value fields.
-- The persisted permutation summary normalizes count-like fields to integers before writing JSON.
-- `experiment_runner.py` currently builds workflow roots such as `search_root`, `validation_root`, and `walk_forward_root`.
-- `search_reporting.py` currently knows `best_report.html` and `search_report.html`.
-- `cli.py` currently surfaces derived presentation refs like `report_path` and `search_report_path`.
-- `schemas.py` currently contains runtime fields that serialize to persistence-facing payloads, which makes the runtime/persistence boundary easy to blur.
-
-#### Open questions / deferred decisions
-
-- Whether standalone figure/image artifacts should ever become canonical persisted outputs is deferred.
-  - Recommended default: keep figures inline in HTML reports and add separate image artifacts only through a future storage spec.
-- Whether report HTML file placement should be expanded to a richer storage-owned manifest later is deferred.
-  - Recommended default: keep the current filenames stable and only add new report artifacts through explicit storage-owned filenames.
-
-#### Scenario: single-run persistence uses one storage-owned layout
-
-- GIVEN a single experiment run is persisted
-- WHEN storage writes the canonical files
-- THEN the run directory SHALL contain the single-run file set owned by storage
-- AND any report HTML SHALL be placed according to the storage-owned report placement rule
-- AND no downstream module SHALL need to reconstruct the directory tree to find the artifacts
+- GIVEN the research protocol summary references development search, walk-forward, permutation, or final holdout artifacts
+- WHEN storage serializes the protocol summary
+- THEN those nested references MUST remain references or serialized summaries derived from existing runtime/storage contracts
+- AND the protocol summary MUST NOT redefine single-run, search, validation, walk-forward, or permutation artifact schemas
 
 ### Requirement: Runtime dataclasses are not the persisted artifact schema owner
 
@@ -325,3 +198,4 @@ Define the canonical persisted artifact schema and output layout for AlphaForge 
 - WHEN the renderer needs links to run artifacts and the best report
 - THEN it SHALL use explicit artifact refs and the explicit link base only
 - AND it SHALL NOT infer path targets from hidden directory layout assumptions
+
