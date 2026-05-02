@@ -17,7 +17,7 @@ TBD - created by archiving change formalize-market-data-schema-and-adapter-bound
 - `src/alphaforge/data_loader.py` is the only authoritative owner of canonical market-data acceptance and validation.
 - `src/alphaforge/config.py` may supply literal alias maps or human-readable policy text as inputs only.
 - `src/alphaforge/twse_client.py` is an external adapter only.
-- `src/alphaforge/strategy/base.py`, `src/alphaforge/strategy/ma_crossover.py`, `src/alphaforge/strategy/breakout.py`, `src/alphaforge/backtest.py`, `src/alphaforge/metrics.py`, `src/alphaforge/report.py`, `src/alphaforge/visualization.py`, `src/alphaforge/storage.py`, `src/alphaforge/cli.py`, and `src/alphaforge/experiment_runner.py` are downstream consumers only.
+- `src/alphaforge/strategy/base.py`, `src/alphaforge/strategy/ma_crossover.py`, `src/alphaforge/backtest.py`, `src/alphaforge/metrics.py`, `src/alphaforge/report.py`, `src/alphaforge/visualization.py`, `src/alphaforge/storage.py`, `src/alphaforge/cli.py`, and `src/alphaforge/experiment_runner.py` are downstream consumers only.
 
 #### Allowed responsibilities
 
@@ -26,11 +26,14 @@ TBD - created by archiving change formalize-market-data-schema-and-adapter-bound
   - resolve a source datetime hint into the canonical `datetime` column,
   - parse `datetime` values,
   - sort rows by `datetime` ascending,
-  - drop duplicate `datetime` rows by keeping the last occurrence,
+  - deterministically collapse duplicate `datetime` rows by keeping the last normalized row,
   - apply the canonical missing-data policy,
   - validate that the accepted frame is non-empty,
   - validate that canonical OHLCV columns are numeric after cleaning,
-  - return a normalized frame ready for strategy and backtest consumption.
+  - validate that `open`, `high`, `low`, and `close` are finite positive values,
+  - validate that `high >= low`, `high >= open`, `high >= close`, `low <= open`, and `low <= close`,
+  - return a normalized frame ready for strategy and backtest consumption,
+  - emit a data-quality summary that downstream storage and report owners may persist or display.
 
 #### Explicit non-responsibilities
 
@@ -65,17 +68,23 @@ TBD - created by archiving change formalize-market-data-schema-and-adapter-bound
 - Semantic type expectations:
   - `datetime` must be parseable to a pandas datetime dtype
   - price and volume columns must be numeric after acceptance
-- Index contract:
-  - `datetime` is a canonical column, not the canonical index
-  - downstream modules may set an index locally, but the accepted frame is column-based
+- Duplicate handling:
+  - source duplicate datetimes MAY be accepted only if they are collapsed deterministically during normalization
+  - the accepted frame MUST have unique, strictly increasing `datetime` values
+  - duplicate collapse policy SHALL be explicit in the data-quality summary
+- Missing-data policy:
+  - missing OHLC values SHALL fail by default
+  - missing volume values SHALL be normalized according to an explicit loader policy, with the current canonical policy recorded in the data-quality summary
 - Output:
   - a normalized `pd.DataFrame` ready for downstream consumption
+  - a data-quality summary or metadata payload that storage may persist through its own serializer
 
 #### Invariants
 
 - The accepted market-data frame has exactly one row per `datetime`.
 - The accepted market-data frame is sorted in ascending `datetime` order.
 - The accepted market-data frame has canonical lower-case OHLCV column names in canonical order.
+- The accepted market-data frame has finite positive OHLC values.
 - The canonical runtime contract is the accepted frame returned by `data_loader.py`, not the raw CSV or adapter payload.
 
 #### Cross-module dependencies
@@ -84,6 +93,7 @@ TBD - created by archiving change formalize-market-data-schema-and-adapter-bound
 - `twse_client.py` may emit candidate canonical frames that `data_loader.py` then accepts or rejects.
 - `experiment_runner.py` calls `load_market_data()` before orchestration.
 - `backtest.py`, `metrics.py`, `report.py`, `visualization.py`, `storage.py`, `cli.py`, and `strategy/*` consume accepted market data as authoritative input.
+- `storage.py` may persist the data-quality summary, but it does not own the acceptance rule.
 
 #### Failure modes if this boundary is violated
 
@@ -91,30 +101,32 @@ TBD - created by archiving change formalize-market-data-schema-and-adapter-bound
 - If adapter code owns the acceptance rule, TWSE and CSV paths can normalize the same data differently.
 - If downstream modules recheck or reshape market data independently, accepted inputs can stop being interchangeable across workflows.
 - If the datetime contract is ambiguous, sorting, duplicate handling, and execution timing assumptions can diverge.
+- If OHLC missing values are silently filled, strategy and backtest results can appear valid even when the input quality is not.
 
 #### Migration notes from current implementation
 
 - `data_loader.py` already standardizes column names, parses datetime, sorts rows, deduplicates timestamps, applies missing-data handling, and validates numeric columns.
-- `config.py` currently exposes `REQUIRED_COLUMNS`, `CSV_COLUMN_ALIASES`, and `MISSING_DATA_POLICY` constants that the loader consumes.
-- This change makes the loader the explicit authority and treats config constants as inputs rather than the business owner.
+- This change makes duplicate collapse and OHLC quality checks explicit, and it requires the missing-data policy to be spelled out rather than implied.
 
 #### Open questions / deferred decisions
 
-- Whether `config.py` should keep exporting `REQUIRED_COLUMNS`, `CSV_COLUMN_ALIASES`, and `MISSING_DATA_POLICY` or whether those constants should move into loader-owned implementation helpers is deferred.
-  - Recommended default: keep them as literal inputs only until a future cleanup removes the duplicate surface.
+- Whether the explicit missing-volume policy should remain zero-fill or move to a stricter rejection rule is deferred.
+  - Recommended default: keep the current zero-fill policy only if the data-quality summary records it unambiguously.
 
 #### Scenario: CSV ingestion returns a canonical frame
 
-- GIVEN a CSV file with alias column names, duplicate timestamps, and missing volume values
+- GIVEN a CSV file with alias column names and duplicate timestamps
 - WHEN `load_market_data()` accepts the file
 - THEN the returned frame SHALL use canonical lower-case column names
 - AND the returned frame SHALL be sorted by `datetime`
-- AND duplicate timestamps SHALL keep the last row
-- AND missing volume SHALL be filled according to the loader policy
+- AND duplicate timestamps SHALL be collapsed deterministically by keeping the last normalized row
+- AND the accepted frame SHALL have unique, strictly increasing `datetime` values
 
-#### Scenario: missing required columns fail fast
+#### Scenario: missing required columns or invalid OHLC values fail fast
 
 - GIVEN a candidate market-data frame is missing one of the canonical required columns
+- OR a candidate market-data frame contains missing OHLC values
+- OR a candidate market-data frame contains non-finite or non-positive OHLC values
 - WHEN `load_market_data()` validates the frame
 - THEN acceptance SHALL fail fast with an error
 - AND no downstream module SHALL treat the frame as accepted market data
@@ -280,3 +292,4 @@ Once `data_loader.py` accepts market data, downstream modules SHALL rely on the 
 - WHEN strategy, backtest, metrics, report, visualization, storage, CLI, or orchestration code consumes it
 - THEN each module SHALL treat the loader contract as authoritative
 - AND no module SHALL redefine the canonical required columns or duplicate policy locally
+
