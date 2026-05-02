@@ -2,7 +2,7 @@
 
 ## 1. Spec and contract alignment
 
-- [ ] 1.1 Update the execution-semantics-contract delta to name the legacy close-to-close lagged execution semantics and the return-based trade-log contract.
+- [x] 1.1 Update the execution-semantics-contract delta to name the legacy close-to-close lagged execution semantics and the return-based trade-log contract.
 - [x] 1.2 Update the market-data-schema-and-adapter-boundary delta to make OHLCV quality rules, duplicate collapse, and volume handling explicit.
 - [x] 1.3 Update the metric, storage, and report boundary deltas so win rate, persisted trade-log shape, and display wording all derive from the canonical return-based trade contract.
 
