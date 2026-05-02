@@ -125,6 +125,8 @@ def test_run_experiment_saves_outputs(sample_market_csv: Path, tmp_path: Path) -
     assert not hasattr(execution.result, "metrics_path")
     assert execution.result.metrics.trade_count >= 0
     assert {key: execution.result.metadata[key] for key in build_execution_semantics_metadata()} == build_execution_semantics_metadata()
+    assert execution.result.metadata["data_quality_summary"]["missing_volume_policy"] == "fill_zero"
+    assert execution.result.metadata["data_quality_summary"]["duplicate_datetime_policy"] == "deterministic_keep_last"
     assert not execution.equity_curve.empty
     assert isinstance(execution.trade_log, pd.DataFrame)
 
@@ -158,6 +160,9 @@ def test_run_experiment_saved_artifacts_match_returned_metrics_and_trades(
     assert metrics_payload["turnover"] == result.metrics.turnover
     assert metrics_payload["total_return"] == result.metrics.total_return
     assert experiment_config_payload["metadata"] == result.metadata
+    assert experiment_config_payload["metadata"]["data_quality_summary"]["source_row_count"] == 8
+    assert experiment_config_payload["metadata"]["data_quality_summary"]["duplicate_row_count"] == 0
+    assert experiment_config_payload["metadata"]["data_quality_summary"]["missing_ohlc_policy"] == "fail"
     assert len(trade_log_frame) == len(trades)
     assert trade_log_frame.columns.tolist() == trades.columns.tolist()
 

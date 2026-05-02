@@ -80,6 +80,7 @@ def render_experiment_report(
     """Assemble a single-experiment HTML report from existing artifacts."""
     to_html = _load_plotly_to_html()
     execution_assumptions_rows = _build_execution_assumptions_rows(report_input.result.metadata)
+    data_quality_rows = _build_data_quality_rows(report_input.result.metadata)
     trade_return_rows = _build_trade_return_rows()
     metrics_rows = _build_metrics_rows(report_input.result, report_input.benchmark_summary)
     equity_figure = build_equity_curve_figure(report_input.equity_curve)
@@ -157,6 +158,7 @@ def render_experiment_report(
         {execution_assumptions_rows}
       </div>
     </section>
+    {data_quality_rows}
     <section class="section">
       <h2>Trade Return Semantics</h2>
       <p class="meta">Trade metrics are return-based. Win rate counts trades with trade_net_return &gt; 0.</p>
@@ -212,6 +214,7 @@ def render_search_comparison_report(
     execution_assumptions_rows = _build_execution_assumptions_rows(
         ranked_results[0].metadata if ranked_results else {}
     )
+    data_quality_rows = _build_data_quality_rows(ranked_results[0].metadata if ranked_results else {})
     trade_return_rows = _build_trade_return_rows()
     comparison_table = _build_search_comparison_table(
         link_context=link_context,
@@ -283,6 +286,7 @@ def render_search_comparison_report(
         {execution_assumptions_rows}
       </div>
     </section>
+    {data_quality_rows}
     <section class="section">
       <h2>Trade Return Semantics</h2>
       <p class="meta">Trade metrics are return-based. Win rate counts trades with trade_net_return &gt; 0.</p>
@@ -460,6 +464,35 @@ def _build_execution_assumptions_rows(metadata: dict[str, object]) -> str:
 </div>"""
         )
     return "\n".join(cards)
+
+
+def _build_data_quality_rows(metadata: dict[str, object]) -> str:
+    summary = metadata.get("data_quality_summary")
+    if not isinstance(summary, dict):
+        return ""
+    cards = []
+    labels = [
+        ("Datetime Policy", summary.get("datetime_policy", "")),
+        ("Duplicate Policy", summary.get("duplicate_datetime_policy", "")),
+        ("Missing OHLC Policy", summary.get("missing_ohlc_policy", "")),
+        ("Missing Volume Policy", summary.get("missing_volume_policy", "")),
+        ("Source Rows", summary.get("source_row_count", "")),
+        ("Accepted Rows", summary.get("accepted_row_count", "")),
+        ("Volume Missing Rows", summary.get("volume_missing_row_count", "")),
+    ]
+    for label, value in labels:
+        cards.append(
+            f"""<div class="metric-card">
+  <div class="metric-label">{escape(label)}</div>
+  <div class="metric-value">{escape(str(value))}</div>
+</div>"""
+        )
+    return f"""<section class="section">
+      <h2>Market Data Quality</h2>
+      <div class="metrics-grid">
+        {"".join(cards)}
+      </div>
+    </section>"""
 
 
 def _build_trade_return_rows() -> str:

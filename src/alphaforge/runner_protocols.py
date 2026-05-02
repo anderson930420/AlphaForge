@@ -41,6 +41,8 @@ def build_execution_metadata(market_data: pd.DataFrame, benchmark_summary: dict[
         "missing_data_policy": market_data.attrs.get("missing_data_policy", ""),
         "benchmark_summary": benchmark_summary,
     }
+    if "data_quality_summary" in market_data.attrs:
+        metadata["data_quality_summary"] = market_data.attrs["data_quality_summary"]
     metadata.update(build_holdout_metadata(market_data))
     return metadata
 

@@ -8,7 +8,7 @@ from alphaforge.data_loader import split_holdout_data
 from alphaforge.schemas import DataSpec
 
 
-def test_load_market_data_standardizes_and_sorts(tmp_path) -> None:
+def test_load_market_data_standardizes_sorts_and_records_quality_summary(tmp_path) -> None:
     frame = pd.DataFrame(
         {
             "Date": ["2024-01-02", "2024-01-01", "2024-01-01", "2024-01-03"],
@@ -26,9 +26,24 @@ def test_load_market_data_standardizes_and_sorts(tmp_path) -> None:
 
     assert list(loaded.columns) == ["datetime", "open", "high", "low", "close", "volume"]
     assert loaded["datetime"].is_monotonic_increasing
+    assert loaded["datetime"].is_unique
     assert len(loaded) == 3
     assert loaded.iloc[0]["close"] == 9
     assert loaded.iloc[0]["volume"] == 99
+    assert loaded.attrs["missing_data_policy"].startswith("Drop rows with missing datetime or OHLC values")
+    assert loaded.attrs["data_quality_summary"] == {
+        "required_columns": ["datetime", "open", "high", "low", "close", "volume"],
+        "canonical_column_order": ["datetime", "open", "high", "low", "close", "volume"],
+        "datetime_policy": "parse_sort_keep_last",
+        "duplicate_datetime_policy": "deterministic_keep_last",
+        "missing_ohlc_policy": "fail",
+        "missing_volume_policy": "fill_zero",
+        "missing_data_policy": loaded.attrs["missing_data_policy"],
+        "source_row_count": 4,
+        "duplicate_row_count": 1,
+        "accepted_row_count": 3,
+        "volume_missing_row_count": 0,
+    }
 
 
 def test_load_market_data_requires_ohlcv_columns(tmp_path) -> None:
@@ -36,6 +51,23 @@ def test_load_market_data_requires_ohlcv_columns(tmp_path) -> None:
     pd.DataFrame({"datetime": ["2024-01-01"], "close": [1]}).to_csv(path, index=False)
 
     with pytest.raises(ValueError, match="Missing required columns"):
+        load_market_data(DataSpec(path=path))
+
+
+def test_load_market_data_rejects_missing_datetime_values(tmp_path) -> None:
+    path = tmp_path / "missing_datetime.csv"
+    pd.DataFrame(
+        {
+            "datetime": [None],
+            "open": [1.0],
+            "high": [1.0],
+            "low": [1.0],
+            "close": [1.0],
+            "volume": [10.0],
+        }
+    ).to_csv(path, index=False)
+
+    with pytest.raises(ValueError, match="datetime column contains missing values"):
         load_market_data(DataSpec(path=path))
 
 
@@ -55,6 +87,116 @@ def test_load_market_data_honors_custom_datetime_column(tmp_path) -> None:
     loaded = load_market_data(DataSpec(path=path, datetime_column="trade_date"))
 
     assert loaded["datetime"].dt.strftime("%Y-%m-%d").tolist() == ["2024-01-01", "2024-01-02"]
+
+
+def test_load_market_data_fills_missing_volume_explicitly(tmp_path) -> None:
+    path = tmp_path / "missing_volume.csv"
+    pd.DataFrame(
+        {
+            "datetime": ["2024-01-01", "2024-01-02"],
+            "open": [1.0, 2.0],
+            "high": [1.5, 2.5],
+            "low": [0.5, 1.5],
+            "close": [1.0, 2.0],
+            "volume": [None, 10.0],
+        }
+    ).to_csv(path, index=False)
+
+    loaded = load_market_data(DataSpec(path=path))
+
+    assert loaded["volume"].tolist() == [0.0, 10.0]
+    assert loaded.attrs["data_quality_summary"]["missing_volume_policy"] == "fill_zero"
+    assert loaded.attrs["data_quality_summary"]["volume_missing_row_count"] == 1
+
+
+@pytest.mark.parametrize("missing_column", ["open", "high", "low", "close"])
+def test_load_market_data_rejects_missing_ohlc_values(tmp_path, missing_column: str) -> None:
+    path = tmp_path / f"missing_{missing_column}.csv"
+    frame = pd.DataFrame(
+        {
+            "datetime": ["2024-01-01"],
+            "open": [1.0],
+            "high": [1.0],
+            "low": [1.0],
+            "close": [1.0],
+            "volume": [10.0],
+        }
+    )
+    frame.loc[0, missing_column] = None
+    frame.to_csv(path, index=False)
+
+    with pytest.raises(ValueError, match="Missing OHLC values are not allowed"):
+        load_market_data(DataSpec(path=path))
+
+
+@pytest.mark.parametrize("column,value", [("open", float("inf")), ("close", float("-inf"))])
+def test_load_market_data_rejects_non_finite_ohlc_values(tmp_path, column: str, value: float) -> None:
+    path = tmp_path / f"non_finite_{column}.csv"
+    frame = pd.DataFrame(
+        {
+            "datetime": ["2024-01-01"],
+            "open": [1.0],
+            "high": [1.5],
+            "low": [0.5],
+            "close": [1.0],
+            "volume": [10.0],
+        }
+    )
+    frame.loc[0, column] = value
+    frame.to_csv(path, index=False)
+
+    with pytest.raises(ValueError, match="OHLC values must be finite"):
+        load_market_data(DataSpec(path=path))
+
+
+@pytest.mark.parametrize("column,value", [("open", 0.0), ("close", -1.0)])
+def test_load_market_data_rejects_non_positive_ohlc_values(tmp_path, column: str, value: float) -> None:
+    path = tmp_path / f"non_positive_{column}.csv"
+    frame = pd.DataFrame(
+        {
+            "datetime": ["2024-01-01"],
+            "open": [1.0],
+            "high": [1.5],
+            "low": [0.5],
+            "close": [1.0],
+            "volume": [10.0],
+        }
+    )
+    frame.loc[0, column] = value
+    frame.to_csv(path, index=False)
+
+    with pytest.raises(ValueError, match="OHLC values must be positive"):
+        load_market_data(DataSpec(path=path))
+
+
+@pytest.mark.parametrize(
+    ("mutations", "message"),
+    [
+        ({"high": 0.4, "low": 0.5}, "high must be greater than or equal to low"),
+        ({"high": 0.9}, "high must be greater than or equal to open"),
+        ({"high": 1.0}, "high must be greater than or equal to close"),
+        ({"low": 1.1}, "low must be less than or equal to open"),
+        ({"open": 2.0, "high": 2.5, "low": 1.3}, "low must be less than or equal to close"),
+    ],
+)
+def test_load_market_data_rejects_invalid_ohlc_relations(tmp_path, mutations: dict[str, float], message: str) -> None:
+    path = tmp_path / "relation_violation.csv"
+    frame = pd.DataFrame(
+        {
+            "datetime": ["2024-01-01"],
+            "open": [1.0],
+            "high": [1.5],
+            "low": [0.5],
+            "close": [1.2],
+            "volume": [10.0],
+        }
+    )
+    for column, value in mutations.items():
+        frame.loc[0, column] = value
+    frame.to_csv(path, index=False)
+
+    with pytest.raises(ValueError, match=message):
+        load_market_data(DataSpec(path=path))
 
 
 def test_split_holdout_data_partitions_rows_and_preserves_order_and_columns() -> None:
@@ -77,6 +219,28 @@ def test_split_holdout_data_partitions_rows_and_preserves_order_and_columns() ->
     assert holdout_data.columns.tolist() == market_data.columns.tolist()
     assert development_data["datetime"].is_monotonic_increasing
     assert holdout_data["datetime"].is_monotonic_increasing
+
+
+def test_split_holdout_data_preserves_loader_metadata() -> None:
+    market_data = pd.DataFrame(
+        {
+            "datetime": pd.date_range("2024-01-01", periods=4, freq="D"),
+            "open": [1.0, 2.0, 3.0, 4.0],
+            "high": [1.5, 2.5, 3.5, 4.5],
+            "low": [0.5, 1.5, 2.5, 3.5],
+            "close": [1.0, 2.0, 3.0, 4.0],
+            "volume": [10.0, 11.0, 12.0, 13.0],
+        }
+    )
+    market_data.attrs["missing_data_policy"] = "test-policy"
+    market_data.attrs["data_quality_summary"] = {"duplicate_datetime_policy": "deterministic_keep_last"}
+
+    development_data, holdout_data = split_holdout_data(market_data, "2024-01-03")
+
+    assert development_data.attrs["missing_data_policy"] == "test-policy"
+    assert holdout_data.attrs["missing_data_policy"] == "test-policy"
+    assert development_data.attrs["data_quality_summary"] == {"duplicate_datetime_policy": "deterministic_keep_last"}
+    assert holdout_data.attrs["data_quality_summary"] == {"duplicate_datetime_policy": "deterministic_keep_last"}
 
 
 def test_split_holdout_data_rejects_cutoff_that_removes_all_development_rows() -> None:

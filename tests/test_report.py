@@ -29,6 +29,19 @@ def _assert_no_external_plotly_cdn_script(html: str) -> None:
 
 
 def test_render_and_save_experiment_report_creates_html(tmp_path: Path) -> None:
+    quality_summary = {
+        "required_columns": ["datetime", "open", "high", "low", "close", "volume"],
+        "canonical_column_order": ["datetime", "open", "high", "low", "close", "volume"],
+        "datetime_policy": "parse_sort_keep_last",
+        "duplicate_datetime_policy": "deterministic_keep_last",
+        "missing_ohlc_policy": "fail",
+        "missing_volume_policy": "fill_zero",
+        "missing_data_policy": "Drop rows with missing datetime or OHLC values; keep the last row for duplicate datetimes after sorting, and fill missing volume with 0.",
+        "source_row_count": 4,
+        "duplicate_row_count": 0,
+        "accepted_row_count": 4,
+        "volume_missing_row_count": 0,
+    }
     result = ExperimentResult(
         data_spec=DataSpec(path=Path("sample_data/example.csv"), symbol="2330"),
         strategy_spec=StrategySpec(name="ma_crossover", parameters={"short_window": 5, "long_window": 20}),
@@ -47,6 +60,7 @@ def test_render_and_save_experiment_report_creates_html(tmp_path: Path) -> None:
             turnover=1.5,
             trade_count=4, bar_count=1),
         score=1.0,
+        metadata={"data_quality_summary": quality_summary},
     )
     equity_curve = pd.DataFrame(
         {
@@ -83,6 +97,7 @@ def test_render_and_save_experiment_report_creates_html(tmp_path: Path) -> None:
     assert output_path.exists()
     saved_content = output_path.read_text(encoding="utf-8")
     assert "Execution Assumptions" in saved_content
+    assert "Market Data Quality" in saved_content
     assert "Trade Return Semantics" in saved_content
     assert "trade_net_return" in saved_content
     assert "cost_return_contribution" in saved_content
@@ -112,6 +127,8 @@ def test_render_and_save_experiment_report_creates_html(tmp_path: Path) -> None:
     assert "Close Price" in saved_content
     assert "Buy" in saved_content
     assert "Sell" in saved_content
+    assert "deterministic_keep_last" in saved_content
+    assert "fill_zero" in saved_content
     _assert_no_external_plotly_cdn_script(saved_content)
     assert "Plotly.newPlot" in saved_content
     assert saved_content.count('class="plotly-graph-div"') == 4
@@ -234,6 +251,19 @@ def test_render_experiment_report_handles_empty_trades_with_price_section() -> N
 def test_render_search_comparison_report_includes_ranked_table_and_overlay_sections(tmp_path: Path) -> None:
     link_base_dir = tmp_path / "presentation_case"
     link_base_dir.mkdir()
+    quality_summary = {
+        "required_columns": ["datetime", "open", "high", "low", "close", "volume"],
+        "canonical_column_order": ["datetime", "open", "high", "low", "close", "volume"],
+        "datetime_policy": "parse_sort_keep_last",
+        "duplicate_datetime_policy": "deterministic_keep_last",
+        "missing_ohlc_policy": "fail",
+        "missing_volume_policy": "fill_zero",
+        "missing_data_policy": "Drop rows with missing datetime or OHLC values; keep the last row for duplicate datetimes after sorting, and fill missing volume with 0.",
+        "source_row_count": 3,
+        "duplicate_row_count": 0,
+        "accepted_row_count": 3,
+        "volume_missing_row_count": 0,
+    }
     ranked_results = [
         ExperimentResult(
             data_spec=DataSpec(path=Path("sample_data/a.csv"), symbol="2330"),
@@ -241,6 +271,7 @@ def test_render_search_comparison_report_includes_ranked_table_and_overlay_secti
             backtest_config=BacktestConfig(100000.0, 0.001, 0.0005, 252),
             metrics=MetricReport(0.2, 0.3, 1.4, -0.08, 0.6, 1.2, 4, bar_count=1),
             score=0.9,
+            metadata={"data_quality_summary": quality_summary},
         ),
         ExperimentResult(
             data_spec=DataSpec(path=Path("sample_data/b.csv"), symbol="2330"),
@@ -286,6 +317,7 @@ def test_render_search_comparison_report_includes_ranked_table_and_overlay_secti
 
     assert "Friendly Search Name" in report_content
     assert "Execution Assumptions" in report_content
+    assert "Market Data Quality" in report_content
     assert "Trade Return Semantics" in report_content
     assert "Ranked Comparison" in report_content
     assert "Short Window" in report_content
@@ -294,6 +326,7 @@ def test_render_search_comparison_report_includes_ranked_table_and_overlay_secti
     assert "Top Drawdowns" in report_content
     assert "runs/run_001" in report_content
     assert "best_report.html" in report_content
+    assert "deterministic_keep_last" in report_content
     assert "dollar PnL" not in report_content
     _assert_no_external_plotly_cdn_script(report_content)
     assert "Plotly.newPlot" in report_content
