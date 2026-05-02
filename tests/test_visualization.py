@@ -88,8 +88,8 @@ def test_build_price_trade_figure_returns_close_line_with_trade_markers() -> Non
     )
     trades = pd.DataFrame(
         {
-            "entry_time": ["2024-01-02 00:00:00"],
-            "exit_time": ["2024-01-04 00:00:00"],
+            "entry_datetime": ["2024-01-02 00:00:00"],
+            "exit_datetime": ["2024-01-04 00:00:00"],
             "entry_price": [102.0],
             "exit_price": [105.0],
         }

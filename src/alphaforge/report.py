@@ -25,6 +25,7 @@ from .visualization import (
     build_price_trade_figure,
     build_strategy_benchmark_figure,
 )
+from .backtest import build_execution_semantics_metadata
 
 
 @dataclass(frozen=True)
@@ -78,6 +79,8 @@ def render_experiment_report(
 ) -> str:
     """Assemble a single-experiment HTML report from existing artifacts."""
     to_html = _load_plotly_to_html()
+    execution_assumptions_rows = _build_execution_assumptions_rows(report_input.result.metadata)
+    trade_return_rows = _build_trade_return_rows()
     metrics_rows = _build_metrics_rows(report_input.result, report_input.benchmark_summary)
     equity_figure = build_equity_curve_figure(report_input.equity_curve)
     strategy_benchmark_figure = build_strategy_benchmark_figure(report_input.equity_curve, report_input.benchmark_curve)
@@ -149,6 +152,19 @@ def render_experiment_report(
     <h1>{escape(experiment_title)}</h1>
     <p class="meta">Strategy: {escape(report_input.result.strategy_spec.name)} | Symbol: {escape(report_input.result.data_spec.symbol)}</p>
     <section class="section">
+      <h2>Execution Assumptions</h2>
+      <div class="metrics-grid">
+        {execution_assumptions_rows}
+      </div>
+    </section>
+    <section class="section">
+      <h2>Trade Return Semantics</h2>
+      <p class="meta">Trade metrics are return-based. Win rate counts trades with trade_net_return &gt; 0.</p>
+      <div class="metrics-grid">
+        {trade_return_rows}
+      </div>
+    </section>
+    <section class="section">
       <h2>Metrics Summary</h2>
       <div class="metrics-grid">
         {metrics_rows}
@@ -193,6 +209,10 @@ def render_search_comparison_report(
 ) -> str:
     """Assemble an HTML comparison report for ranked search results."""
     title = f"AlphaForge Search Report: {link_context.search_display_name}"
+    execution_assumptions_rows = _build_execution_assumptions_rows(
+        ranked_results[0].metadata if ranked_results else {}
+    )
+    trade_return_rows = _build_trade_return_rows()
     comparison_table = _build_search_comparison_table(
         link_context=link_context,
         ranked_results=ranked_results,
@@ -257,6 +277,19 @@ def render_search_comparison_report(
   <main>
     <h1>{escape(title)}</h1>
     <p class="meta">Link base: {escape(str(link_context.link_base_dir))}</p>
+    <section class="section">
+      <h2>Execution Assumptions</h2>
+      <div class="metrics-grid">
+        {execution_assumptions_rows}
+      </div>
+    </section>
+    <section class="section">
+      <h2>Trade Return Semantics</h2>
+      <p class="meta">Trade metrics are return-based. Win rate counts trades with trade_net_return &gt; 0.</p>
+      <div class="metrics-grid">
+        {trade_return_rows}
+      </div>
+    </section>
     <section class="section">
       <h2>Ranked Comparison</h2>
       {comparison_table}
@@ -402,6 +435,47 @@ def _build_metrics_rows(result: ExperimentResult, benchmark_summary: dict[str, f
             f"""<div class="metric-card">
   <div class="metric-label">{escape(label)}</div>
   <div class="metric-value">{escape(value)}</div>
+</div>"""
+        )
+    return "\n".join(cards)
+
+
+def _build_execution_assumptions_rows(metadata: dict[str, object]) -> str:
+    assumptions = build_execution_semantics_metadata()
+    assumptions.update({key: metadata[key] for key in assumptions if key in metadata})
+    cards = []
+    labels = [
+        ("Execution Semantics", assumptions["execution_semantics"]),
+        ("Position Rule", assumptions["position_rule"]),
+        ("Return Rule", assumptions["return_rule"]),
+        ("Position Bounds", assumptions["position_bounds"]),
+        ("Supports Shorting", assumptions["supports_shorting"]),
+        ("Supports Leverage", assumptions["supports_leverage"]),
+    ]
+    for label, value in labels:
+        cards.append(
+            f"""<div class="metric-card">
+  <div class="metric-label">{escape(label)}</div>
+  <div class="metric-value">{escape(str(value))}</div>
+</div>"""
+        )
+    return "\n".join(cards)
+
+
+def _build_trade_return_rows() -> str:
+    cards = []
+    labels = [
+        ("Trade Log Schema", "entry_datetime / exit_datetime / entry_price / exit_price / holding_period / trade_gross_return / trade_net_return / cost_return_contribution / entry_target_position / exit_target_position"),
+        ("Gross Return", "trade_gross_return"),
+        ("Net Return", "trade_net_return"),
+        ("Cost Contribution", "cost_return_contribution"),
+        ("Win Rate Rule", "count(trade_net_return > 0) / trade_count"),
+    ]
+    for label, value in labels:
+        cards.append(
+            f"""<div class="metric-card">
+  <div class="metric-label">{escape(label)}</div>
+  <div class="metric-value">{escape(str(value))}</div>
 </div>"""
         )
     return "\n".join(cards)

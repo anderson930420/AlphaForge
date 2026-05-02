@@ -147,8 +147,8 @@ def build_price_trade_figure(
 
     time_values = pd.to_datetime(equity_curve["datetime"])
     close_values = equity_curve["close"].astype(float)
-    entry_markers = _build_trade_markers(trades, "entry_time", "entry_price")
-    exit_markers = _build_trade_markers(trades, "exit_time", "exit_price")
+    entry_markers = _build_trade_markers(trades, "entry_datetime", "entry_price")
+    exit_markers = _build_trade_markers(trades, "exit_datetime", "exit_price")
 
     figure = go.Figure()
     figure.add_trace(

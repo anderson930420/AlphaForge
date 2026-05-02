@@ -31,7 +31,7 @@ def compute_metrics(
     sharpe_ratio = _compute_sharpe_ratio(returns, annualization_factor, risk_free_rate=risk_free_rate)
     max_drawdown = _compute_max_drawdown(equity_curve["equity"])
     trade_count = int(len(trades))
-    win_rate = float((trades["net_pnl"] > 0).mean()) if trade_count else 0.0
+    win_rate = float((trades["trade_net_return"] > 0).mean()) if trade_count else 0.0
     turnover = float(equity_curve["turnover"].sum())
     return MetricReport(
         total_return=total_return,

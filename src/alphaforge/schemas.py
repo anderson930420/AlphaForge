@@ -37,14 +37,16 @@ class BacktestConfig:
 
 @dataclass(frozen=True)
 class TradeRecord:
-    entry_time: str
-    exit_time: str
-    side: str
-    quantity: float
+    entry_datetime: str
+    exit_datetime: str
     entry_price: float
     exit_price: float
-    gross_return: float
-    net_pnl: float
+    holding_period: int
+    trade_gross_return: float
+    trade_net_return: float
+    cost_return_contribution: float
+    entry_target_position: float
+    exit_target_position: float
 
 
 @dataclass(frozen=True)

@@ -17,7 +17,7 @@ def test_compute_metrics_returns_expected_fields() -> None:
             "turnover": [0.0, 1.0, 0.0, 1.0],
         }
     )
-    trades = pd.DataFrame({"net_pnl": [0.01, -0.005, 0.02]})
+    trades = pd.DataFrame({"trade_net_return": [0.01, -0.005, 0.02]})
 
     metrics = compute_metrics(equity_curve, trades, annualization_factor=252)
 
@@ -37,7 +37,7 @@ def test_compute_metrics_keeps_backward_compatible_zero_risk_free_default() -> N
             "turnover": [0.0, 1.0, 0.0, 1.0],
         }
     )
-    trades = pd.DataFrame({"net_pnl": [0.01, -0.005, 0.02]})
+    trades = pd.DataFrame({"trade_net_return": [0.01, -0.005, 0.02]})
 
     default_metrics = compute_metrics(equity_curve, trades, annualization_factor=252)
     explicit_zero_metrics = compute_metrics(equity_curve, trades, annualization_factor=252, risk_free_rate=0.0)

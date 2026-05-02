@@ -12,6 +12,7 @@ from pathlib import Path
 import pandas as pd
 
 from . import config
+from .backtest import build_execution_semantics_metadata
 from .policy_types import ParameterGrid
 from .schemas import BacktestConfig, ResearchPeriod, StrategySpec
 from .strategy.base import Strategy
@@ -36,6 +37,7 @@ def workflow_root(output_dir: Path | None, experiment_name: str) -> Path | None:
 def build_execution_metadata(market_data: pd.DataFrame, benchmark_summary: dict[str, float]) -> dict[str, object]:
     """Assemble runner-local execution metadata from canonical owners."""
     metadata: dict[str, object] = {
+        **build_execution_semantics_metadata(),
         "missing_data_policy": market_data.attrs.get("missing_data_policy", ""),
         "benchmark_summary": benchmark_summary,
     }

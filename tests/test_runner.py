@@ -38,6 +38,7 @@ from alphaforge.schemas import (
     WalkForwardResult,
 )
 from alphaforge.storage import ArtifactReceipt, serialize_experiment_result
+from alphaforge.backtest import build_execution_semantics_metadata
 
 
 def _make_research_protocol_market_data() -> pd.DataFrame:
@@ -123,6 +124,7 @@ def test_run_experiment_saves_outputs(sample_market_csv: Path, tmp_path: Path) -
     assert execution.artifact_receipt.metrics_summary_path.name == "metrics_summary.json"
     assert not hasattr(execution.result, "metrics_path")
     assert execution.result.metrics.trade_count >= 0
+    assert {key: execution.result.metadata[key] for key in build_execution_semantics_metadata()} == build_execution_semantics_metadata()
     assert not execution.equity_curve.empty
     assert isinstance(execution.trade_log, pd.DataFrame)
 
@@ -148,12 +150,14 @@ def test_run_experiment_saved_artifacts_match_returned_metrics_and_trades(
     )
 
     metrics_payload = json.loads((tmp_path / "artifact_match_case" / "metrics_summary.json").read_text(encoding="utf-8"))
+    experiment_config_payload = json.loads((tmp_path / "artifact_match_case" / "experiment_config.json").read_text(encoding="utf-8"))
     trade_log_frame = pd.read_csv(tmp_path / "artifact_match_case" / "trade_log.csv")
 
     assert metrics_payload["trade_count"] == result.metrics.trade_count
     assert metrics_payload["bar_count"] == result.metrics.bar_count
     assert metrics_payload["turnover"] == result.metrics.turnover
     assert metrics_payload["total_return"] == result.metrics.total_return
+    assert experiment_config_payload["metadata"] == result.metadata
     assert len(trade_log_frame) == len(trades)
     assert trade_log_frame.columns.tolist() == trades.columns.tolist()
 
@@ -798,10 +802,16 @@ def test_best_search_report_reads_artifacts_from_receipt_not_runtime_result(tmp_
     ).to_csv(equity_curve_path, index=False)
     pd.DataFrame(
         {
-            "entry_time": ["2024-01-02 00:00:00"],
-            "exit_time": ["2024-01-03 00:00:00"],
+            "entry_datetime": ["2024-01-02 00:00:00"],
+            "exit_datetime": ["2024-01-03 00:00:00"],
             "entry_price": [101.0],
             "exit_price": [103.0],
+            "holding_period": [1],
+            "trade_gross_return": [0.019801980198019802],
+            "trade_net_return": [0.018801980198019803],
+            "cost_return_contribution": [0.001],
+            "entry_target_position": [1.0],
+            "exit_target_position": [0.0],
         }
     ).to_csv(trade_log_path, index=False)
     best_result = ExperimentResult(

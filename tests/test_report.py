@@ -57,10 +57,16 @@ def test_render_and_save_experiment_report_creates_html(tmp_path: Path) -> None:
     )
     trades = pd.DataFrame(
         {
-            "entry_time": ["2024-01-02 00:00:00"],
-            "exit_time": ["2024-01-04 00:00:00"],
+            "entry_datetime": ["2024-01-02 00:00:00"],
+            "exit_datetime": ["2024-01-04 00:00:00"],
             "entry_price": [1010.0],
             "exit_price": [1035.0],
+            "holding_period": [1],
+            "trade_gross_return": [0.024752475247524754],
+            "trade_net_return": [0.024252475247524754],
+            "cost_return_contribution": [0.0005],
+            "entry_target_position": [1.0],
+            "exit_target_position": [0.0],
         }
     )
 
@@ -76,6 +82,17 @@ def test_render_and_save_experiment_report_creates_html(tmp_path: Path) -> None:
 
     assert output_path.exists()
     saved_content = output_path.read_text(encoding="utf-8")
+    assert "Execution Assumptions" in saved_content
+    assert "Trade Return Semantics" in saved_content
+    assert "trade_net_return" in saved_content
+    assert "cost_return_contribution" in saved_content
+    assert "trade_net_return &gt; 0" in saved_content
+    assert "dollar PnL" not in saved_content
+    assert "legacy_close_to_close_lagged" in saved_content
+    assert "position[t] = target_position[t-1]" in saved_content
+    assert "close_to_close" in saved_content
+    assert "[0.0, 1.0]" in saved_content
+    assert "False" in saved_content
     assert "Metrics Summary" in saved_content
     assert "Total Return" in saved_content
     assert "Annualized Return" in saved_content
@@ -129,10 +146,16 @@ def test_build_experiment_report_input_preserves_canonical_fields() -> None:
     )
     trades = pd.DataFrame(
         {
-            "entry_time": ["2024-01-02 00:00:00"],
-            "exit_time": ["2024-01-04 00:00:00"],
+            "entry_datetime": ["2024-01-02 00:00:00"],
+            "exit_datetime": ["2024-01-04 00:00:00"],
             "entry_price": [1010.0],
             "exit_price": [1035.0],
+            "holding_period": [1],
+            "trade_gross_return": [0.024752475247524754],
+            "trade_net_return": [0.024252475247524754],
+            "cost_return_contribution": [0.0005],
+            "entry_target_position": [1.0],
+            "exit_target_position": [0.0],
         }
     )
 
@@ -197,6 +220,8 @@ def test_render_experiment_report_handles_empty_trades_with_price_section() -> N
     )
     report_content = render_experiment_report(report_input)
 
+    assert "Execution Assumptions" in report_content
+    assert "Trade Return Semantics" in report_content
     assert "Strategy vs Buy-and-Hold" in report_content
     assert "Benchmark Return" in report_content
     assert "Price with Trade Markers" in report_content
@@ -260,6 +285,8 @@ def test_render_search_comparison_report_includes_ranked_table_and_overlay_secti
     )
 
     assert "Friendly Search Name" in report_content
+    assert "Execution Assumptions" in report_content
+    assert "Trade Return Semantics" in report_content
     assert "Ranked Comparison" in report_content
     assert "Short Window" in report_content
     assert "Long Window" in report_content
@@ -267,6 +294,7 @@ def test_render_search_comparison_report_includes_ranked_table_and_overlay_secti
     assert "Top Drawdowns" in report_content
     assert "runs/run_001" in report_content
     assert "best_report.html" in report_content
+    assert "dollar PnL" not in report_content
     _assert_no_external_plotly_cdn_script(report_content)
     assert "Plotly.newPlot" in report_content
 
@@ -305,6 +333,8 @@ def test_render_search_comparison_report_omits_best_report_link_when_not_provide
     assert "runs/run_001" in report_content
     assert "best_report.html" not in report_content
     assert "search_case" in report_content
+    assert "Execution Assumptions" in report_content
+    assert "Trade Return Semantics" in report_content
 
 
 def test_render_search_comparison_report_supports_breakout_parameter_labels(tmp_path: Path) -> None:

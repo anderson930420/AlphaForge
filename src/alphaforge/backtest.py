@@ -29,6 +29,19 @@ BACKTEST_EQUITY_CURVE_COLUMNS = (
 )
 
 BACKTEST_TRADE_LOG_COLUMNS = tuple(TradeRecord.__annotations__.keys())
+EXECUTION_SEMANTICS = "legacy_close_to_close_lagged"
+
+
+def build_execution_semantics_metadata() -> dict[str, object]:
+    """Describe the canonical execution law used by the current backtest."""
+    return {
+        "execution_semantics": EXECUTION_SEMANTICS,
+        "position_rule": "position[t] = target_position[t-1]",
+        "return_rule": "close_to_close",
+        "position_bounds": [0.0, 1.0],
+        "supports_shorting": False,
+        "supports_leverage": False,
+    }
 
 
 def run_backtest(
@@ -98,14 +111,15 @@ def _extract_trades(frame: pd.DataFrame) -> list[TradeRecord]:
     trade_ids = entry_mask.cumsum().astype(int)
     active_trade_ids = trade_ids.where(position.gt(0.0) | exit_mask, 0)
 
-    entry_rows = frame.loc[entry_mask, ["datetime", "close"]].copy()
+    entry_rows = frame.loc[entry_mask, ["datetime", "close", "target_position"]].copy()
     entry_rows["trade_id"] = trade_ids.loc[entry_mask].to_numpy()
-    entry_rows.rename(columns={"datetime": "entry_time", "close": "entry_price"}, inplace=True)
+    entry_rows["entry_target_position"] = frame["target_position"].shift(1).loc[entry_mask].fillna(0.0).astype(float).to_numpy()
+    entry_rows.rename(columns={"datetime": "entry_datetime", "close": "entry_price"}, inplace=True)
+    entry_rows.drop(columns=["target_position"], inplace=True)
 
-    exit_rows = frame.loc[exit_mask, ["datetime", "close"]].copy()
+    exit_rows = frame.loc[exit_mask, ["datetime", "close", "target_position"]].copy()
     exit_rows["trade_id"] = trade_ids.loc[exit_mask].to_numpy()
-    exit_rows["quantity"] = previous_position.loc[exit_mask].astype(float).to_numpy()
-    exit_rows.rename(columns={"datetime": "exit_time", "close": "exit_price"}, inplace=True)
+    exit_rows.rename(columns={"datetime": "exit_datetime", "close": "exit_price", "target_position": "exit_target_position"}, inplace=True)
 
     final_trade_id = int(trade_ids.max())
     if float(position.iloc[-1]) > 0.0 and final_trade_id not in set(exit_rows["trade_id"].tolist()):
@@ -114,53 +128,66 @@ def _extract_trades(frame: pd.DataFrame) -> list[TradeRecord]:
                 exit_rows,
                 pd.DataFrame(
                     {
-                        "exit_time": [frame.iloc[-1]["datetime"]],
+                        "exit_datetime": [frame.iloc[-1]["datetime"]],
                         "exit_price": [frame.iloc[-1]["close"]],
                         "trade_id": [final_trade_id],
-                        "quantity": [float(position.iloc[-1])],
+                        "exit_target_position": [float(frame.iloc[-1]["target_position"])],
                     }
                 ),
             ],
             ignore_index=True,
         )
 
-    net_pnl_by_trade = (
+    gross_return_by_trade = (
+        frame.assign(trade_id=active_trade_ids)
+        .loc[lambda df: df["trade_id"] > 0]
+        .loc[lambda df: df["position"].astype(float) > 0.0]
+        .groupby("trade_id", sort=True)["close_return"]
+        .apply(lambda series: float((1.0 + series.astype(float)).prod() - 1.0))
+    )
+    net_return_by_trade = (
         frame.assign(trade_id=active_trade_ids)
         .loc[lambda df: df["trade_id"] > 0]
         .groupby("trade_id", sort=True)["strategy_return"]
-        .sum()
+        .apply(lambda series: float((1.0 + series.astype(float)).prod() - 1.0))
+    )
+    holding_period_by_trade = (
+        frame.assign(trade_id=active_trade_ids)
+        .loc[lambda df: df["trade_id"] > 0]
+        .loc[lambda df: df["position"].astype(float) > 0.0]
+        .groupby("trade_id", sort=True)
+        .size()
     )
 
     trade_frame = (
         entry_rows.merge(exit_rows, on="trade_id", how="inner")
         .sort_values("trade_id")
         .assign(
-            side="long",
-            net_pnl=lambda df: df["trade_id"].map(net_pnl_by_trade).astype(float),
+            holding_period=lambda df: df["trade_id"].map(holding_period_by_trade).astype(int),
+            trade_gross_return=lambda df: df["trade_id"].map(gross_return_by_trade).astype(float),
+            trade_net_return=lambda df: df["trade_id"].map(net_return_by_trade).astype(float),
         )
     )
-    trade_frame["entry_time"] = trade_frame["entry_time"].map(str)
-    trade_frame["exit_time"] = trade_frame["exit_time"].map(str)
+    trade_frame["cost_return_contribution"] = trade_frame["trade_gross_return"] - trade_frame["trade_net_return"]
+    trade_frame["entry_datetime"] = trade_frame["entry_datetime"].map(str)
+    trade_frame["exit_datetime"] = trade_frame["exit_datetime"].map(str)
     trade_frame["entry_price"] = trade_frame["entry_price"].astype(float)
     trade_frame["exit_price"] = trade_frame["exit_price"].astype(float)
-    trade_frame["gross_return"] = (
-        trade_frame["exit_price"]
-        .div(trade_frame["entry_price"].replace(0.0, float("nan")))
-        .sub(1.0)
-        .fillna(0.0)
-        .astype(float)
-    )
+    trade_frame["entry_target_position"] = trade_frame["entry_target_position"].astype(float)
+    trade_frame["exit_target_position"] = trade_frame["exit_target_position"].astype(float)
 
     return [
         TradeRecord(
-            entry_time=row.entry_time,
-            exit_time=row.exit_time,
-            side=row.side,
-            quantity=float(row.quantity),
+            entry_datetime=row.entry_datetime,
+            exit_datetime=row.exit_datetime,
             entry_price=float(row.entry_price),
             exit_price=float(row.exit_price),
-            gross_return=float(row.gross_return),
-            net_pnl=float(row.net_pnl),
+            holding_period=int(row.holding_period),
+            trade_gross_return=float(row.trade_gross_return),
+            trade_net_return=float(row.trade_net_return),
+            cost_return_contribution=float(row.cost_return_contribution),
+            entry_target_position=float(row.entry_target_position),
+            exit_target_position=float(row.exit_target_position),
         )
         for row in trade_frame.itertuples(index=False)
     ]

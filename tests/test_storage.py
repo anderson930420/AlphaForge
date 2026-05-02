@@ -72,6 +72,7 @@ from alphaforge.storage import (
     SearchArtifactReceipt,
     ValidationArtifactReceipt,
 )
+from alphaforge.backtest import BACKTEST_TRADE_LOG_COLUMNS
 from alphaforge.permutation import NULL_MODEL
 
 
@@ -125,14 +126,16 @@ def _make_equity_curve() -> pd.DataFrame:
 def _make_trade_log() -> pd.DataFrame:
     return pd.DataFrame(
         {
-            "entry_time": ["2024-01-02 00:00:00"],
-            "exit_time": ["2024-01-03 00:00:00"],
-            "side": ["long"],
-            "quantity": [1.0],
+            "entry_datetime": ["2024-01-02 00:00:00"],
+            "exit_datetime": ["2024-01-03 00:00:00"],
             "entry_price": [101.0],
             "exit_price": [103.0],
-            "gross_return": [0.019801980198019802],
-            "net_pnl": [2.0],
+            "holding_period": [1],
+            "trade_gross_return": [0.019801980198019802],
+            "trade_net_return": [0.018801980198019803],
+            "cost_return_contribution": [0.001],
+            "entry_target_position": [1.0],
+            "exit_target_position": [0.0],
         }
     )
 
@@ -204,6 +207,7 @@ def test_save_single_experiment_writes_canonical_persisted_files_and_receipt_ref
     metrics_payload = json.loads((tmp_path / "single_case" / METRICS_SUMMARY_FILENAME).read_text(encoding="utf-8"))
 
     run_dir = tmp_path / "single_case"
+    trade_log_payload = pd.read_csv(run_dir / TRADE_LOG_FILENAME)
     assert run_dir.exists()
     for filename in CANONICAL_SINGLE_RUN_FILENAMES:
         assert (run_dir / filename).exists()
@@ -214,6 +218,7 @@ def test_save_single_experiment_writes_canonical_persisted_files_and_receipt_ref
     assert receipt.best_report_path is None
     assert receipt.comparison_report_path is None
     assert metrics_payload["bar_count"] == result.metrics.bar_count
+    assert trade_log_payload.columns.tolist() == list(BACKTEST_TRADE_LOG_COLUMNS)
     assert not hasattr(persisted_result, "equity_curve_path")
     assert not hasattr(persisted_result, "trade_log_path")
     assert not hasattr(persisted_result, "metrics_path")

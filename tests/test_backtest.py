@@ -4,7 +4,12 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from alphaforge.backtest import BACKTEST_EQUITY_CURVE_COLUMNS, BACKTEST_TRADE_LOG_COLUMNS, run_backtest
+from alphaforge.backtest import (
+    BACKTEST_EQUITY_CURVE_COLUMNS,
+    BACKTEST_TRADE_LOG_COLUMNS,
+    build_execution_semantics_metadata,
+    run_backtest,
+)
 from alphaforge.schemas import BacktestConfig
 
 
@@ -62,6 +67,7 @@ def test_backtest_accepts_series_with_matching_index() -> None:
     equity_curve, trades = run_backtest(market_data, target_positions, _make_config())
 
     assert equity_curve["target_position"].tolist() == [0.0, 1.0, 0.0, 0.0]
+    assert equity_curve["position"].tolist() == [0.0, 0.0, 1.0, 0.0]
     assert trades.shape[0] == 1
 
 
@@ -90,11 +96,13 @@ def test_backtest_forces_a_final_exit_when_always_in_position() -> None:
 
     assert equity_curve.columns.tolist() == list(BACKTEST_EQUITY_CURVE_COLUMNS)
     assert trades.shape[0] == 1
-    assert trades.iloc[0]["entry_time"] == "2024-01-02 00:00:00"
-    assert trades.iloc[0]["exit_time"] == "2024-01-04 00:00:00"
+    assert trades.iloc[0]["entry_datetime"] == "2024-01-02 00:00:00"
+    assert trades.iloc[0]["exit_datetime"] == "2024-01-04 00:00:00"
     assert trades.iloc[0]["entry_price"] == 102
     assert trades.iloc[0]["exit_price"] == 105
-    assert trades.iloc[0]["quantity"] == 1.0
+    assert trades.iloc[0]["holding_period"] == 3
+    assert trades.iloc[0]["entry_target_position"] == 1.0
+    assert trades.iloc[0]["exit_target_position"] == 1.0
 
 
 def test_backtest_forces_a_final_exit_for_an_open_trade() -> None:
@@ -105,8 +113,8 @@ def test_backtest_forces_a_final_exit_for_an_open_trade() -> None:
 
     assert equity_curve["position"].tolist() == [0.0, 0.0, 1.0, 1.0, 1.0]
     assert trades.shape[0] == 1
-    assert trades.iloc[0]["entry_time"] == "2024-01-03 00:00:00"
-    assert trades.iloc[0]["exit_time"] == "2024-01-05 00:00:00"
+    assert trades.iloc[0]["entry_datetime"] == "2024-01-03 00:00:00"
+    assert trades.iloc[0]["exit_datetime"] == "2024-01-05 00:00:00"
     assert trades.iloc[0]["exit_price"] == 108
 
 
@@ -119,5 +127,39 @@ def test_backtest_extracts_standard_entry_and_exit_transitions() -> None:
     assert equity_curve["target_position"].tolist() == [0.0, 1.0, 0.0, 0.0]
     assert equity_curve["position"].tolist() == [0.0, 0.0, 1.0, 0.0]
     assert trades.shape[0] == 1
-    assert trades.iloc[0]["entry_time"] == "2024-01-03 00:00:00"
-    assert trades.iloc[0]["exit_time"] == "2024-01-04 00:00:00"
+    assert trades.iloc[0]["entry_datetime"] == "2024-01-03 00:00:00"
+    assert trades.iloc[0]["exit_datetime"] == "2024-01-04 00:00:00"
+
+
+def test_backtest_extracts_return_based_trade_fields_for_one_trade() -> None:
+    market_data = _make_market_data([100, 110, 121, 121])
+    target_positions = pd.Series([0.0, 1.0, 1.0, 0.0])
+    config = BacktestConfig(initial_capital=1000, fee_rate=0.01, slippage_rate=0.0, annualization_factor=252)
+
+    _, trades = run_backtest(market_data, target_positions, config)
+
+    assert trades.shape[0] == 1
+    trade = trades.iloc[0]
+    assert trade["entry_datetime"] == "2024-01-03 00:00:00"
+    assert trade["exit_datetime"] == "2024-01-04 00:00:00"
+    assert trade["entry_price"] == 121.0
+    assert trade["exit_price"] == 121.0
+    assert trade["holding_period"] == 2
+    assert trade["trade_gross_return"] == pytest.approx(0.10, rel=1e-9)
+    assert trade["trade_net_return"] == pytest.approx(0.09, rel=1e-9)
+    assert trade["cost_return_contribution"] == pytest.approx(0.01, rel=1e-9)
+    assert trade["entry_target_position"] == 1.0
+    assert trade["exit_target_position"] == 0.0
+
+
+def test_execution_semantics_metadata_is_explicit() -> None:
+    metadata = build_execution_semantics_metadata()
+
+    assert metadata == {
+        "execution_semantics": "legacy_close_to_close_lagged",
+        "position_rule": "position[t] = target_position[t-1]",
+        "return_rule": "close_to_close",
+        "position_bounds": [0.0, 1.0],
+        "supports_shorting": False,
+        "supports_leverage": False,
+    }
