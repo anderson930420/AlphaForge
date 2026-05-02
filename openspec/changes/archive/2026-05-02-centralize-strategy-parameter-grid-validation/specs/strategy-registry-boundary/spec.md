@@ -43,17 +43,6 @@ The strategy registry SHALL also be the canonical owner of validating parameter-
 - THEN train-window validation SHALL derive those parameter names from the registry
 - AND it SHALL reject train segments that are shorter than the largest requested integer window-like value
 
-### Requirement: Strategy comparison validates family grids before expensive execution
-
-Strategy comparison workflow validation SHALL validate every `StrategyFamilySearchConfig` through the registry before expensive per-family validation, search, permutation, or artifact work begins.
-
-#### Scenario: invalid comparison grid fails early
-
-- GIVEN a strategy comparison config contains an invalid strategy-family parameter grid
-- WHEN comparison workflow validation runs
-- THEN the workflow SHALL fail before loading/running full validation, search, permutation, or artifact persistence work for that family
-- AND the failure SHALL come from registry-owned parameter-grid validation
-
 ### Requirement: Scope remains registry-boundary only
 
 This change SHALL NOT introduce GA search, parallel strategy execution, paper parsing, plugin loading, dynamic third-party strategy discovery, categorical parameter search, new strategy families, new CLI behavior, new artifact schema, new ranking behavior, new research policy behavior, new permutation behavior, new strategy construction behavior, or a new logging framework.
@@ -71,3 +60,16 @@ This change SHALL NOT introduce GA search, parallel strategy execution, paper pa
 - GIVEN existing workflows run for valid `ma_crossover` or `breakout` parameter grids
 - WHEN registry-owned parameter-grid validation is introduced
 - THEN existing CLI commands, artifact paths, JSON field names, CSV column names, ranking logic, validation logic, policy verdicts, permutation behavior, and strategy comparison output shape SHALL remain unchanged
+
+## ADDED Requirements
+
+### Requirement: Strategy comparison validates family grids before expensive execution
+
+Strategy comparison workflow validation SHALL validate every `StrategyFamilySearchConfig` through the registry before expensive per-family validation, search, permutation, or artifact work begins.
+
+#### Scenario: invalid comparison grid fails early
+
+- GIVEN a strategy comparison config contains an invalid strategy-family parameter grid
+- WHEN comparison workflow validation runs
+- THEN the workflow SHALL fail before loading/running full validation, search, permutation, or artifact persistence work for that family
+- AND the failure SHALL come from registry-owned parameter-grid validation
