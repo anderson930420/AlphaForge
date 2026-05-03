@@ -312,6 +312,7 @@ class ResearchValidationConfig:
     min_trade_count: int | None = None
     output_dir: Path | None = None
     experiment_name: str = "research_validation"
+    signal_file: Path | None = None
 
 
 @dataclass(frozen=True)

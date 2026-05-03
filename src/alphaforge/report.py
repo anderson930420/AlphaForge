@@ -80,6 +80,7 @@ def render_experiment_report(
     """Assemble a single-experiment HTML report from existing artifacts."""
     to_html = _load_plotly_to_html()
     execution_assumptions_rows = _build_execution_assumptions_rows(report_input.result.metadata)
+    signal_metadata_rows = _build_signal_metadata_rows(report_input.result.metadata)
     data_quality_rows = _build_data_quality_rows(report_input.result.metadata)
     trade_return_rows = _build_trade_return_rows()
     metrics_rows = _build_metrics_rows(report_input.result, report_input.benchmark_summary)
@@ -158,6 +159,7 @@ def render_experiment_report(
         {execution_assumptions_rows}
       </div>
     </section>
+    {signal_metadata_rows}
     {data_quality_rows}
     <section class="section">
       <h2>Trade Return Semantics</h2>
@@ -214,6 +216,7 @@ def render_search_comparison_report(
     execution_assumptions_rows = _build_execution_assumptions_rows(
         ranked_results[0].metadata if ranked_results else {}
     )
+    signal_metadata_rows = _build_signal_metadata_rows(ranked_results[0].metadata if ranked_results else {})
     data_quality_rows = _build_data_quality_rows(ranked_results[0].metadata if ranked_results else {})
     trade_return_rows = _build_trade_return_rows()
     comparison_table = _build_search_comparison_table(
@@ -286,6 +289,7 @@ def render_search_comparison_report(
         {execution_assumptions_rows}
       </div>
     </section>
+    {signal_metadata_rows}
     {data_quality_rows}
     <section class="section">
       <h2>Trade Return Semantics</h2>
@@ -489,6 +493,33 @@ def _build_data_quality_rows(metadata: dict[str, object]) -> str:
         )
     return f"""<section class="section">
       <h2>Market Data Quality</h2>
+      <div class="metrics-grid">
+        {"".join(cards)}
+      </div>
+    </section>"""
+
+
+def _build_signal_metadata_rows(metadata: dict[str, object]) -> str:
+    signal_keys = ("signal_file", "signal_name", "source", "symbol", "signal_row_count")
+    if not any(key in metadata for key in signal_keys):
+        return ""
+    cards = []
+    labels = [
+        ("Signal File", metadata.get("signal_file", "")),
+        ("Signal Name", metadata.get("signal_name", "")),
+        ("Source", metadata.get("source", "")),
+        ("Symbol", metadata.get("symbol", "")),
+        ("Signal Row Count", metadata.get("signal_row_count", "")),
+    ]
+    for label, value in labels:
+        cards.append(
+            f"""<div class="metric-card">
+  <div class="metric-label">{escape(label)}</div>
+  <div class="metric-value">{escape(str(value))}</div>
+</div>"""
+        )
+    return f"""<section class="section">
+      <h2>Signal Metadata</h2>
       <div class="metrics-grid">
         {"".join(cards)}
       </div>

@@ -6,7 +6,7 @@ from typing import Any
 
 from .policy_types import ParameterGrid
 from .schemas import StrategySpec
-from .strategy_registry import build_strategy_from_registry, validate_parameter_grid_for_strategy
+from .strategy_registry import build_strategy_from_registry, get_strategy_registration, validate_parameter_grid_for_strategy
 
 
 @dataclass(frozen=True)
@@ -34,6 +34,9 @@ def grid_search_parameters(parameter_grid: ParameterGrid) -> list[dict[str, Any]
 
 
 def evaluate_strategy_search_space(strategy_name: str, parameter_grid: ParameterGrid) -> SearchSpaceEvaluation:
+    registration = get_strategy_registration(strategy_name)
+    if registration.validation_only:
+        raise ValueError(f"{strategy_name} is validation-only rather than search-capable")
     parameter_names = tuple(parameter_grid)
     attempted = grid_search_parameters(parameter_grid)
     strategy_specs: list[StrategySpec] = []

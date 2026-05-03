@@ -38,6 +38,23 @@ def _make_search_summary(results: list[ExperimentResult], attempted: int | None 
     )
 
 
+def _write_custom_signal_csv(tmp_path: Path, row_count: int = 16) -> Path:
+    signal_path = tmp_path / "custom_signal.csv"
+    frame = pd.DataFrame(
+        {
+            "datetime": pd.date_range("2024-01-01", periods=row_count, freq="D"),
+            "available_at": pd.date_range("2024-01-01", periods=row_count, freq="D"),
+            "symbol": ["TEST"] * row_count,
+            "signal_name": ["signalforge_moskowitz"] * row_count,
+            "signal_value": [9999.0] * row_count,
+            "signal_binary": [int(index % 2 == 0) for index in range(row_count)],
+            "source": ["SignalForge"] * row_count,
+        }
+    )
+    frame.to_csv(signal_path, index=False)
+    return signal_path
+
+
 def test_cli_search_exits_with_clear_error_on_invalid_grid(
     sample_market_csv: Path,
     tmp_path: Path,
@@ -325,6 +342,201 @@ def test_cli_research_validate_smoke_writes_protocol_summary(
     summary_path = tmp_path / "research_case" / "research_protocol_summary.json"
     assert Path(payload["research_protocol_summary_path"]) == summary_path
     assert summary_path.exists()
+
+
+def test_cli_research_validate_supports_custom_signal_with_signal_file(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    data_path = tmp_path / "research.csv"
+    pd.DataFrame(
+        {
+            "datetime": pd.date_range("2024-01-01", periods=16, freq="D"),
+            "open": [100.0 + index for index in range(16)],
+            "high": [101.0 + index for index in range(16)],
+            "low": [99.0 + index for index in range(16)],
+            "close": [100.0 + index for index in range(16)],
+            "volume": [1000.0] * 16,
+        }
+    ).to_csv(data_path, index=False)
+    signal_path = _write_custom_signal_csv(tmp_path)
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "alphaforge",
+            "research-validate",
+            "--data",
+            str(data_path),
+            "--symbol",
+            "TEST",
+            "--output-dir",
+            str(tmp_path),
+            "--experiment-name",
+            "custom_signal_case",
+            "--strategy",
+            "custom_signal",
+            "--signal-file",
+            str(signal_path),
+            "--development-start",
+            "2024-01-01",
+            "--development-end",
+            "2024-01-12",
+            "--holdout-start",
+            "2024-01-13",
+            "--holdout-end",
+            "2024-01-16",
+            "--train-size",
+            "4",
+            "--test-size",
+            "2",
+            "--step-size",
+            "2",
+        ],
+    )
+
+    main()
+    payload = json.loads(capsys.readouterr().out)
+
+    assert payload["selected_strategy"] == "custom_signal"
+    assert payload["selected_parameters"] == {}
+    assert payload["development_search_summary"]["strategy_name"] == "custom_signal"
+    assert payload["development_search_summary"]["search_parameter_names"] == []
+    assert payload["final_holdout_result"]["strategy_spec"]["name"] == "custom_signal"
+    assert payload["final_holdout_result"]["metadata"]["signal_file"] == str(signal_path)
+    assert payload["final_holdout_result"]["metadata"]["signal_name"] == "signalforge_moskowitz"
+    assert payload["final_holdout_result"]["metadata"]["source"] == "SignalForge"
+    assert payload["final_holdout_result"]["metadata"]["symbol"] == "TEST"
+    assert payload["final_holdout_result"]["metadata"]["signal_row_count"] == 16
+    assert payload["metadata"]["signal_file"] == str(signal_path)
+    assert payload["metadata"]["signal_name"] == "signalforge_moskowitz"
+    assert payload["metadata"]["source"] == "SignalForge"
+    assert payload["metadata"]["signal_row_count"] == 16
+    assert payload["walk_forward_summary"]["walk_forward_config"] == {
+        "train_size": 4,
+        "test_size": 2,
+        "step_size": 2,
+    }
+    summary_path = tmp_path / "custom_signal_case" / "research_protocol_summary.json"
+    assert Path(payload["research_protocol_summary_path"]) == summary_path
+    assert summary_path.exists()
+
+
+@pytest.mark.parametrize("strategy_name", ["ma_crossover", "breakout"])
+def test_cli_research_validate_rejects_signal_file_for_non_custom_strategy(
+    strategy_name: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    data_path = tmp_path / "research.csv"
+    pd.DataFrame(
+        {
+            "datetime": pd.date_range("2024-01-01", periods=16, freq="D"),
+            "open": [100.0 + index for index in range(16)],
+            "high": [101.0 + index for index in range(16)],
+            "low": [99.0 + index for index in range(16)],
+            "close": [100.0 + index for index in range(16)],
+            "volume": [1000.0] * 16,
+        }
+    ).to_csv(data_path, index=False)
+    signal_path = _write_custom_signal_csv(tmp_path)
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "alphaforge",
+            "research-validate",
+            "--data",
+            str(data_path),
+            "--symbol",
+            "TEST",
+            "--output-dir",
+            str(tmp_path),
+            "--strategy",
+            strategy_name,
+            "--signal-file",
+            str(signal_path),
+            "--development-start",
+            "2024-01-01",
+            "--development-end",
+            "2024-01-12",
+            "--holdout-start",
+            "2024-01-13",
+            "--holdout-end",
+            "2024-01-16",
+            "--short-windows",
+            "2",
+            "--long-windows",
+            "4",
+            "--train-size",
+            "4",
+            "--test-size",
+            "2",
+            "--step-size",
+            "2",
+        ],
+    )
+
+    with pytest.raises(SystemExit):
+        main()
+    assert "--signal-file may only be used with --strategy custom_signal" in capsys.readouterr().err
+
+
+def test_cli_research_validate_requires_signal_file_for_custom_signal(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    data_path = tmp_path / "research.csv"
+    pd.DataFrame(
+        {
+            "datetime": pd.date_range("2024-01-01", periods=16, freq="D"),
+            "open": [100.0 + index for index in range(16)],
+            "high": [101.0 + index for index in range(16)],
+            "low": [99.0 + index for index in range(16)],
+            "close": [100.0 + index for index in range(16)],
+            "volume": [1000.0] * 16,
+        }
+    ).to_csv(data_path, index=False)
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "alphaforge",
+            "research-validate",
+            "--data",
+            str(data_path),
+            "--symbol",
+            "TEST",
+            "--output-dir",
+            str(tmp_path),
+            "--strategy",
+            "custom_signal",
+            "--development-start",
+            "2024-01-01",
+            "--development-end",
+            "2024-01-12",
+            "--holdout-start",
+            "2024-01-13",
+            "--holdout-end",
+            "2024-01-16",
+            "--train-size",
+            "4",
+            "--test-size",
+            "2",
+            "--step-size",
+            "2",
+        ],
+    )
+
+    with pytest.raises(SystemExit):
+        main()
+    assert "--signal-file is required when --strategy custom_signal" in capsys.readouterr().err
 
 
 def test_cli_search_supports_breakout_strategy(

@@ -134,6 +134,76 @@ def test_render_and_save_experiment_report_creates_html(tmp_path: Path) -> None:
     assert saved_content.count('class="plotly-graph-div"') == 4
 
 
+def test_render_experiment_report_shows_custom_signal_metadata(tmp_path: Path) -> None:
+    result = ExperimentResult(
+        data_spec=DataSpec(path=Path("sample_data/example.csv"), symbol="2330"),
+        strategy_spec=StrategySpec(name="custom_signal", parameters={}),
+        backtest_config=BacktestConfig(
+            initial_capital=100000.0,
+            fee_rate=0.001,
+            slippage_rate=0.0005,
+            annualization_factor=252,
+        ),
+        metrics=MetricReport(
+            total_return=0.20,
+            annualized_return=0.31,
+            sharpe_ratio=1.23,
+            max_drawdown=-0.08,
+            win_rate=0.55,
+            turnover=1.5,
+            trade_count=4,
+            bar_count=1,
+        ),
+        score=1.0,
+        metadata={
+            "signal_file": "/tmp/custom_signal.csv",
+            "signal_name": "signalforge_moskowitz",
+            "source": "SignalForge",
+            "symbol": "2330",
+            "signal_row_count": 16,
+        },
+    )
+    equity_curve = pd.DataFrame(
+        {
+            "datetime": pd.date_range("2024-01-01", periods=4, freq="D"),
+            "close": [1000.0, 1010.0, 995.0, 1035.0],
+            "equity": [100000.0, 101000.0, 99000.0, 103000.0],
+        }
+    )
+    trades = pd.DataFrame(
+        {
+            "entry_datetime": ["2024-01-02 00:00:00"],
+            "exit_datetime": ["2024-01-04 00:00:00"],
+            "entry_price": [1010.0],
+            "exit_price": [1035.0],
+            "holding_period": [1],
+            "trade_gross_return": [0.024752475247524754],
+            "trade_net_return": [0.024252475247524754],
+            "cost_return_contribution": [0.0005],
+            "entry_target_position": [1.0],
+            "exit_target_position": [0.0],
+        }
+    )
+    report_input = ExperimentReportInput(
+        result=result,
+        equity_curve=equity_curve,
+        trades=trades,
+        benchmark_summary=summarize_buy_and_hold(equity_curve, result.backtest_config.initial_capital),
+        benchmark_curve=build_buy_and_hold_equity_curve(equity_curve, result.backtest_config.initial_capital),
+    )
+
+    html = render_experiment_report(report_input)
+    output_path = save_experiment_report(html, tmp_path / "custom_signal_report.html")
+    saved_content = output_path.read_text(encoding="utf-8")
+
+    assert "custom_signal" in saved_content
+    assert "Signal Metadata" in saved_content
+    assert "signalforge_moskowitz" in saved_content
+    assert "SignalForge" in saved_content
+    assert "/tmp/custom_signal.csv" in saved_content
+    assert "16" in saved_content
+
+
 def test_build_experiment_report_input_preserves_canonical_fields() -> None:
     result = ExperimentResult(
         data_spec=DataSpec(path=Path("sample_data/example.csv"), symbol="2330"),

@@ -101,6 +101,22 @@ def _make_research_validation_config(sample_market_csv: Path) -> ResearchValidat
     )
 
 
+def _write_custom_signal_csv(tmp_path: Path, row_count: int = 16) -> Path:
+    signal_path = tmp_path / "custom_signal.csv"
+    pd.DataFrame(
+        {
+            "datetime": pd.date_range("2024-01-01", periods=row_count, freq="D"),
+            "available_at": pd.date_range("2024-01-01", periods=row_count, freq="D"),
+            "symbol": ["TEST"] * row_count,
+            "signal_name": ["signalforge_moskowitz"] * row_count,
+            "signal_value": [9999.0] * row_count,
+            "signal_binary": [int(index % 2 == 0) for index in range(row_count)],
+            "source": ["SignalForge"] * row_count,
+        }
+    ).to_csv(signal_path, index=False)
+    return signal_path
+
+
 def test_run_experiment_saves_outputs(sample_market_csv: Path, tmp_path: Path) -> None:
     execution = run_experiment_with_artifacts(
         data_spec=DataSpec(path=sample_market_csv, symbol="TEST"),
@@ -436,6 +452,55 @@ def test_research_validation_workflow_evaluates_holdout_with_frozen_selected_can
     assert execution.research_protocol_summary.frozen_plan.selected_parameters == {"short_window": 2, "long_window": 4}
     assert execution.research_protocol_summary.final_holdout_result.score == 99.0
     assert execution.research_protocol_summary.selected_parameters == {"short_window": 2, "long_window": 4}
+
+
+def test_research_validation_workflow_supports_custom_signal_with_signal_file(
+    sample_market_csv: Path,
+    tmp_path: Path,
+) -> None:
+    data_path = tmp_path / "research.csv"
+    pd.DataFrame(
+        {
+            "datetime": pd.date_range("2024-01-01", periods=16, freq="D"),
+            "open": [100.0 + index for index in range(16)],
+            "high": [101.0 + index for index in range(16)],
+            "low": [99.0 + index for index in range(16)],
+            "close": [100.0 + index for index in range(16)],
+            "volume": [1000.0] * 16,
+        }
+    ).to_csv(data_path, index=False)
+    signal_path = _write_custom_signal_csv(tmp_path)
+
+    execution = run_research_validation_protocol_with_details(
+        ResearchValidationConfig(
+            data_spec=DataSpec(path=data_path, symbol="TEST"),
+            strategy_name="custom_signal",
+            parameter_grid={},
+            development_period=ResearchPeriod(start="2024-01-01", end="2024-01-12"),
+            holdout_period=ResearchPeriod(start="2024-01-13", end="2024-01-16"),
+            walk_forward_config=WalkForwardConfig(train_size=4, test_size=2, step_size=2),
+            backtest_config=BacktestConfig(1000.0, 0.0, 0.0, 252),
+            signal_file=signal_path,
+        )
+    )
+
+    summary = execution.research_protocol_summary
+    assert summary.selected_strategy == "custom_signal"
+    assert summary.selected_parameters == {}
+    assert summary.development_search_summary.strategy_name == "custom_signal"
+    assert summary.development_search_summary.best_result is not None
+    assert summary.development_search_summary.best_result.strategy_spec.name == "custom_signal"
+    assert summary.final_holdout_result.strategy_spec.name == "custom_signal"
+    assert summary.final_holdout_result.metadata["signal_file"] == str(signal_path)
+    assert summary.final_holdout_result.metadata["signal_name"] == "signalforge_moskowitz"
+    assert summary.final_holdout_result.metadata["source"] == "SignalForge"
+    assert summary.final_holdout_result.metadata["signal_row_count"] == 16
+    assert summary.metadata["signal_file"] == str(signal_path)
+    assert summary.metadata["signal_name"] == "signalforge_moskowitz"
+    assert summary.metadata["source"] == "SignalForge"
+    assert summary.metadata["signal_row_count"] == 16
+    assert summary.walk_forward_summary.walk_forward_config == WalkForwardConfig(train_size=4, test_size=2, step_size=2)
+    assert summary.walk_forward_summary.metadata["validation_mode"] == "custom_signal"
 
 
 def test_run_search_with_details_supports_breakout_family(sample_market_csv: Path, tmp_path: Path) -> None:

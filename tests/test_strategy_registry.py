@@ -46,6 +46,15 @@ def test_registry_exposes_expected_breakout_parameter_metadata() -> None:
     assert registration.integer_window_parameters == ("lookback_window",)
 
 
+def test_registry_exposes_expected_custom_signal_metadata() -> None:
+    registration = get_strategy_registration("custom_signal")
+
+    assert registration.name == "custom_signal"
+    assert registration.parameter_names == ()
+    assert registration.integer_window_parameters == ()
+    assert registration.validation_only is True
+
+
 def test_registry_unknown_strategy_error_names_supported_families() -> None:
     with pytest.raises(ValueError) as exc_info:
         get_strategy_registration("unknown_strategy")
@@ -59,6 +68,7 @@ def test_registry_unknown_strategy_error_names_supported_families() -> None:
 def test_registry_parameter_grid_validator_accepts_valid_existing_family_grids() -> None:
     validate_parameter_grid_for_strategy("ma_crossover", {"short_window": [2], "long_window": [4]})
     validate_parameter_grid_for_strategy("breakout", {"lookback_window": [3]})
+    validate_parameter_grid_for_strategy("custom_signal", {})
 
 
 def test_registry_parameter_grid_validator_rejects_missing_required_keys() -> None:
@@ -82,6 +92,16 @@ def test_registry_parameter_grid_validator_rejects_unexpected_keys() -> None:
     assert "ma_crossover" in message
     assert "threshold" in message
     assert "unexpected parameters" in message
+
+
+def test_registry_parameter_grid_validator_rejects_custom_signal_parameter_grids() -> None:
+    with pytest.raises(ValueError) as exc_info:
+        validate_parameter_grid_for_strategy("custom_signal", {"short_window": [2]})
+
+    message = str(exc_info.value)
+    assert "custom_signal" in message
+    assert "validation-only" in message
+    assert "short_window" in message
 
 
 def test_registry_backed_construction_matches_existing_strategy_behavior() -> None:
@@ -108,6 +128,16 @@ def test_registry_backed_construction_matches_existing_strategy_behavior() -> No
     assert isinstance(build_strategy(ma_spec), MovingAverageCrossoverStrategy)
 
 
+def test_registry_backed_construction_rejects_custom_signal_until_signal_file_workflow_exists() -> None:
+    with pytest.raises(ValueError) as exc_info:
+        build_strategy_from_registry(StrategySpec(name="custom_signal", parameters={}))
+
+    message = str(exc_info.value)
+    assert "custom_signal" in message
+    assert "validation-only" in message
+    assert "signal-file" in message
+
+
 def test_search_space_evaluation_uses_registry_for_existing_families() -> None:
     ma_evaluation = evaluate_strategy_search_space("ma_crossover", {"short_window": [2], "long_window": [3]})
     breakout_evaluation = evaluate_strategy_search_space("breakout", {"lookback_window": [2]})
@@ -127,6 +157,16 @@ def test_search_space_evaluation_rejects_invalid_grids_through_registry_validato
             "ma_crossover",
             {"short_window": [2], "long_window": [4], "threshold": [0.01]},
         )
+
+
+def test_search_space_evaluation_rejects_custom_signal_as_validation_only() -> None:
+    with pytest.raises(ValueError) as exc_info:
+        evaluate_strategy_search_space("custom_signal", {})
+
+    message = str(exc_info.value)
+    assert "custom_signal" in message
+    assert "validation-only" in message
+    assert "search-capable" in message
 
 
 def test_strategy_comparison_rejects_invalid_family_grid_before_expensive_execution(

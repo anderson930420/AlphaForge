@@ -15,6 +15,7 @@ import pandas as pd
 from .backtest import run_backtest
 from .benchmark import build_buy_and_hold_equity_curve, normalize_benchmark_summary, summarize_buy_and_hold
 from .data_loader import load_market_data, split_holdout_data
+from .custom_signal import load_custom_signal_positions
 from .evidence import build_candidate_evidence_summary, build_walk_forward_evidence_summary
 from .experiment_runner import (
     ExperimentExecutionOutput,
@@ -122,19 +123,44 @@ def run_experiment_on_market_data(
     output_dir: Path | None = None,
     experiment_name: str = "single_experiment",
 ) -> ExperimentExecutionOutput:
-    receipt: ArtifactReceipt | None = None
     strategy = build_strategy(strategy_spec)
     target_positions = strategy.generate_signals(market_data)
+    return _run_backtest_with_explicit_target_positions(
+        market_data=market_data,
+        data_spec=data_spec,
+        strategy_spec=strategy_spec,
+        backtest_config=backtest_config,
+        target_positions=target_positions,
+        output_dir=output_dir,
+        experiment_name=experiment_name,
+    )
+
+
+def _run_backtest_with_explicit_target_positions(
+    *,
+    market_data: pd.DataFrame,
+    data_spec: DataSpec,
+    strategy_spec: StrategySpec,
+    backtest_config: BacktestConfig,
+    target_positions: pd.Series,
+    output_dir: Path | None = None,
+    experiment_name: str = "single_experiment",
+    metadata_overrides: dict[str, object] | None = None,
+) -> ExperimentExecutionOutput:
+    receipt: ArtifactReceipt | None = None
     equity_curve, trades = run_backtest(market_data, target_positions, backtest_config)
     metrics = compute_metrics(equity_curve, trades, backtest_config.annualization_factor)
     benchmark_summary = summarize_buy_and_hold(market_data, backtest_config.initial_capital)
+    metadata = build_execution_metadata(market_data, benchmark_summary)
+    if metadata_overrides is not None:
+        metadata.update(metadata_overrides)
     result = ExperimentResult(
         data_spec=data_spec,
         strategy_spec=strategy_spec,
         backtest_config=backtest_config,
         metrics=metrics,
         score=score_metrics(metrics),
-        metadata=build_execution_metadata(market_data, benchmark_summary),
+        metadata=metadata,
     )
     if output_dir is not None:
         result, receipt = save_single_experiment(output_dir, experiment_name, result, equity_curve, trades)
@@ -151,6 +177,50 @@ def run_experiment_on_market_data(
         trade_log=trades,
         report_input=report_input,
         artifact_receipt=receipt,
+    )
+
+
+def _build_custom_signal_metadata(signal_file: Path | str, signal_metadata: dict[str, object]) -> dict[str, object]:
+    metadata = dict(signal_metadata)
+    metadata["signal_file"] = str(signal_file)
+    metadata["strategy_family"] = "custom_signal"
+    return metadata
+
+
+def _build_custom_signal_target_positions_for_subset(
+    *,
+    full_market_data: pd.DataFrame,
+    full_target_positions: pd.Series,
+    subset_market_data: pd.DataFrame,
+) -> pd.Series:
+    full_datetimes = pd.Index(pd.to_datetime(full_market_data["datetime"], utc=False, errors="raise"))
+    target_by_datetime = pd.Series(full_target_positions.to_numpy(dtype=float), index=full_datetimes, name="target_position")
+    subset_datetimes = pd.Index(pd.to_datetime(subset_market_data["datetime"], utc=False, errors="raise"))
+    subset_target_positions = subset_datetimes.map(target_by_datetime)
+    if subset_target_positions.isna().any():
+        raise ValueError("signal dates must align with market data dates")
+    return pd.Series(subset_target_positions.to_numpy(dtype=float), index=subset_market_data.index, name="target_position")
+
+
+def _run_custom_signal_experiment_on_market_data(
+    *,
+    market_data: pd.DataFrame,
+    data_spec: DataSpec,
+    backtest_config: BacktestConfig,
+    target_positions: pd.Series,
+    signal_metadata: dict[str, object],
+    output_dir: Path | None = None,
+    experiment_name: str = "custom_signal_experiment",
+) -> ExperimentExecutionOutput:
+    return _run_backtest_with_explicit_target_positions(
+        market_data=market_data,
+        data_spec=data_spec,
+        strategy_spec=StrategySpec(name="custom_signal", parameters={}),
+        backtest_config=backtest_config,
+        target_positions=target_positions,
+        output_dir=output_dir,
+        experiment_name=experiment_name,
+        metadata_overrides=signal_metadata,
     )
 
 
@@ -529,9 +599,146 @@ def run_research_validation_protocol_with_details_workflow(
         research_config.development_period,
         research_config.holdout_period,
     )
+    protocol_root = workflow_root(research_config.output_dir, research_config.experiment_name)
+    if research_config.strategy_name == "custom_signal":
+        if research_config.signal_file is None:
+            raise ValueError("custom_signal research validation requires a signal_file")
+        full_signal_target_positions, signal_metadata = load_custom_signal_positions(
+            research_config.signal_file,
+            market_data,
+            symbol=research_config.data_spec.symbol if research_config.data_spec.symbol != "UNKNOWN" else None,
+        )
+        signal_metadata = _build_custom_signal_metadata(research_config.signal_file, signal_metadata)
+
+        development_target_positions = _build_custom_signal_target_positions_for_subset(
+            full_market_data=market_data,
+            full_target_positions=full_signal_target_positions,
+            subset_market_data=development_data,
+        )
+        holdout_target_positions = _build_custom_signal_target_positions_for_subset(
+            full_market_data=market_data,
+            full_target_positions=full_signal_target_positions,
+            subset_market_data=holdout_data,
+        )
+
+        development_execution = _run_custom_signal_experiment_on_market_data(
+            market_data=development_data,
+            data_spec=research_config.data_spec,
+            backtest_config=backtest_config,
+            target_positions=development_target_positions,
+            signal_metadata=signal_metadata,
+            output_dir=protocol_root,
+            experiment_name="development_signal",
+        )
+        final_holdout_execution = _run_custom_signal_experiment_on_market_data(
+            market_data=holdout_data,
+            data_spec=research_config.data_spec,
+            backtest_config=backtest_config,
+            target_positions=holdout_target_positions,
+            signal_metadata=signal_metadata,
+            output_dir=protocol_root,
+            experiment_name="final_holdout",
+        )
+
+        development_search_summary = SearchSummary(
+            strategy_name="custom_signal",
+            search_parameter_names=[],
+            attempted_combinations=1,
+            valid_combinations=1,
+            invalid_combinations=0,
+            result_count=1,
+            ranking_score=RANKING_SCORE_FIELD,
+            best_result=development_execution.result,
+            top_results=[development_execution.result],
+        )
+        walk_forward_result = WalkForwardResult(
+            data_spec=research_config.data_spec,
+            walk_forward_config=research_config.walk_forward_config,
+            folds=[],
+            aggregate_test_metrics={"fold_count": 0},
+            aggregate_benchmark_metrics={"fold_count": 0},
+            walk_forward_evidence=None,
+            walk_forward_decision=None,
+            metadata={
+                "validation_mode": "custom_signal",
+                "signal_file": str(research_config.signal_file),
+                "signal_row_count": signal_metadata["signal_row_count"],
+            },
+        )
+        selection_rule = "validated_external_signal_file"
+        frozen_plan = ResearchProtocolPlan(
+            strategy_family="custom_signal",
+            selected_parameters={},
+            parameter_selection_rule=selection_rule,
+            scoring_formula_name=RANKING_SCORE_FIELD,
+            transaction_cost_assumptions={
+                "initial_capital": backtest_config.initial_capital,
+                "fee_rate": backtest_config.fee_rate,
+                "slippage_rate": backtest_config.slippage_rate,
+                "annualization_factor": backtest_config.annualization_factor,
+            },
+            development_period=research_config.development_period,
+            holdout_period=research_config.holdout_period,
+            search_space_size=1,
+            tried_strategy_family_count=1,
+            tried_parameter_combination_count=1,
+            walk_forward_config=research_config.walk_forward_config,
+            permutation_config=research_config.permutation_config,
+        )
+        artifact_paths = _build_research_protocol_artifact_paths(
+            protocol_root=protocol_root,
+            development_search_receipt=development_execution.artifact_receipt,
+            walk_forward_receipt=None,
+            permutation_receipt=None,
+            final_holdout_receipt=final_holdout_execution.artifact_receipt,
+        )
+        summary = ResearchProtocolSummary(
+            data_spec=research_config.data_spec,
+            backtest_config=backtest_config,
+            development_period=research_config.development_period,
+            holdout_period=research_config.holdout_period,
+            development_row_count=len(development_data),
+            holdout_row_count=len(holdout_data),
+            selected_strategy="custom_signal",
+            selected_parameters={},
+            selection_rule=selection_rule,
+            scoring_formula_name=RANKING_SCORE_FIELD,
+            development_search_data_window=_build_protocol_data_window("development_period", development_data),
+            walk_forward_data_window=_build_protocol_data_window("development_period_oos", development_data),
+            final_holdout_data_window=_build_protocol_data_window("final_holdout", holdout_data),
+            search_space_size=1,
+            tried_strategy_family_count=1,
+            tried_parameter_combination_count=1,
+            development_search_summary=development_search_summary,
+            walk_forward_summary=walk_forward_result,
+            permutation_summary=None,
+            frozen_plan=frozen_plan,
+            final_holdout_result=final_holdout_execution.result,
+            transaction_cost_assumptions=frozen_plan.transaction_cost_assumptions,
+            artifact_paths=artifact_paths,
+            metadata={
+                "protocol": "research_validation_protocol",
+                "development_evidence_label": "development_period",
+                "walk_forward_oos_label": "development_period_oos",
+                "final_holdout_evidence_label": "final_holdout",
+                "holdout_feedback_rule": "final_holdout_metrics_do_not_update_frozen_plan",
+                "signal_file": str(research_config.signal_file),
+                "signal_name": signal_metadata.get("signal_name"),
+                "source": signal_metadata.get("source"),
+                "symbol": signal_metadata.get("symbol"),
+                "signal_row_count": signal_metadata.get("signal_row_count"),
+            },
+        )
+        artifact_receipt = None
+        if protocol_root is not None:
+            summary, artifact_receipt = save_research_protocol_summary(protocol_root, summary)
+        return ResearchProtocolExecutionOutput(
+            research_protocol_summary=summary,
+            artifact_receipt=artifact_receipt,
+        )
+
     validate_train_windows(research_config.strategy_name, development_data, research_config.parameter_grid)
 
-    protocol_root = workflow_root(research_config.output_dir, research_config.experiment_name)
     development_search_execution = run_search_on_market_data(
         market_data=development_data,
         data_spec=research_config.data_spec,
@@ -862,26 +1069,36 @@ def _build_search_summary(search_space: SearchSpaceEvaluation, ranked_results: l
 def _build_research_protocol_artifact_paths(
     *,
     protocol_root: Path | None,
-    development_search_receipt: SearchArtifactReceipt | None,
+    development_search_receipt: ArtifactReceipt | SearchArtifactReceipt | None,
     walk_forward_receipt: WalkForwardArtifactReceipt | None,
     permutation_receipt: PermutationTestArtifactReceipt | None,
-    final_holdout_receipt: ArtifactReceipt | None,
+    final_holdout_receipt: ArtifactReceipt | SearchArtifactReceipt | None,
 ) -> dict[str, str]:
     artifact_paths: dict[str, str] = {}
     if protocol_root is not None:
         artifact_paths["protocol_root"] = str(protocol_root)
-    for key, value in (serialize_search_artifact_receipt(development_search_receipt) or {}).items():
-        if isinstance(value, str):
-            artifact_paths[f"development_search_{key}"] = value
+    if isinstance(development_search_receipt, SearchArtifactReceipt):
+        for key, value in (serialize_search_artifact_receipt(development_search_receipt) or {}).items():
+            if isinstance(value, str):
+                artifact_paths[f"development_search_{key}"] = value
+    elif isinstance(development_search_receipt, ArtifactReceipt):
+        for key, value in (serialize_artifact_receipt(development_search_receipt) or {}).items():
+            if isinstance(value, str):
+                artifact_paths[f"development_search_{key}"] = value
     for key, value in (serialize_walk_forward_artifact_receipt(walk_forward_receipt) or {}).items():
         if isinstance(value, str):
             artifact_paths[f"development_walk_forward_{key}"] = value
     for key, value in (serialize_permutation_test_artifact_receipt(permutation_receipt) or {}).items():
         if isinstance(value, str):
             artifact_paths[f"development_permutation_{key}"] = value
-    for key, value in (serialize_artifact_receipt(final_holdout_receipt) or {}).items():
-        if isinstance(value, str):
-            artifact_paths[f"final_holdout_{key}"] = value
+    if isinstance(final_holdout_receipt, ArtifactReceipt):
+        for key, value in (serialize_artifact_receipt(final_holdout_receipt) or {}).items():
+            if isinstance(value, str):
+                artifact_paths[f"final_holdout_{key}"] = value
+    elif isinstance(final_holdout_receipt, SearchArtifactReceipt):
+        for key, value in (serialize_search_artifact_receipt(final_holdout_receipt) or {}).items():
+            if isinstance(value, str):
+                artifact_paths[f"final_holdout_{key}"] = value
     return artifact_paths
 
 
