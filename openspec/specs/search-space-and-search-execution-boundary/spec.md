@@ -7,87 +7,6 @@ Define the canonical named strategy-family search-space contract, including para
 
 `src/alphaforge/search.py` SHALL be the single authoritative owner of AlphaForge search-space generation and candidate construction semantics for the supported strategy families.
 
-#### Purpose
-
-- Make it explicit where parameter grids become executable strategy candidates.
-- Prevent the runner, strategy modules, CLI, or presentation layers from inventing their own family-specific parameter enumeration rules.
-- Keep the search-space contract reusable across plain search, validation, and walk-forward flows.
-
-#### Canonical owner
-
-- `src/alphaforge/search.py` is the only authoritative owner of:
-  - grid expansion,
-  - parameter-combination enumeration,
-  - candidate construction into `StrategySpec` objects,
-  - search-family-local candidate pruning that is part of the enumeration contract.
-- `src/alphaforge/experiment_runner.py` is not the canonical owner of search-space generation.
-- `src/alphaforge/strategy/*` are not the canonical owners of generic parameter-grid enumeration.
-- `src/alphaforge/cli.py` is not the canonical owner of candidate semantics even when it assembles request DTOs.
-
-#### Allowed responsibilities
-
-- `search.py` MAY:
-  - expand a parameter grid into deterministic combinations,
-  - convert parameter combinations into ordered `StrategySpec` candidates,
-  - apply narrow search-family-local pruning to avoid generating combinations that cannot be constructed for the target strategy family,
-  - remain mode-agnostic so the same candidate generator can be reused by plain search, validate-search, and walk-forward orchestration.
-
-#### Explicit non-responsibilities
-
-- `search.py` MUST NOT run backtests, compute metrics, rank results, persist artifacts, or render reports.
-- `search.py` MUST NOT own execution semantics such as position lag, turnover, fees, slippage, or equity-curve construction.
-- `search.py` MUST NOT own storage filenames, report input semantics, or CLI request parsing.
-- `search.py` MUST NOT become a second strategy-validity authority for semantics that belong to concrete strategy implementations.
-
-#### Inputs / outputs / contracts
-
-- Inputs:
-  - strategy family name
-  - parameter grid mapping parameter names to candidate value lists
-- Canonical search-space output:
-  - an ordered `list[StrategySpec]`
-  - each candidate binds one strategy family name to one parameter combination
-- Internal helper output:
-  - Cartesian parameter-combination dictionaries may exist as an intermediate search-space construction step, but they are not the downstream contract
-- Contract rules:
-  - candidate order MUST be deterministic for a given grid input
-  - the canonical search-space contract is the candidate `StrategySpec` list, not the raw grid
-
-#### Invariants
-
-- Search-space generation is reusable across plain search, validation, and walk-forward workflows.
-- Search-space generation produces candidate inputs only; it does not execute candidates.
-- Search-space generation may prune combinations, but it may not redefine strategy execution or ranking semantics.
-- The same parameter grid must produce the same candidate order under the same search-family rules.
-
-#### Cross-module dependencies
-
-- `experiment_runner.py` consumes the ordered candidate list and executes it.
-- `strategy/*` define whether a concrete candidate can be instantiated and used by the strategy implementation.
-- `scoring.py` consumes executed results, not parameter grids.
-- `storage.py`, `report.py`, and `cli.py` consume downstream outputs, not raw search-space rules.
-
-#### Failure modes if this boundary is violated
-
-- Candidate enumeration drifts between plain search and validation or walk-forward because each caller reconstructs its own candidate list.
-- Strategy-specific parameter rules are duplicated in both `search.py` and strategy constructors, causing one path to accept a candidate the other rejects.
-- The runner becomes the hidden owner of grid expansion and parameter enumeration, making search behavior harder to audit.
-- Presentation and storage layers begin to depend on search-space details that should only exist in the search owner.
-
-#### Migration notes from current implementation
-
-- `grid_search_parameters()` already performs deterministic Cartesian expansion.
-- `build_strategy_specs()` already converts those combinations into `StrategySpec` objects.
-- `build_strategy_specs()` currently filters out MA combinations where `short_window >= long_window`; that is acceptable only as a search-family-local candidate-pruning rule, not as a second execution owner.
-- The current output shape already matches the intended canonical contract: `list[StrategySpec]`.
-
-#### Open questions / deferred decisions
-
-- Whether future strategy families will expose explicit candidate-constraint helpers to `search.py`, or whether search-family pruning will remain local to `search.py`, is deferred.
-  - Recommended default: keep `search.py` as the search-space owner and add explicit helpers only when a second strategy family makes the pruning rules reusable.
-- Whether `grid_search_parameters()` should remain a public helper or be folded behind `build_strategy_specs()` later is deferred.
-  - Recommended default: keep the helper while the current grid-search flow remains simple and deterministic.
-
 #### Scenario: parameter grids become ordered StrategySpec candidates
 
 - GIVEN a parameter grid for the MA crossover search family
@@ -473,4 +392,16 @@ Executed search outputs in AlphaForge SHALL be treated as downstream business fa
 
 - The supported-family set has one authoritative definition.
 - Search-adjacent workflows either support a derived subset intentionally or the full canonical set; they do not silently fork the naming contract.
+
+### Requirement: validation-only custom-signal workflows are not search-space families
+
+`src/alphaforge/search.py` SHALL reject `custom_signal` as a search-space family and SHALL NOT enumerate it as a grid-search candidate family.
+
+#### Scenario: custom_signal is routed to research validation, not search
+
+- GIVEN a caller asks `search.py` to build candidates for `custom_signal`
+- WHEN search-space generation runs
+- THEN AlphaForge SHALL raise a clear error
+- AND the error SHALL indicate that `custom_signal` is validation-only rather than search-capable
+- AND search-space generation SHALL NOT attempt to infer parameter-grid semantics for `signal.csv`
 

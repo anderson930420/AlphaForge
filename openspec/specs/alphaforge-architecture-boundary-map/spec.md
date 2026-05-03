@@ -59,6 +59,17 @@ AlphaForge SHALL assign each business rule, execution semantic, schema, naming c
 - Sharpe semantics have one authoritative implementation.
 - Backward compatibility is preserved for callers that do not pass `risk_free_rate`.
 
+### Requirement: `custom_signal.py` owns external signal-file validation and target-position derivation
+
+`src/alphaforge/custom_signal.py` SHALL be the canonical owner of validating externally supplied `signal.csv` files and deriving `target_position` values for the `custom_signal` workflow.
+
+#### Scenario: custom signal validation has one canonical owner
+
+- GIVEN AlphaForge consumes an external `signal.csv`
+- WHEN the `custom_signal` workflow validates the file
+- THEN `custom_signal.py` SHALL own the validation and target-position derivation
+- AND no other module SHALL redefine the signal-file contract or binary-to-target mapping
+
 ## Canonical owner
 
 - This specification file is the authoritative top-level boundary definition for AlphaForge architecture.

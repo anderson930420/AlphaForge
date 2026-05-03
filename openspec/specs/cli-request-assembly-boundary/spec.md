@@ -7,123 +7,12 @@ Define the canonical CLI request-assembly and dispatch boundary, including comma
 
 `src/alphaforge/cli.py` SHALL be the single authoritative owner of AlphaForge CLI argument parsing, command surface definition, request-shape assembly, workflow dispatch selection, and terminal output formatting.
 
-#### Purpose
-
-- Keep the CLI as the interface boundary for user requests instead of a second owner of business semantics.
-- Make it explicit which parts of user input are syntax handling versus which parts are domain decisions owned upstream.
-- Prevent command helpers, convenience payloads, and adapter shortcuts from becoming parallel canonical contracts.
-
-#### Canonical owner
-
-- `src/alphaforge/cli.py` is the only authoritative owner of:
-  - subcommand parsing,
-  - flag and option interpretation,
-  - request DTO assembly from `argv`,
-  - workflow dispatch selection,
-  - CLI-facing output formatting.
-- `src/alphaforge/experiment_runner.py` remains the authoritative owner of workflow orchestration behavior.
-- `src/alphaforge/permutation.py` remains the authoritative owner of permutation/null-comparison diagnostic behavior.
-- `src/alphaforge/storage.py` remains the authoritative owner of canonical artifact paths and layout.
-- `src/alphaforge/report.py` remains the authoritative owner of report-view-model semantics.
-- `src/alphaforge.data_loader.py`, `src/alphaforge/backtest.py`, `src/alphaforge.metrics.py`, `src/alphaforge.benchmark.py`, `src/alphaforge.search.py`, and `src/alphaforge.strategy/*` remain the authoritative owners of their respective domain semantics.
-- `src/alphaforge.twse_client.py` remains the authoritative owner of TWSE adapter normalization.
-
-#### Allowed responsibilities
-
-- `cli.py` MAY:
-  - define the user-facing subcommand surface,
-  - parse strings, numbers, booleans, lists, and paths from `argv`,
-  - convert parsed values into request DTOs such as `DataSpec`, `BacktestConfig`, `StrategySpec`, `ValidationSplitConfig`, `WalkForwardConfig`, and adapter request bundles,
-  - choose which orchestration or adapter entrypoint to call for each subcommand,
-  - expose a `--strategy` selector for `run`, `search`, `validate-search`, and `walk-forward`,
-  - call a composite sequence when the CLI surface explicitly exposes a composite command,
-  - print derived JSON or text payloads based on authoritative upstream return values,
-  - surface storage refs, report refs, and workflow summaries that were returned by upstream owners.
-
-#### Explicit non-responsibilities
-
-- `cli.py` MUST NOT own execution semantics, market-data acceptance semantics, metrics semantics, benchmark semantics, report-view-model semantics, or persisted artifact layout.
-- `cli.py` MUST NOT define canonical path truth, canonical report-input truth, or canonical market-data schema truth.
-- `cli.py` MUST NOT become the source of business-rule validation for search windows, split ratios, strategy signals, trade extraction, or benchmark formulas.
-- `cli.py` MUST NOT infer storage filenames or directory structure on its own.
-- `cli.py` MUST NOT turn user-facing convenience payloads into new canonical schemas.
-
-#### Inputs / outputs / contracts
-
-- Inputs:
-  - `argv`
-  - environment or config-backed defaults exposed through `config.py`
-  - explicit subcommand options and flags
-- Request DTOs CLI MAY assemble:
-  - `DataSpec`
-  - `BacktestConfig`
-  - `StrategySpec`
-  - `ValidationSplitConfig`
-  - `WalkForwardConfig`
-  - search parameter grids
-  - adapter transport requests such as `TwseFetchRequest`
-- Outputs:
-  - dispatched workflow calls to `experiment_runner.py` or adapter entrypoints
-  - user-facing JSON or text payloads
-  - surfaced artifact refs and summary paths that were returned by upstream owners
-- CLI output contract:
-  - command output is presentation-only and derived from authoritative runtime, storage, and report owners
-  - CLI may rename fields for display, but it may not redefine their business meaning
-
-#### Invariants
-
-- CLI request assembly preserves the meaning of upstream DTO fields instead of inventing new semantics.
-- CLI dispatch is selection-only: it chooses the correct entrypoint, then downstream owners define the workflow behavior.
-- CLI-facing output can be richer or slimmer than the underlying runtime objects, but it must remain derived from authoritative results and refs.
-- A CLI convenience flow such as `twse-search` does not change the canonical ownership of market-data acceptance, storage layout, or report semantics.
-
-#### Cross-module dependencies
-
-- `experiment_runner.py` receives request DTOs from `cli.py` and performs workflow orchestration.
-- `storage.py` provides canonical artifact refs and path values that CLI may display.
-- `report.py` provides report-input semantics and report renderers; CLI may trigger them, but it does not define them.
-- `twse_client.py` provides adapter request and fetch behavior for TWSE flows.
-- `config.py` may provide defaults and static ranges used during parsing, but not business ownership.
-
-#### Failure modes if this boundary is violated
-
-- The same CLI invocation can be accepted by the parser but rejected by downstream owners for a different reason because validation rules are duplicated.
-- Search, validation, or walk-forward commands can drift because CLI starts encoding workflow semantics locally.
-- Command output can advertise paths that storage never wrote because CLI guessed the layout.
-- Report-related JSON fields can become a second report schema if CLI starts reshaping them independently.
-- Adapter-specific commands can bypass canonical market-data acceptance if CLI treats transport convenience as business authority.
-
-#### Migration notes from current implementation
-
-- `cli.py` already builds `DataSpec`, `BacktestConfig`, `StrategySpec`, and parameter grids from parsed arguments.
-- `cli.py` already dispatches `run`, `search`, `validate-search`, `walk-forward`, `permutation-test`, `fetch-twse`, and `twse-search`.
-- `cli.py` now accepts `--strategy` on `run`, `search`, `validate-search`, and `walk-forward` so callers can select either `ma_crossover` or `breakout` without changing the CLI ownership boundary.
-- `cli.py` currently formats JSON payloads that include serialized results, artifact refs, and report paths.
-- `cli.py` currently performs a direct report rendering path for `run --generate-report`, which makes the report boundary easy to blur if the report input contract is not explicit.
-- `twse-search` currently combines adapter fetch, data save, and search dispatch in one command, so the CLI must stay careful not to absorb TWSE normalization or storage ownership.
-
-#### Open questions / deferred decisions
-
-- Whether `cli.py` should eventually move some presentation helpers into a dedicated output-format module is deferred.
-  - Recommended default: keep CLI formatting local until the output contract becomes more complex than request assembly plus derived JSON payloads.
-- Whether `run --generate-report` should dispatch report generation through `experiment_runner.py` or continue to call report helpers directly is deferred.
-  - Recommended default: keep the report input owner in `report.py` and let CLI only initiate rendering.
-- Whether adapter convenience commands should remain in the CLI surface long term is deferred.
-  - Recommended default: keep them if they remain thin transport composites and do not become domain owners.
-
 #### Scenario: CLI parses and dispatches without owning domain semantics
 
 - GIVEN a user invokes `alphaforge run --data sample.csv --short-window 5 --long-window 20`
 - WHEN `cli.py` parses the command
 - THEN it SHALL assemble the request DTOs needed for downstream execution
 - AND it SHALL NOT decide the execution timing, market-data acceptance, or metric formulas itself
-
-#### Scenario: CLI output is derived from authoritative upstream refs
-
-- GIVEN a workflow returns artifact references and result summaries
-- WHEN `cli.py` formats the terminal payload
-- THEN it SHALL print those derived refs and summaries
-- AND it SHALL NOT infer new canonical paths or report semantics locally
 
 ### Requirement: CLI argument validation is syntactic only; domain validation stays upstream
 
@@ -423,4 +312,17 @@ CLI commands that talk to adapters, including TWSE flows, SHALL remain transport
 
 - `permutation-test` remains syntactic at the CLI layer.
 - Family-specific parameter requirements are surfaced as parser errors, not hidden runtime fallbacks.
+
+### Requirement: `research-validate` may accept a signal-file path for `custom_signal`
+
+`cli.py` MAY accept `--signal-file` on `research-validate` when `--strategy custom_signal` is selected, and it SHALL pass that path through as request-shape data only.
+
+#### Scenario: CLI assembles a custom-signal research-validation request
+
+- GIVEN a user invokes `alphaforge research-validate --strategy custom_signal --signal-file path/to/signal.csv`
+- WHEN `cli.py` parses the command
+- THEN it SHALL assemble the request DTO with the signal-file path
+- AND it SHALL NOT inspect the signal file contents
+- AND it SHALL NOT compute `signal_value`
+- AND it SHALL NOT import SignalForge internals
 

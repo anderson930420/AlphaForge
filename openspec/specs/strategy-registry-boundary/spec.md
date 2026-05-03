@@ -107,3 +107,16 @@ Strategy comparison workflow validation SHALL validate every `StrategyFamilySear
 - THEN the workflow SHALL fail before loading/running full validation, search, permutation, or artifact persistence work for that family
 - AND the failure SHALL come from registry-owned parameter-grid validation
 
+### Requirement: Strategy registry may register validation-only custom-signal workflows
+
+The strategy registry SHALL be able to register `custom_signal` as a workflow-dispatch family, but it SHALL NOT compute signal values or parse external signal files.
+
+#### Scenario: custom_signal remains registry-visible but signal-owned
+
+- GIVEN the `custom_signal` workflow is available to research validation
+- WHEN the strategy registry exposes family metadata
+- THEN it SHALL include `custom_signal`
+- AND it SHALL NOT infer or compute `signal_value`
+- AND it SHALL NOT parse `signal.csv`
+- AND it SHALL NOT own the binary-to-target mapping
+

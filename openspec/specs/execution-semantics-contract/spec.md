@@ -313,86 +313,11 @@ TBD - created by archiving change formalize-execution-semantics-contract. Update
 
 `src/alphaforge/backtest.py` SHALL be the canonical owner of the current execution semantics contract and SHALL emit explicit metadata describing the legacy execution law used by AlphaForge.
 
-#### Purpose
-
-- Make the current execution law visible instead of leaving it implicit in runtime behavior.
-- Prevent downstream modules from guessing whether AlphaForge uses next-open, MOC, intraday, shorting, leverage, or multi-asset execution.
-
-#### Canonical owner
-
-- `src/alphaforge/backtest.py` is the authoritative owner of execution semantics.
-- `src/alphaforge/storage.py` may persist the emitted metadata as a derived artifact field.
-- `src/alphaforge/report.py` may display the emitted metadata as presentation only.
-
-#### Allowed responsibilities
-
-- `backtest.py` MAY interpret `target_position[t]` as the strategy's desired position at bar `t`.
-- `backtest.py` MAY realize `position[t]` as `target_position[t-1]`.
-- `backtest.py` MAY compute `close_return[t]` from close-to-close bars.
-- `backtest.py` MAY compute `strategy_return[t]` as `position[t] * close_return[t] - transaction_cost[t]`.
-- `backtest.py` MAY clip positions into the supported long-only range `[0.0, 1.0]`.
-- `backtest.py` MAY emit the following metadata fields in runtime summaries and persisted artifacts:
-  - `execution_semantics = "legacy_close_to_close_lagged"`
-  - `position_rule = "position[t] = target_position[t-1]"`
-  - `return_rule = "close_to_close"`
-  - `position_bounds = [0.0, 1.0]`
-  - `supports_shorting = false`
-  - `supports_leverage = false`
-
-#### Explicit non-responsibilities
-
-- `backtest.py` MUST NOT become a realistic order simulator.
-- `backtest.py` MUST NOT add next-open, MOC, intraday, broker, or multi-asset execution semantics in this change.
-- `backtest.py` MUST NOT support shorting or leverage in this change.
-- `strategy/*` MUST NOT redefine the execution law.
-- `metrics.py`, `report.py`, `storage.py`, and `cli.py` MUST NOT reinterpret the execution metadata as a different execution model.
-
-#### Inputs / outputs / contracts
-
-- Inputs:
-  - loader-accepted OHLCV market data
-  - strategy target positions
-  - `BacktestConfig`
-- Outputs:
-  - an equity curve based on the legacy close-to-close lagged execution law
-  - a trade log derived from executed position transitions
-  - explicit execution metadata carrying the fields listed above
-
-#### Invariants
-
-- Position bounds remain `[0.0, 1.0]`.
-- Shorting remains unsupported.
-- Leverage remains unsupported.
-- Execution remains close-to-close and one-bar lagged.
-- The emitted metadata must describe the canonical execution law rather than a hypothetical future simulator.
-
-#### Cross-module dependencies
-
-- `storage.py` may serialize the metadata into persisted artifacts.
-- `report.py` may surface the metadata for display, but it must not change the semantics.
-- `cli.py` may print the metadata, but it must not invent a second execution law.
-
-#### Failure modes if this boundary is violated
-
-- Downstream modules can start assuming a different execution timing rule than the backtest actually uses.
-- Users can misread the runtime as supporting leverage, shorting, or intraday order simulation when it does not.
-- Report and storage outputs can drift from the actual backtest execution law if the metadata stays implicit.
-
-#### Migration notes from current implementation
-
-- The current runtime already behaves like a close-to-close, one-bar-lagged, long-only execution model.
-- The change makes that behavior explicit and machine-readable rather than inferred from implementation details.
-
-#### Open questions / deferred decisions
-
-- None for the current execution law.
-
 #### Scenario: runtime execution metadata is explicit
 
-- GIVEN a future experiment run or persisted artifact
-- WHEN execution semantics are serialized
-- THEN the metadata SHALL include `legacy_close_to_close_lagged`
-- AND it SHALL include the exact position, return, bounds, shorting, and leverage fields listed above
+- GIVEN execution semantics are serialized
+- WHEN AlphaForge reports the current execution law
+- THEN it SHALL identify the execution model as `legacy_close_to_close_lagged`
 
 ### Requirement: trade logs are return-based and must not be labeled as dollar PnL
 
@@ -481,4 +406,27 @@ TBD - created by archiving change formalize-execution-semantics-contract. Update
 - WHEN the schema is emitted or reviewed
 - THEN the fields SHALL be the return-based fields listed above
 - AND the canonical schema SHALL NOT use `net_pnl` or other dollar-PnL labels
+
+### Requirement: `custom_signal` uses the existing legacy close-to-close lagged execution law
+
+The `custom_signal` workflow SHALL use the same execution semantics as all other AlphaForge strategies and SHALL NOT introduce a second execution model.
+
+#### Scenario: custom-signal target positions execute one bar later
+
+- GIVEN a validated external `signal.csv` produces `target_position = float(signal_binary)`
+- WHEN `backtest.py` executes the resulting target positions
+- THEN `position[t] = target_position[t-1]`
+- AND `close_return[t] = close[t] / close[t-1] - 1`
+- AND `strategy_return[t] = position[t] * close_return[t] - transaction_cost[t]`
+- AND the custom-signal workflow SHALL NOT claim next-open, MOC, intraday, shorting, leverage, or multi-asset execution semantics
+
+### Requirement: scope remains execution-semantics only
+
+This change SHALL NOT add a new simulator, a new order model, a new broker model, or any additional execution law.
+
+#### Scenario: execution law remains unchanged for built-in strategies
+
+- GIVEN AlphaForge runs `ma_crossover` or `breakout`
+- WHEN the execution contract is observed
+- THEN the existing legacy close-to-close lagged semantics SHALL remain unchanged
 
