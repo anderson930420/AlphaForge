@@ -86,6 +86,8 @@ from .storage import (
     save_validation_result,
     save_walk_forward_result,
     serialize_artifact_receipt,
+    serialize_bootstrap_evidence_summary,
+    serialize_cost_sensitivity_summary,
     serialize_permutation_test_artifact_receipt,
     serialize_search_artifact_receipt,
     serialize_validation_artifact_receipt,
@@ -495,6 +497,11 @@ def run_validate_search_on_market_data(
         artifact_paths=candidate_artifact_paths,
         metadata=build_holdout_metadata(train_data),
     )
+    test_result = _attach_candidate_diagnostics_metadata(
+        test_result,
+        candidate_evidence.bootstrap_evidence,
+        candidate_evidence.cost_sensitivity,
+    )
     research_policy_decision = evaluate_research_policy(
         candidate_evidence,
         permutation_summary=permutation_summary,
@@ -676,6 +683,11 @@ def run_research_validation_protocol_with_details_workflow(
             artifact_paths={},
             metadata=build_holdout_metadata(holdout_data),
         )
+        final_holdout_result = _attach_candidate_diagnostics_metadata(
+            final_holdout_execution.result,
+            candidate_evidence.bootstrap_evidence,
+            candidate_evidence.cost_sensitivity,
+        )
         walk_forward_result = WalkForwardResult(
             data_spec=research_config.data_spec,
             walk_forward_config=research_config.walk_forward_config,
@@ -739,7 +751,7 @@ def run_research_validation_protocol_with_details_workflow(
             candidate_evidence=candidate_evidence,
             permutation_summary=None,
             frozen_plan=frozen_plan,
-            final_holdout_result=final_holdout_execution.result,
+            final_holdout_result=final_holdout_result,
             transaction_cost_assumptions=frozen_plan.transaction_cost_assumptions,
             artifact_paths=artifact_paths,
             metadata={
@@ -866,6 +878,11 @@ def run_research_validation_protocol_with_details_workflow(
         artifact_paths={},
         metadata=build_holdout_metadata(holdout_data),
     )
+    final_holdout_result = _attach_candidate_diagnostics_metadata(
+        final_holdout_execution.result,
+        candidate_evidence.bootstrap_evidence,
+        candidate_evidence.cost_sensitivity,
+    )
     artifact_paths = _build_research_protocol_artifact_paths(
         protocol_root=protocol_root,
         development_search_receipt=development_search_execution.artifact_receipt,
@@ -895,7 +912,7 @@ def run_research_validation_protocol_with_details_workflow(
         candidate_evidence=candidate_evidence,
         permutation_summary=permutation_summary,
         frozen_plan=frozen_plan,
-        final_holdout_result=final_holdout_execution.result,
+        final_holdout_result=final_holdout_result,
         transaction_cost_assumptions=transaction_cost_assumptions,
         artifact_paths=artifact_paths,
         metadata={
@@ -1042,6 +1059,11 @@ def run_walk_forward_search_on_market_data(
             cost_sensitivity=cost_sensitivity,
             artifact_paths=fold_candidate_artifact_paths,
             metadata=build_holdout_metadata(train_data),
+        )
+        test_result = _attach_candidate_diagnostics_metadata(
+            test_result,
+            fold_candidate_evidence.bootstrap_evidence,
+            fold_candidate_evidence.cost_sensitivity,
         )
         fold_candidate_decision = evaluate_candidate_policy(fold_candidate_evidence, policy_scope="walk-forward")
         fold_candidate_evidence = apply_policy_decision(fold_candidate_evidence, fold_candidate_decision)
@@ -1323,6 +1345,21 @@ def _build_research_policy_candidate_id(
         f"{parameter_items}:"
         f"{train_data['datetime'].iloc[0]}-{test_data['datetime'].iloc[-1]}"
     )
+
+
+def _attach_candidate_diagnostics_metadata(
+    result: ExperimentResult,
+    bootstrap_evidence,
+    cost_sensitivity,
+) -> ExperimentResult:
+    metadata = dict(result.metadata)
+    if bootstrap_evidence is not None:
+        metadata["bootstrap_evidence"] = serialize_bootstrap_evidence_summary(bootstrap_evidence)
+    if cost_sensitivity is not None:
+        metadata["cost_sensitivity"] = serialize_cost_sensitivity_summary(cost_sensitivity)
+    if metadata == result.metadata:
+        return result
+    return replace(result, metadata=metadata)
 
 
 def _apply_holdout_cutoff_if_requested(

@@ -82,6 +82,8 @@ def render_experiment_report(
     execution_assumptions_rows = _build_execution_assumptions_rows(report_input.result.metadata)
     signal_metadata_rows = _build_signal_metadata_rows(report_input.result.metadata)
     data_quality_rows = _build_data_quality_rows(report_input.result.metadata)
+    bootstrap_evidence_rows = _build_bootstrap_evidence_rows(report_input.result.metadata)
+    cost_sensitivity_rows = _build_cost_sensitivity_rows(report_input.result.metadata)
     trade_return_rows = _build_trade_return_rows()
     metrics_rows = _build_metrics_rows(report_input.result, report_input.benchmark_summary)
     equity_figure = build_equity_curve_figure(report_input.equity_curve)
@@ -161,6 +163,8 @@ def render_experiment_report(
     </section>
     {signal_metadata_rows}
     {data_quality_rows}
+    {bootstrap_evidence_rows}
+    {cost_sensitivity_rows}
     <section class="section">
       <h2>Trade Return Semantics</h2>
       <p class="meta">Trade metrics are return-based. Win rate counts trades with trade_net_return &gt; 0.</p>
@@ -218,6 +222,8 @@ def render_search_comparison_report(
     )
     signal_metadata_rows = _build_signal_metadata_rows(ranked_results[0].metadata if ranked_results else {})
     data_quality_rows = _build_data_quality_rows(ranked_results[0].metadata if ranked_results else {})
+    bootstrap_evidence_rows = _build_bootstrap_evidence_rows(ranked_results[0].metadata if ranked_results else {})
+    cost_sensitivity_rows = _build_cost_sensitivity_rows(ranked_results[0].metadata if ranked_results else {})
     trade_return_rows = _build_trade_return_rows()
     comparison_table = _build_search_comparison_table(
         link_context=link_context,
@@ -291,6 +297,8 @@ def render_search_comparison_report(
     </section>
     {signal_metadata_rows}
     {data_quality_rows}
+    {bootstrap_evidence_rows}
+    {cost_sensitivity_rows}
     <section class="section">
       <h2>Trade Return Semantics</h2>
       <p class="meta">Trade metrics are return-based. Win rate counts trades with trade_net_return &gt; 0.</p>
@@ -497,6 +505,76 @@ def _build_data_quality_rows(metadata: dict[str, object]) -> str:
         {"".join(cards)}
       </div>
     </section>"""
+
+
+def _build_bootstrap_evidence_rows(metadata: dict[str, object]) -> str:
+    summary = _extract_diagnostic_summary(metadata, "bootstrap_evidence")
+    if not isinstance(summary, dict):
+        return ""
+    cards = []
+    labels = [
+        ("Bootstrap Count", summary.get("n_bootstrap", "")),
+        ("Seed", summary.get("seed", "")),
+        ("Annualized Return CI 95%", summary.get("annualized_return_ci_95", "")),
+        ("Mean Daily Return CI 95%", summary.get("mean_daily_return_ci_95", "")),
+        ("CI Crosses Zero", summary.get("ci_crosses_zero", "")),
+        ("Verdict", summary.get("verdict", "")),
+    ]
+    for label, value in labels:
+        cards.append(
+            f"""<div class="metric-card">
+  <div class="metric-label">{escape(label)}</div>
+  <div class="metric-value">{escape(str(value))}</div>
+</div>"""
+        )
+    return """<section class="section">
+      <h2>Bootstrap Evidence</h2>
+      <p class="meta">Minimal bootstrap diagnostics are reported here. They are not PBO, DSR, SPA, or any broader multiple-testing correction.</p>
+      <div class="metrics-grid">
+        %s
+      </div>
+    </section>""" % "".join(cards)
+
+
+def _build_cost_sensitivity_rows(metadata: dict[str, object]) -> str:
+    summary = _extract_diagnostic_summary(metadata, "cost_sensitivity")
+    if not isinstance(summary, dict):
+        return ""
+
+    def _scenario_card(name: str) -> str:
+        scenario = summary.get(name, {})
+        if not isinstance(scenario, dict):
+            scenario = {}
+        return f"""<div class="metric-card">
+  <div class="metric-label">{escape(name.replace('_', ' ').title())}</div>
+  <div class="metric-value">Annualized Return: {escape(str(scenario.get("annualized_return", "")))}</div>
+  <div class="metric-value">Sharpe: {escape(str(scenario.get("sharpe", "")))}</div>
+  <div class="metric-value">Max Drawdown: {escape(str(scenario.get("max_drawdown", "")))}</div>
+</div>"""
+
+    return """<section class="section">
+      <h2>Cost Sensitivity</h2>
+      <p class="meta">Minimal fee/slippage sensitivity only. This is not a full TCA, broker simulation, or execution impact model.</p>
+      <div class="metrics-grid">
+        %s
+      </div>
+      <div class="metric-card" style="margin-top:12px;">
+        <div class="metric-label">Verdict</div>
+        <div class="metric-value">%s</div>
+      </div>
+    </section>""" % (_scenario_card("low_cost") + _scenario_card("base_cost") + _scenario_card("high_cost"), escape(str(summary.get("verdict", ""))))
+
+
+def _extract_diagnostic_summary(metadata: dict[str, object], key: str) -> dict[str, object] | None:
+    value = metadata.get(key)
+    if isinstance(value, dict):
+        return value
+    candidate_evidence = metadata.get("candidate_evidence")
+    if isinstance(candidate_evidence, dict):
+        nested_value = candidate_evidence.get(key)
+        if isinstance(nested_value, dict):
+            return nested_value
+    return None
 
 
 def _build_signal_metadata_rows(metadata: dict[str, object]) -> str:

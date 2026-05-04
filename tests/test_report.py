@@ -205,6 +205,92 @@ def test_render_experiment_report_shows_custom_signal_metadata(tmp_path: Path) -
     assert "16" in saved_content
 
 
+def test_render_experiment_report_shows_research_evidence_diagnostics(tmp_path: Path) -> None:
+    result = ExperimentResult(
+        data_spec=DataSpec(path=Path("sample_data/example.csv"), symbol="2330"),
+        strategy_spec=StrategySpec(name="ma_crossover", parameters={"short_window": 5, "long_window": 20}),
+        backtest_config=BacktestConfig(
+            initial_capital=100000.0,
+            fee_rate=0.001,
+            slippage_rate=0.0005,
+            annualization_factor=252,
+        ),
+        metrics=MetricReport(
+            total_return=0.20,
+            annualized_return=0.31,
+            sharpe_ratio=1.23,
+            max_drawdown=-0.08,
+            win_rate=0.55,
+            turnover=1.5,
+            trade_count=4,
+            bar_count=1,
+        ),
+        score=1.0,
+        metadata={
+            "bootstrap_evidence": {
+                "n_bootstrap": 1000,
+                "seed": 42,
+                "annualized_return_ci_95": [-0.04, 0.18],
+                "mean_daily_return_ci_95": [-0.0002, 0.0007],
+                "ci_crosses_zero": True,
+                "verdict": "weak_evidence",
+            },
+            "cost_sensitivity": {
+                "low_cost": {"annualized_return": 0.12, "sharpe": 0.8, "max_drawdown": -0.2},
+                "base_cost": {"annualized_return": 0.08, "sharpe": 0.6, "max_drawdown": -0.22},
+                "high_cost": {"annualized_return": 0.01, "sharpe": 0.1, "max_drawdown": -0.28},
+                "verdict": "stable",
+            },
+        },
+    )
+    equity_curve = pd.DataFrame(
+        {
+            "datetime": pd.date_range("2024-01-01", periods=4, freq="D"),
+            "close": [1000.0, 1010.0, 995.0, 1035.0],
+            "equity": [100000.0, 101000.0, 99000.0, 103000.0],
+        }
+    )
+    trades = pd.DataFrame(
+        {
+            "entry_datetime": ["2024-01-02 00:00:00"],
+            "exit_datetime": ["2024-01-04 00:00:00"],
+            "entry_price": [1010.0],
+            "exit_price": [1035.0],
+            "holding_period": [1],
+            "trade_gross_return": [0.024752475247524754],
+            "trade_net_return": [0.024252475247524754],
+            "cost_return_contribution": [0.0005],
+            "entry_target_position": [1.0],
+            "exit_target_position": [0.0],
+        }
+    )
+    report_input = ExperimentReportInput(
+        result=result,
+        equity_curve=equity_curve,
+        trades=trades,
+        benchmark_summary=summarize_buy_and_hold(equity_curve, result.backtest_config.initial_capital),
+        benchmark_curve=build_buy_and_hold_equity_curve(equity_curve, result.backtest_config.initial_capital),
+    )
+
+    html = render_experiment_report(report_input)
+    output_path = save_experiment_report(html, tmp_path / "diagnostics_report.html")
+    saved_content = output_path.read_text(encoding="utf-8")
+
+    assert "Bootstrap Evidence" in saved_content
+    assert "Cost Sensitivity" in saved_content
+    assert "1000" in saved_content
+    assert "42" in saved_content
+    assert "0.18" in saved_content
+    assert "weak_evidence" in saved_content
+    assert "stable" in saved_content
+    assert "not PBO" in saved_content
+    assert "not a full TCA" in saved_content
+    assert "broker simulation" in saved_content
+    assert "Minimal bootstrap diagnostics" in saved_content
+    assert "Minimal fee/slippage sensitivity" in saved_content
+    assert "institutional statistical proof" not in saved_content.lower()
+
+
 def test_build_experiment_report_input_preserves_canonical_fields() -> None:
     result = ExperimentResult(
         data_spec=DataSpec(path=Path("sample_data/example.csv"), symbol="2330"),

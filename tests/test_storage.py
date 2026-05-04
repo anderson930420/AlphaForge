@@ -326,6 +326,32 @@ def test_save_research_protocol_summary_writes_storage_owned_artifact(tmp_path: 
         ),
         frozen_plan=frozen_plan,
         final_holdout_result=result,
+        candidate_evidence=build_candidate_evidence_summary(
+            strategy_spec=result.strategy_spec,
+            train_result=result,
+            test_result=result,
+            test_equity_curve=pd.DataFrame(
+                {
+                    "strategy_return": [0.02, 0.03, 0.01, 0.04],
+                    "turnover": [0.1, 0.1, 0.1, 0.1],
+                }
+            ),
+            benchmark_summary={"total_return": 0.1, "max_drawdown": -0.05},
+            cost_sensitivity=compute_cost_sensitivity(
+                market_data=pd.DataFrame(
+                    {
+                        "datetime": pd.date_range("2024-01-01", periods=8, freq="D"),
+                        "open": [100.0, 101.0, 102.0, 103.0, 104.0, 105.0, 106.0, 107.0],
+                        "high": [100.0, 101.0, 102.0, 103.0, 104.0, 105.0, 106.0, 107.0],
+                        "low": [100.0, 101.0, 102.0, 103.0, 104.0, 105.0, 106.0, 107.0],
+                        "close": [100.0, 110.0, 120.0, 130.0, 140.0, 150.0, 160.0, 170.0],
+                        "volume": [100.0] * 8,
+                    }
+                ),
+                target_positions=pd.Series([0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0]),
+                backtest_config=BacktestConfig(initial_capital=100000.0, fee_rate=0.001, slippage_rate=0.001, annualization_factor=252),
+            ),
+        ),
         transaction_cost_assumptions={"fee_rate": 0.001, "slippage_rate": 0.0005},
     )
 
@@ -357,6 +383,9 @@ def test_save_research_protocol_summary_writes_storage_owned_artifact(tmp_path: 
     assert payload["walk_forward_oos_label"] == "development_period_oos"
     assert payload["final_holdout_evidence_label"] == "final_holdout"
     assert payload["final_holdout_metrics"]["bar_count"] == result.metrics.bar_count
+    assert payload["candidate_evidence"]["bootstrap_evidence"]["seed"] == 42
+    assert payload["candidate_evidence"]["cost_sensitivity"]["verdict"] == "stable"
+    assert payload["candidate_evidence"]["cost_sensitivity"]["low_cost"]["annualized_return"] >= payload["candidate_evidence"]["cost_sensitivity"]["base_cost"]["annualized_return"]
     assert serialize_research_protocol_artifact_receipt(receipt)["research_protocol_summary_path"] == str(
         receipt.research_protocol_summary_path
     )

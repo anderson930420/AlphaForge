@@ -495,7 +495,10 @@ def test_research_validation_workflow_supports_custom_signal_with_signal_file(
     assert summary.final_holdout_result.metadata["signal_name"] == "signalforge_moskowitz"
     assert summary.final_holdout_result.metadata["source"] == "SignalForge"
     assert summary.final_holdout_result.metadata["signal_row_count"] == 16
+    assert summary.final_holdout_result.metadata["bootstrap_evidence"]["seed"] == 42
+    assert summary.final_holdout_result.metadata["cost_sensitivity"]["verdict"] in {"stable", "cost_fragile"}
     assert summary.candidate_evidence is not None
+    assert summary.candidate_evidence.bootstrap_evidence is not None
     assert summary.candidate_evidence.cost_sensitivity is not None
     assert summary.candidate_evidence.cost_sensitivity.verdict in {"stable", "cost_fragile"}
     assert summary.metadata["signal_file"] == str(signal_path)
