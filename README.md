@@ -6,6 +6,14 @@ AlphaForge is a minimal strategy research engine that proves a reproducible MVP 
 
 The canonical contract and boundary details live in `openspec/specs/...`; this README is a practical usage overview, not the source of truth for ownership or workflow semantics.
 
+## Positioning
+
+AlphaForge is a spec-driven quant research validation engine.
+
+It is parked as a stable validation layer rather than the long-term alpha-generation platform.
+
+Externally generated signals should enter AlphaForge through `custom_signal` and an external `signal.csv`.
+
 ## MVP Status
 
 The current MVP supports:
@@ -26,6 +34,8 @@ The current MVP supports:
 - Comparing strategy results against a buy-and-hold baseline in reports and validation summaries
 
 Deferred capabilities such as paper parsing, formula extraction, genetic algorithms, broker integration, live trading, and web UI remain intentionally out of scope.
+
+AlphaForge is not a live trading system, broker execution simulator, portfolio optimizer, paper-to-factor extraction system, ML pipeline, or full alpha discovery platform.
 
 ## Project Layout
 
@@ -128,6 +138,19 @@ Run a walk-forward validation search from a CSV:
 ```powershell
 .venv\Scripts\python.exe -m alphaforge.cli walk-forward --data .\sample_data\sample_ohlcv.csv --symbol SAMPLE --short-windows 2 5 10 --long-windows 20 40 60 --train-size 120 --test-size 20 --step-size 20 --experiment-name sample_walk_forward
 ```
+
+Run research validation against an externally generated `signal.csv`:
+
+```powershell
+.venv\Scripts\python.exe -m alphaforge.cli research-validate --strategy custom_signal --data .\sample_data\twse_2330_2018_2025.csv --signal-file .\outputs\signalforge\moskowitz_2330_signal.csv --development-start 2018-01-01 --development-end 2024-12-31 --holdout-start 2025-01-01 --holdout-end 2025-12-31
+```
+
+In this path:
+
+- `signal_binary` maps to `target_position`
+- `signal_value` is not computed or used by AlphaForge
+- `custom_signal` uses `legacy_close_to_close_lagged` execution semantics
+- AlphaForge validates `signal.csv` but does not generate it
 
 Run a permutation/null-comparison diagnostic for a fixed MA candidate:
 
