@@ -17,6 +17,7 @@ from .benchmark import build_buy_and_hold_equity_curve, normalize_benchmark_summ
 from .data_loader import load_market_data, split_holdout_data
 from .custom_signal import load_custom_signal_positions
 from .evidence import build_candidate_evidence_summary, build_walk_forward_evidence_summary
+from .evidence_diagnostics import compute_cost_sensitivity
 from .experiment_runner import (
     ExperimentExecutionOutput,
     ResearchProtocolExecutionOutput,
@@ -430,6 +431,12 @@ def run_validate_search_on_market_data(
     )
     test_result = test_execution.result
     test_receipt = test_execution.artifact_receipt
+    test_target_positions = build_strategy(selected_strategy_spec).generate_signals(test_data)
+    cost_sensitivity = compute_cost_sensitivity(
+        market_data=test_data,
+        target_positions=test_target_positions,
+        backtest_config=backtest_config,
+    )
     validation_permutation_config = permutation_config or ValidationPermutationConfig()
     permutation_summary = None
     permutation_artifact_receipt = None
@@ -479,9 +486,11 @@ def run_validate_search_on_market_data(
         strategy_spec=selected_strategy_spec,
         train_result=train_best_result,
         test_result=test_result,
+        test_equity_curve=test_execution.equity_curve,
         search_summary=search_execution.summary,
         benchmark_summary=normalize_benchmark_summary(test_result.metadata.get("benchmark_summary")),
         permutation_summary=permutation_summary,
+        cost_sensitivity=cost_sensitivity,
         permutation_status=permutation_status,
         artifact_paths=candidate_artifact_paths,
         metadata=build_holdout_metadata(train_data),
@@ -639,6 +648,11 @@ def run_research_validation_protocol_with_details_workflow(
             output_dir=protocol_root,
             experiment_name="final_holdout",
         )
+        holdout_cost_sensitivity = compute_cost_sensitivity(
+            market_data=holdout_data,
+            target_positions=holdout_target_positions,
+            backtest_config=backtest_config,
+        )
 
         development_search_summary = SearchSummary(
             strategy_name="custom_signal",
@@ -650,6 +664,17 @@ def run_research_validation_protocol_with_details_workflow(
             ranking_score=RANKING_SCORE_FIELD,
             best_result=development_execution.result,
             top_results=[development_execution.result],
+        )
+        candidate_evidence = build_candidate_evidence_summary(
+            strategy_spec=StrategySpec(name="custom_signal", parameters={}),
+            train_result=development_execution.result,
+            test_result=final_holdout_execution.result,
+            test_equity_curve=final_holdout_execution.equity_curve,
+            search_summary=development_search_summary,
+            benchmark_summary=normalize_benchmark_summary(final_holdout_execution.result.metadata.get("benchmark_summary")),
+            cost_sensitivity=holdout_cost_sensitivity,
+            artifact_paths={},
+            metadata=build_holdout_metadata(holdout_data),
         )
         walk_forward_result = WalkForwardResult(
             data_spec=research_config.data_spec,
@@ -711,6 +736,7 @@ def run_research_validation_protocol_with_details_workflow(
             tried_parameter_combination_count=1,
             development_search_summary=development_search_summary,
             walk_forward_summary=walk_forward_result,
+            candidate_evidence=candidate_evidence,
             permutation_summary=None,
             frozen_plan=frozen_plan,
             final_holdout_result=final_holdout_execution.result,
@@ -822,6 +848,24 @@ def run_research_validation_protocol_with_details_workflow(
         output_dir=protocol_root,
         experiment_name="final_holdout",
     )
+    holdout_target_positions = build_strategy(selected_strategy_spec).generate_signals(holdout_data)
+    holdout_cost_sensitivity = compute_cost_sensitivity(
+        market_data=holdout_data,
+        target_positions=holdout_target_positions,
+        backtest_config=backtest_config,
+    )
+    candidate_evidence = build_candidate_evidence_summary(
+        strategy_spec=selected_strategy_spec,
+        train_result=selected_result,
+        test_result=final_holdout_execution.result,
+        test_equity_curve=final_holdout_execution.equity_curve,
+        search_summary=development_search_execution.summary,
+        benchmark_summary=normalize_benchmark_summary(final_holdout_execution.result.metadata.get("benchmark_summary")),
+        cost_sensitivity=holdout_cost_sensitivity,
+        permutation_summary=permutation_summary,
+        artifact_paths={},
+        metadata=build_holdout_metadata(holdout_data),
+    )
     artifact_paths = _build_research_protocol_artifact_paths(
         protocol_root=protocol_root,
         development_search_receipt=development_search_execution.artifact_receipt,
@@ -848,6 +892,7 @@ def run_research_validation_protocol_with_details_workflow(
         tried_parameter_combination_count=development_search_execution.summary.result_count,
         development_search_summary=development_search_execution.summary,
         walk_forward_summary=walk_forward_result,
+        candidate_evidence=candidate_evidence,
         permutation_summary=permutation_summary,
         frozen_plan=frozen_plan,
         final_holdout_result=final_holdout_execution.result,
@@ -964,6 +1009,12 @@ def run_walk_forward_search_on_market_data(
             experiment_name="test_selected",
         )
         test_result = test_execution.result
+        test_target_positions = build_strategy(selected_strategy_spec).generate_signals(test_data)
+        cost_sensitivity = compute_cost_sensitivity(
+            market_data=test_data,
+            target_positions=test_target_positions,
+            backtest_config=backtest_config,
+        )
         fold_candidate_artifact_paths: dict[str, str] = {}
         if fold_root is not None:
             fold_candidate_artifact_paths["fold_root"] = str(fold_root)
@@ -985,8 +1036,10 @@ def run_walk_forward_search_on_market_data(
             strategy_spec=selected_strategy_spec,
             train_result=best_ranked_result,
             test_result=test_result,
+            test_equity_curve=test_execution.equity_curve,
             search_summary=search_execution.summary,
             benchmark_summary=normalize_benchmark_summary(test_result.metadata.get("benchmark_summary")),
+            cost_sensitivity=cost_sensitivity,
             artifact_paths=fold_candidate_artifact_paths,
             metadata=build_holdout_metadata(train_data),
         )

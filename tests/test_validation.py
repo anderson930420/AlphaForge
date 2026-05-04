@@ -126,8 +126,19 @@ def test_run_validate_search_splits_data_chronologically_and_saves_outputs(sampl
     assert result.permutation_config.enabled is False
     assert result.candidate_evidence.permutation_summary is None
     assert result.candidate_evidence.permutation_status == "skipped"
+    assert result.candidate_evidence.bootstrap_evidence is not None
+    assert result.candidate_evidence.bootstrap_evidence.n_bootstrap == 1000
+    assert result.candidate_evidence.bootstrap_evidence.seed == 42
+    assert result.candidate_evidence.cost_sensitivity is not None
+    assert result.candidate_evidence.cost_sensitivity.verdict in {"stable", "cost_fragile"}
+    assert "low_cost" in summary_payload["candidate_evidence"]["cost_sensitivity"]
+    assert "base_cost" in summary_payload["candidate_evidence"]["cost_sensitivity"]
+    assert "high_cost" in summary_payload["candidate_evidence"]["cost_sensitivity"]
     assert summary_payload["permutation_config"]["enabled"] is False
     assert summary_payload["candidate_evidence"]["permutation_status"] == "skipped"
+    assert summary_payload["candidate_evidence"]["bootstrap_evidence"]["n_bootstrap"] == 1000
+    assert summary_payload["candidate_evidence"]["bootstrap_evidence"]["seed"] == 42
+    assert summary_payload["candidate_evidence"]["cost_sensitivity"]["verdict"] in {"stable", "cost_fragile"}
     assert (
         result.candidate_evidence.degradation_summary["return_degradation"]
         == result.test_result.metrics.annualized_return - result.train_best_result.metrics.annualized_return

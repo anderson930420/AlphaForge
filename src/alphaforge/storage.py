@@ -16,6 +16,9 @@ import pandas as pd
 
 from .backtest import BACKTEST_TRADE_LOG_COLUMNS
 from .schemas import (
+    BootstrapEvidenceSummary,
+    CostScenarioSummary,
+    CostSensitivitySummary,
     CandidateEvidenceSummary,
     CandidatePolicyDecision,
     EquityCurveFrame,
@@ -191,7 +194,7 @@ def serialize_experiment_result(result: ExperimentResult) -> dict[str, Any]:
 def serialize_candidate_evidence_summary(summary: CandidateEvidenceSummary | None) -> dict[str, Any] | None:
     if summary is None:
         return None
-    return {
+    payload = {
         "strategy_name": summary.strategy_name,
         "strategy_parameters": summary.strategy_parameters,
         "verdict": summary.verdict,
@@ -202,12 +205,16 @@ def serialize_candidate_evidence_summary(summary: CandidateEvidenceSummary | Non
         "train_metrics": serialize_metric_report(summary.train_metrics) if summary.train_metrics is not None else None,
         "test_metrics": serialize_metric_report(summary.test_metrics) if summary.test_metrics is not None else None,
         "permutation_summary": serialize_permutation_test_summary(summary.permutation_summary),
+        "cost_sensitivity": serialize_cost_sensitivity_summary(summary.cost_sensitivity),
         "permutation_status": summary.permutation_status,
         "benchmark_relative_summary": summary.benchmark_relative_summary,
         "degradation_summary": summary.degradation_summary,
         "artifact_paths": summary.artifact_paths,
         "metadata": summary.metadata,
     }
+    if summary.bootstrap_evidence is not None:
+        payload["bootstrap_evidence"] = serialize_bootstrap_evidence_summary(summary.bootstrap_evidence)
+    return payload
 
 
 def serialize_candidate_policy_decision(decision: CandidatePolicyDecision | None) -> dict[str, Any] | None:
@@ -225,6 +232,40 @@ def serialize_research_policy_config(config: dict[str, Any] | None) -> dict[str,
     if config is None:
         return None
     return dict(config)
+
+
+def serialize_bootstrap_evidence_summary(summary: BootstrapEvidenceSummary | None) -> dict[str, Any] | None:
+    if summary is None:
+        return None
+    return {
+        "n_bootstrap": int(summary.n_bootstrap),
+        "seed": int(summary.seed),
+        "annualized_return_ci_95": list(summary.annualized_return_ci_95),
+        "mean_daily_return_ci_95": list(summary.mean_daily_return_ci_95),
+        "ci_crosses_zero": summary.ci_crosses_zero,
+        "verdict": summary.verdict,
+    }
+
+
+def serialize_cost_scenario_summary(summary: CostScenarioSummary | None) -> dict[str, Any] | None:
+    if summary is None:
+        return None
+    return {
+        "annualized_return": float(summary.annualized_return),
+        "sharpe": float(summary.sharpe),
+        "max_drawdown": float(summary.max_drawdown),
+    }
+
+
+def serialize_cost_sensitivity_summary(summary: CostSensitivitySummary | None) -> dict[str, Any] | None:
+    if summary is None:
+        return None
+    return {
+        "low_cost": serialize_cost_scenario_summary(summary.low_cost),
+        "base_cost": serialize_cost_scenario_summary(summary.base_cost),
+        "high_cost": serialize_cost_scenario_summary(summary.high_cost),
+        "verdict": summary.verdict,
+    }
 
 
 def serialize_research_policy_decision(decision: Any | None) -> dict[str, Any] | None:
@@ -390,6 +431,7 @@ def serialize_research_protocol_summary(summary: ResearchProtocolSummary) -> dic
         "tried_parameter_combination_count": int(summary.tried_parameter_combination_count),
         "development_search_summary": serialize_search_summary(summary.development_search_summary),
         "walk_forward_summary": serialize_walk_forward_result(summary.walk_forward_summary),
+        "candidate_evidence": serialize_candidate_evidence_summary(summary.candidate_evidence),
         "walk_forward_oos_label": "development_period_oos",
         "permutation_summary": serialize_permutation_test_summary(summary.permutation_summary),
         "permutation_evidence_label": "development_period_diagnostic" if summary.permutation_summary is not None else None,

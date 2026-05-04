@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from typing import Any
 
+import pandas as pd
+
 from .benchmark import normalize_benchmark_summary
+from .evidence_diagnostics import compute_bootstrap_evidence
 from .policy_types import CandidateVerdict
 from .schemas import (
     CandidateEvidenceSummary,
@@ -13,6 +16,7 @@ from .schemas import (
     StrategySpec,
     ValidationPermutationStatus,
     WalkForwardEvidenceSummary,
+    CostSensitivitySummary,
 )
 
 
@@ -40,9 +44,11 @@ def build_candidate_evidence_summary(
     strategy_spec: StrategySpec,
     train_result: ExperimentResult | None,
     test_result: ExperimentResult | None,
+    test_equity_curve: pd.DataFrame | None = None,
     search_summary: SearchSummary | None = None,
     benchmark_summary: dict[str, float] | None = None,
     permutation_summary: PermutationTestSummary | None = None,
+    cost_sensitivity: CostSensitivitySummary | None = None,
     permutation_status: ValidationPermutationStatus = "skipped",
     artifact_paths: dict[str, str] | None = None,
     metadata: dict[str, Any] | None = None,
@@ -59,6 +65,7 @@ def build_candidate_evidence_summary(
     search_rank, search_result_count, search_ranking_score, search_score = _build_search_context(strategy_spec, search_summary)
     benchmark_relative_summary = _build_benchmark_relative_summary(test_result, benchmark_summary)
     degradation_summary = _build_degradation_summary(train_metrics, test_metrics)
+    bootstrap_evidence = _build_bootstrap_evidence(test_result, test_equity_curve)
     return CandidateEvidenceSummary(
         strategy_name=strategy_spec.name,
         strategy_parameters=dict(strategy_spec.parameters),
@@ -70,7 +77,9 @@ def build_candidate_evidence_summary(
         train_metrics=train_metrics,
         test_metrics=test_metrics,
         permutation_summary=permutation_summary,
+        cost_sensitivity=cost_sensitivity,
         permutation_status=permutation_status,
+        bootstrap_evidence=bootstrap_evidence,
         benchmark_relative_summary=benchmark_relative_summary,
         degradation_summary=degradation_summary,
         artifact_paths=dict(artifact_paths or {}),
@@ -162,3 +171,18 @@ def _build_degradation_summary(
         "sharpe_degradation": test_metrics.sharpe_ratio - train_metrics.sharpe_ratio,
         "max_drawdown_delta": test_metrics.max_drawdown - train_metrics.max_drawdown,
     }
+
+
+def _build_bootstrap_evidence(
+    test_result: ExperimentResult | None,
+    test_equity_curve: pd.DataFrame | None,
+) -> BootstrapEvidenceSummary | None:
+    if test_result is None or test_equity_curve is None or test_equity_curve.empty:
+        return None
+    if "strategy_return" not in test_equity_curve.columns:
+        return None
+    strategy_returns = test_equity_curve["strategy_return"]
+    return compute_bootstrap_evidence(
+        strategy_returns=strategy_returns,
+        annualization_factor=test_result.backtest_config.annualization_factor,
+    )

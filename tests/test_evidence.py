@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pandas as pd
 import pytest
 
 from alphaforge.evidence import (
@@ -9,6 +10,7 @@ from alphaforge.evidence import (
     build_walk_forward_evidence_summary,
     derive_candidate_verdict,
 )
+from alphaforge.evidence_diagnostics import compute_bootstrap_evidence, compute_cost_sensitivity
 from alphaforge.schemas import BacktestConfig, DataSpec, ExperimentResult, MetricReport, SearchSummary, StrategySpec
 
 
@@ -95,6 +97,7 @@ def test_build_candidate_evidence_summary_records_degradation_and_search_context
         "max_drawdown_gap": -0.07999999999999999,
     }
     assert evidence.artifact_paths == {"validation_summary_path": "/tmp/validation_summary.json"}
+    assert evidence.cost_sensitivity is None
 
 
 def test_candidate_evidence_return_degradation_uses_annualized_returns_not_total_returns() -> None:
@@ -149,3 +152,168 @@ def test_build_walk_forward_evidence_summary_records_fold_counts_and_artifacts()
         "walk_forward_summary_path": "/tmp/walk_forward_summary.json",
         "fold_results_path": "/tmp/fold_results.csv",
     }
+
+
+def test_compute_bootstrap_evidence_is_seed_deterministic() -> None:
+    strategy_returns = pd.Series([0.03, -0.01, 0.02, 0.04, 0.01, -0.02, 0.05, 0.0])
+
+    first = compute_bootstrap_evidence(strategy_returns, annualization_factor=252, n_bootstrap=256, seed=7)
+    second = compute_bootstrap_evidence(strategy_returns, annualization_factor=252, n_bootstrap=256, seed=7)
+    different = compute_bootstrap_evidence(strategy_returns, annualization_factor=252, n_bootstrap=256, seed=8)
+
+    assert first == second
+    assert first != different
+
+
+@pytest.mark.parametrize(
+    "strategy_returns,expected_verdict,expected_ci_crosses_zero",
+    [
+        (pd.Series([0.02, 0.03, 0.04, 0.05, 0.01, 0.025, 0.035, 0.045]), "stronger_evidence", False),
+        (pd.Series([0.04, -0.03, 0.0, 0.02, -0.01, 0.01, -0.02, 0.03]), "weak_evidence", True),
+    ],
+)
+def test_compute_bootstrap_evidence_verdict_rules(
+    strategy_returns: pd.Series,
+    expected_verdict: str,
+    expected_ci_crosses_zero: bool,
+) -> None:
+    evidence = compute_bootstrap_evidence(strategy_returns, annualization_factor=252, n_bootstrap=512, seed=42)
+
+    assert evidence.n_bootstrap == 512
+    assert evidence.seed == 42
+    assert len(evidence.annualized_return_ci_95) == 2
+    assert len(evidence.mean_daily_return_ci_95) == 2
+    assert evidence.ci_crosses_zero is expected_ci_crosses_zero
+    assert evidence.verdict == expected_verdict
+    assert not hasattr(evidence, "cost_sensitivity")
+
+
+@pytest.mark.parametrize("strategy_returns", [pd.Series(dtype=float), pd.Series([0.01])])
+def test_compute_bootstrap_evidence_rejects_insufficient_input(strategy_returns: pd.Series) -> None:
+    with pytest.raises(ValueError, match="bootstrap evidence requires at least two strategy return observations"):
+        compute_bootstrap_evidence(strategy_returns, annualization_factor=252)
+
+
+def test_compute_cost_sensitivity_supports_three_scenarios_and_cost_fragile_verdict() -> None:
+    market_data = pd.DataFrame(
+        {
+            "datetime": pd.date_range("2024-01-01", periods=8, freq="D"),
+            "open": [100.0, 101.0, 102.0, 103.0, 104.0, 105.0, 106.0, 107.0],
+            "high": [100.0, 101.0, 102.0, 103.0, 104.0, 105.0, 106.0, 107.0],
+            "low": [100.0, 101.0, 102.0, 103.0, 104.0, 105.0, 106.0, 107.0],
+            "close": [100.0, 110.0, 120.0, 130.0, 140.0, 150.0, 160.0, 170.0],
+            "volume": [100.0] * 8,
+        }
+    )
+    target_positions = pd.Series([0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0])
+    backtest_config = BacktestConfig(initial_capital=1000.0, fee_rate=0.01, slippage_rate=0.01, annualization_factor=252)
+
+    summary = compute_cost_sensitivity(
+        market_data=market_data,
+        target_positions=target_positions,
+        backtest_config=backtest_config,
+    )
+
+    assert summary.verdict == "cost_fragile"
+    assert summary.low_cost.annualized_return > summary.base_cost.annualized_return > summary.high_cost.annualized_return
+    assert summary.low_cost.max_drawdown >= summary.base_cost.max_drawdown >= summary.high_cost.max_drawdown
+    assert summary.low_cost.sharpe > summary.base_cost.sharpe > summary.high_cost.sharpe
+
+
+def test_compute_cost_sensitivity_stable_when_all_scenarios_pass() -> None:
+    market_data = pd.DataFrame(
+        {
+            "datetime": pd.date_range("2024-01-01", periods=8, freq="D"),
+            "open": [100.0, 101.0, 102.0, 103.0, 104.0, 105.0, 106.0, 107.0],
+            "high": [100.0, 101.0, 102.0, 103.0, 104.0, 105.0, 106.0, 107.0],
+            "low": [100.0, 101.0, 102.0, 103.0, 104.0, 105.0, 106.0, 107.0],
+            "close": [100.0, 110.0, 120.0, 130.0, 140.0, 150.0, 160.0, 170.0],
+            "volume": [100.0] * 8,
+        }
+    )
+    target_positions = pd.Series([0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0])
+    backtest_config = BacktestConfig(initial_capital=1000.0, fee_rate=0.001, slippage_rate=0.001, annualization_factor=252)
+
+    summary = compute_cost_sensitivity(
+        market_data=market_data,
+        target_positions=target_positions,
+        backtest_config=backtest_config,
+    )
+
+    assert summary.verdict == "stable"
+    assert summary.low_cost.annualized_return >= summary.base_cost.annualized_return >= summary.high_cost.annualized_return
+    assert summary.low_cost.max_drawdown >= summary.base_cost.max_drawdown >= summary.high_cost.max_drawdown
+
+
+def test_compute_cost_sensitivity_rejects_misaligned_target_positions() -> None:
+    market_data = pd.DataFrame(
+        {
+            "datetime": pd.date_range("2024-01-01", periods=4, freq="D"),
+            "open": [1.0, 2.0, 3.0, 4.0],
+            "high": [1.0, 2.0, 3.0, 4.0],
+            "low": [1.0, 2.0, 3.0, 4.0],
+            "close": [1.0, 2.0, 3.0, 4.0],
+            "volume": [1.0, 1.0, 1.0, 1.0],
+        }
+    )
+    target_positions = pd.Series([0.0, 1.0, 0.0])
+
+    with pytest.raises(ValueError, match="cost sensitivity target positions must align with market data rows"):
+        compute_cost_sensitivity(
+            market_data=market_data,
+            target_positions=target_positions,
+            backtest_config=BacktestConfig(initial_capital=1000.0, fee_rate=0.01, slippage_rate=0.01, annualization_factor=252),
+        )
+
+
+def test_build_candidate_evidence_summary_attaches_cost_sensitivity_and_bootstrap_evidence() -> None:
+    result = _make_result(2, 4, 0.9)
+    test_equity_curve = pd.DataFrame({"strategy_return": [0.02, 0.03, 0.01, 0.04], "turnover": [0.1, 0.1, 0.1, 0.1]})
+    cost_sensitivity = compute_cost_sensitivity(
+        market_data=pd.DataFrame(
+            {
+                "datetime": pd.date_range("2024-01-01", periods=8, freq="D"),
+                "open": [100.0, 101.0, 102.0, 103.0, 104.0, 105.0, 106.0, 107.0],
+                "high": [100.0, 101.0, 102.0, 103.0, 104.0, 105.0, 106.0, 107.0],
+                "low": [100.0, 101.0, 102.0, 103.0, 104.0, 105.0, 106.0, 107.0],
+                "close": [100.0, 110.0, 120.0, 130.0, 140.0, 150.0, 160.0, 170.0],
+                "volume": [100.0] * 8,
+            }
+        ),
+        target_positions=pd.Series([0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0]),
+        backtest_config=BacktestConfig(initial_capital=1000.0, fee_rate=0.001, slippage_rate=0.001, annualization_factor=252),
+    )
+
+    evidence = build_candidate_evidence_summary(
+        strategy_spec=result.strategy_spec,
+        train_result=result,
+        test_result=result,
+        test_equity_curve=test_equity_curve,
+        search_summary=None,
+        benchmark_summary={"total_return": 0.05, "max_drawdown": -0.04},
+        cost_sensitivity=cost_sensitivity,
+    )
+
+    assert evidence.bootstrap_evidence is not None
+    assert evidence.cost_sensitivity is not None
+    assert evidence.cost_sensitivity.verdict == "stable"
+    assert evidence.bootstrap_evidence.n_bootstrap == 1000
+    assert evidence.bootstrap_evidence.seed == 42
+
+
+def test_build_candidate_evidence_summary_attaches_bootstrap_evidence() -> None:
+    result = _make_result(2, 4, 0.9)
+    test_equity_curve = pd.DataFrame({"strategy_return": [0.02, 0.03, 0.01, 0.04], "turnover": [0.1, 0.1, 0.1, 0.1]})
+
+    evidence = build_candidate_evidence_summary(
+        strategy_spec=result.strategy_spec,
+        train_result=result,
+        test_result=result,
+        test_equity_curve=test_equity_curve,
+        search_summary=None,
+        benchmark_summary={"total_return": 0.05, "max_drawdown": -0.04},
+    )
+
+    assert evidence.bootstrap_evidence is not None
+    assert evidence.bootstrap_evidence.n_bootstrap == 1000
+    assert evidence.bootstrap_evidence.seed == 42

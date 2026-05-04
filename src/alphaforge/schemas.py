@@ -82,6 +82,31 @@ ValidationPermutationStatus = Literal["skipped", "completed_passed", "completed_
 
 
 @dataclass(frozen=True)
+class BootstrapEvidenceSummary:
+    n_bootstrap: int
+    seed: int
+    annualized_return_ci_95: tuple[float, float]
+    mean_daily_return_ci_95: tuple[float, float]
+    ci_crosses_zero: bool
+    verdict: str
+
+
+@dataclass(frozen=True)
+class CostScenarioSummary:
+    annualized_return: float
+    sharpe: float
+    max_drawdown: float
+
+
+@dataclass(frozen=True)
+class CostSensitivitySummary:
+    low_cost: CostScenarioSummary
+    base_cost: CostScenarioSummary
+    high_cost: CostScenarioSummary
+    verdict: str
+
+
+@dataclass(frozen=True)
 class CandidatePolicyDecision:
     policy_name: str
     policy_scope: PolicyScope
@@ -115,6 +140,8 @@ class CandidateEvidenceSummary:
     test_metrics: MetricReport | None = None
     permutation_summary: PermutationTestSummary | None = None
     permutation_status: ValidationPermutationStatus = "skipped"
+    bootstrap_evidence: BootstrapEvidenceSummary | None = None
+    cost_sensitivity: CostSensitivitySummary | None = None
     benchmark_relative_summary: dict[str, float] = field(default_factory=dict)
     degradation_summary: dict[str, float] = field(default_factory=dict)
     artifact_paths: dict[str, str] = field(default_factory=dict)
@@ -338,6 +365,7 @@ class ResearchProtocolSummary:
     frozen_plan: ResearchProtocolPlan
     final_holdout_result: ExperimentResult
     transaction_cost_assumptions: dict[str, Any]
+    candidate_evidence: CandidateEvidenceSummary | None = None
     permutation_summary: PermutationTestSummary | None = None
     artifact_paths: dict[str, str] = field(default_factory=dict)
     metadata: dict[str, Any] = field(default_factory=dict)

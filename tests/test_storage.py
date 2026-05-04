@@ -6,6 +6,7 @@ from pathlib import Path
 import pandas as pd
 
 from alphaforge.evidence import build_candidate_evidence_summary, build_walk_forward_evidence_summary
+from alphaforge.evidence_diagnostics import compute_cost_sensitivity
 from alphaforge.research_policy import PolicyDecision
 from alphaforge.schemas import (
     BacktestConfig,
@@ -368,6 +369,21 @@ def test_save_validation_result_writes_summary_and_train_ranked_reference(tmp_pa
     validation_root = tmp_path / "validation_case"
     train_best_result = _make_result(short_window=2, long_window=4, score=0.9)
     test_result = _make_result(short_window=2, long_window=4, score=0.4)
+    cost_sensitive_market_data = pd.DataFrame(
+        {
+            "datetime": pd.date_range("2024-01-01", periods=8, freq="D"),
+            "open": [100.0, 101.0, 102.0, 103.0, 104.0, 105.0, 106.0, 107.0],
+            "high": [100.0, 101.0, 102.0, 103.0, 104.0, 105.0, 106.0, 107.0],
+            "low": [100.0, 101.0, 102.0, 103.0, 104.0, 105.0, 106.0, 107.0],
+            "close": [100.0, 110.0, 120.0, 130.0, 140.0, 150.0, 160.0, 170.0],
+            "volume": [100.0] * 8,
+        }
+    )
+    cost_sensitivity = compute_cost_sensitivity(
+        market_data=cost_sensitive_market_data,
+        target_positions=pd.Series([0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0]),
+        backtest_config=BacktestConfig(initial_capital=100000.0, fee_rate=0.001, slippage_rate=0.001, annualization_factor=252),
+    )
     permutation_summary = PermutationTestSummary(
         strategy_name="ma_crossover",
         strategy_parameters={"short_window": 2, "long_window": 4},
@@ -423,6 +439,7 @@ def test_save_validation_result_writes_summary_and_train_ranked_reference(tmp_pa
             search_summary=search_summary,
             benchmark_summary={"total_return": 0.1, "max_drawdown": -0.05},
             permutation_summary=persisted_permutation_summary,
+            cost_sensitivity=cost_sensitivity,
             permutation_status="completed_passed",
             artifact_paths={
                 "validation_summary_path": str(validation_root / VALIDATION_SUMMARY_FILENAME),
@@ -461,6 +478,8 @@ def test_save_validation_result_writes_summary_and_train_ranked_reference(tmp_pa
     assert summary_payload["candidate_evidence"]["verdict"] == "validated"
     assert summary_payload["candidate_evidence"]["permutation_status"] == "completed_passed"
     assert summary_payload["candidate_evidence"]["permutation_summary"]["empirical_p_value"] == 0.04
+    assert summary_payload["candidate_evidence"]["cost_sensitivity"]["verdict"] == cost_sensitivity.verdict
+    assert summary_payload["candidate_evidence"]["cost_sensitivity"]["low_cost"]["annualized_return"] == cost_sensitivity.low_cost.annualized_return
     assert summary_payload["candidate_decision"]["verdict"] == "validated"
     assert summary_payload["research_policy_decision"]["verdict"] == "promote"
     assert summary_payload["policy_decision_path"] == str(validation_root / POLICY_DECISION_FILENAME)
