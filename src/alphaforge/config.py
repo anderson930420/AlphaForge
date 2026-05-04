@@ -24,8 +24,7 @@ CSV_COLUMN_ALIASES = {
     "timestamp": "datetime",
 }
 MISSING_DATA_POLICY = (
-    "Drop rows with missing datetime or OHLC values; keep the last row for duplicate datetimes after sorting,"
-    " and fill missing volume with 0."
+    "Drop rows with missing datetime or OHLC values; reject duplicate datetimes; and fill missing volume with 0."
 )
 
 ROOT_DIR = Path(__file__).resolve().parents[2]

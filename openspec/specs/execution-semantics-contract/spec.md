@@ -323,17 +323,6 @@ TBD - created by archiving change formalize-execution-semantics-contract. Update
 
 `src/alphaforge/backtest.py` SHALL own a return-based trade-log contract whose fields describe returns and holding periods, not dollar accounting.
 
-#### Purpose
-
-- Keep trade semantics aligned with the execution law and avoid implying shares-level or broker-like accounting.
-- Make the trade log usable for research diagnostics without pretending it is a ledger.
-
-#### Canonical owner
-
-- `src/alphaforge/backtest.py` is the authoritative owner of trade extraction semantics.
-- `src/alphaforge/metrics.py` is the authoritative owner of win-rate computation from the return-based trade data.
-- `src/alphaforge/storage.py` is the authoritative owner of the persisted `trade_log.csv` schema.
-
 #### Allowed responsibilities
 
 - `backtest.py` MAY emit the canonical trade-log fields:
@@ -376,29 +365,6 @@ TBD - created by archiving change formalize-execution-semantics-contract. Update
 - Dollar PnL terminology is not part of the canonical trade log.
 - `trade_net_return` is the value used by downstream win-rate logic.
 - A zero-trade result remains representable without inventing pseudo-accounting fields.
-
-#### Cross-module dependencies
-
-- `metrics.py` consumes `trade_net_return` values to compute win rate.
-- `storage.py` serializes the return-based trade log.
-- `report.py` may present the trade log using user-facing wording, but it must preserve the return-based meaning.
-
-#### Failure modes if this boundary is violated
-
-- Trade logs become ambiguous about whether they represent returns or dollar accounting.
-- Downstream metrics can silently compute win rate from the wrong field.
-- Report labels and persisted artifacts can drift apart on the meaning of the same trade record.
-
-#### Migration notes from current implementation
-
-- The current canonical trade-log shape uses PnL-shaped labels.
-- This change requires a controlled rename to return-based field names instead of preserving the old names as the canonical schema.
-- Any legacy reader, if one is introduced, must be clearly marked as compatibility-only and must not become the new default contract.
-
-#### Open questions / deferred decisions
-
-- Whether a temporary compatibility reader is needed for historical artifacts is deferred.
-  - Recommended default: prefer a single coordinated rename for the canonical schema and update downstream consumers in the same migration.
 
 #### Scenario: trade log uses return terminology only
 

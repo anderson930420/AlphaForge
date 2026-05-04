@@ -24,14 +24,12 @@ def load_market_data(data_spec: DataSpec) -> pd.DataFrame:
     source_row_count = len(frame)
     frame = _standardize_columns(frame, data_spec.datetime_column)
     frame["datetime"] = pd.to_datetime(frame["datetime"], utc=False, errors="raise")
-    frame = frame.sort_values("datetime", kind="mergesort").drop_duplicates(subset=["datetime"], keep="last").reset_index(drop=True)
-    deduplicated_row_count = len(frame)
+    frame = frame.sort_values("datetime", kind="mergesort").reset_index(drop=True)
     frame, volume_missing_row_count = _apply_missing_data_policy(frame)
     _validate_market_data(frame, data_spec.path)
     frame.attrs["missing_data_policy"] = MISSING_DATA_POLICY
     frame.attrs["data_quality_summary"] = _build_data_quality_summary(
         source_row_count=source_row_count,
-        deduplicated_row_count=deduplicated_row_count,
         accepted_row_count=len(frame),
         volume_missing_row_count=volume_missing_row_count,
     )
@@ -101,7 +99,7 @@ def _validate_market_data(frame: pd.DataFrame, path: Path) -> None:
     if not frame["datetime"].is_monotonic_increasing:
         raise ValueError("datetime column must be strictly increasing after normalization")
     if frame["datetime"].duplicated().any():
-        raise ValueError("datetime column contains duplicates after normalization")
+        raise ValueError("duplicate datetime values are not allowed in canonical market data")
 
     if not np.isfinite(frame[list(MARKET_DATA_PRICE_COLUMNS)].to_numpy(dtype=float)).all():
         raise ValueError("OHLC values must be finite")
@@ -124,20 +122,19 @@ def _validate_market_data(frame: pd.DataFrame, path: Path) -> None:
 
 def _build_data_quality_summary(
     source_row_count: int,
-    deduplicated_row_count: int,
     accepted_row_count: int,
     volume_missing_row_count: int,
 ) -> dict[str, object]:
     return {
         "required_columns": list(REQUIRED_COLUMNS),
         "canonical_column_order": list(REQUIRED_COLUMNS),
-        "datetime_policy": "parse_sort_keep_last",
-        "duplicate_datetime_policy": "deterministic_keep_last",
+        "datetime_policy": "parse_sort_fail_on_duplicate",
+        "duplicate_datetime_policy": "fail",
         "missing_ohlc_policy": "fail",
         "missing_volume_policy": "fill_zero",
         "missing_data_policy": MISSING_DATA_POLICY,
         "source_row_count": int(source_row_count),
-        "duplicate_row_count": int(source_row_count - deduplicated_row_count),
+        "duplicate_row_count": 0,
         "accepted_row_count": int(accepted_row_count),
         "volume_missing_row_count": int(volume_missing_row_count),
     }

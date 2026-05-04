@@ -11,12 +11,12 @@ from alphaforge.schemas import DataSpec
 def test_load_market_data_standardizes_sorts_and_records_quality_summary(tmp_path) -> None:
     frame = pd.DataFrame(
         {
-            "Date": ["2024-01-02", "2024-01-01", "2024-01-01", "2024-01-03"],
-            "Open": [2, 1, 9, 3],
-            "High": [2, 1, 9, 3],
-            "Low": [2, 1, 9, 3],
-            "Close": [2, 1, 9, 3],
-            "Volume": [20, None, 99, 30],
+            "Date": ["2024-01-02", "2024-01-01", "2024-01-04", "2024-01-03"],
+            "Open": [2, 1, 4, 3],
+            "High": [2, 1, 4, 3],
+            "Low": [2, 1, 4, 3],
+            "Close": [2, 1, 4, 3],
+            "Volume": [20, None, 40, 30],
         }
     )
     path = tmp_path / "data.csv"
@@ -27,22 +27,24 @@ def test_load_market_data_standardizes_sorts_and_records_quality_summary(tmp_pat
     assert list(loaded.columns) == ["datetime", "open", "high", "low", "close", "volume"]
     assert loaded["datetime"].is_monotonic_increasing
     assert loaded["datetime"].is_unique
-    assert len(loaded) == 3
-    assert loaded.iloc[0]["close"] == 9
-    assert loaded.iloc[0]["volume"] == 99
-    assert loaded.attrs["missing_data_policy"].startswith("Drop rows with missing datetime or OHLC values")
+    assert len(loaded) == 4
+    assert loaded.iloc[0]["close"] == 1
+    assert loaded.iloc[0]["volume"] == 0.0
+    assert loaded.attrs["missing_data_policy"].startswith(
+        "Drop rows with missing datetime or OHLC values; reject duplicate datetimes; and fill missing volume with 0."
+    )
     assert loaded.attrs["data_quality_summary"] == {
         "required_columns": ["datetime", "open", "high", "low", "close", "volume"],
         "canonical_column_order": ["datetime", "open", "high", "low", "close", "volume"],
-        "datetime_policy": "parse_sort_keep_last",
-        "duplicate_datetime_policy": "deterministic_keep_last",
+        "datetime_policy": "parse_sort_fail_on_duplicate",
+        "duplicate_datetime_policy": "fail",
         "missing_ohlc_policy": "fail",
         "missing_volume_policy": "fill_zero",
         "missing_data_policy": loaded.attrs["missing_data_policy"],
         "source_row_count": 4,
-        "duplicate_row_count": 1,
-        "accepted_row_count": 3,
-        "volume_missing_row_count": 0,
+        "duplicate_row_count": 0,
+        "accepted_row_count": 4,
+        "volume_missing_row_count": 1,
     }
 
 
@@ -68,6 +70,23 @@ def test_load_market_data_rejects_missing_datetime_values(tmp_path) -> None:
     ).to_csv(path, index=False)
 
     with pytest.raises(ValueError, match="datetime column contains missing values"):
+        load_market_data(DataSpec(path=path))
+
+
+def test_load_market_data_rejects_duplicate_datetime_values(tmp_path) -> None:
+    path = tmp_path / "duplicate_datetime.csv"
+    pd.DataFrame(
+        {
+            "datetime": ["2024-01-01", "2024-01-01", "2024-01-02"],
+            "open": [1.0, 9.0, 2.0],
+            "high": [1.0, 9.0, 2.0],
+            "low": [1.0, 9.0, 2.0],
+            "close": [1.0, 9.0, 2.0],
+            "volume": [10.0, 90.0, 20.0],
+        }
+    ).to_csv(path, index=False)
+
+    with pytest.raises(ValueError, match="duplicate datetime values are not allowed"):
         load_market_data(DataSpec(path=path))
 
 
@@ -233,14 +252,14 @@ def test_split_holdout_data_preserves_loader_metadata() -> None:
         }
     )
     market_data.attrs["missing_data_policy"] = "test-policy"
-    market_data.attrs["data_quality_summary"] = {"duplicate_datetime_policy": "deterministic_keep_last"}
+    market_data.attrs["data_quality_summary"] = {"duplicate_datetime_policy": "fail"}
 
     development_data, holdout_data = split_holdout_data(market_data, "2024-01-03")
 
     assert development_data.attrs["missing_data_policy"] == "test-policy"
     assert holdout_data.attrs["missing_data_policy"] == "test-policy"
-    assert development_data.attrs["data_quality_summary"] == {"duplicate_datetime_policy": "deterministic_keep_last"}
-    assert holdout_data.attrs["data_quality_summary"] == {"duplicate_datetime_policy": "deterministic_keep_last"}
+    assert development_data.attrs["data_quality_summary"] == {"duplicate_datetime_policy": "fail"}
+    assert holdout_data.attrs["data_quality_summary"] == {"duplicate_datetime_policy": "fail"}
 
 
 def test_split_holdout_data_rejects_cutoff_that_removes_all_development_rows() -> None:

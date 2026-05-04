@@ -142,7 +142,7 @@ def test_run_experiment_saves_outputs(sample_market_csv: Path, tmp_path: Path) -
     assert execution.result.metrics.trade_count >= 0
     assert {key: execution.result.metadata[key] for key in build_execution_semantics_metadata()} == build_execution_semantics_metadata()
     assert execution.result.metadata["data_quality_summary"]["missing_volume_policy"] == "fill_zero"
-    assert execution.result.metadata["data_quality_summary"]["duplicate_datetime_policy"] == "deterministic_keep_last"
+    assert execution.result.metadata["data_quality_summary"]["duplicate_datetime_policy"] == "fail"
     assert not execution.equity_curve.empty
     assert isinstance(execution.trade_log, pd.DataFrame)
 

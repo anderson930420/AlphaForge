@@ -32,11 +32,11 @@ def test_render_and_save_experiment_report_creates_html(tmp_path: Path) -> None:
     quality_summary = {
         "required_columns": ["datetime", "open", "high", "low", "close", "volume"],
         "canonical_column_order": ["datetime", "open", "high", "low", "close", "volume"],
-        "datetime_policy": "parse_sort_keep_last",
-        "duplicate_datetime_policy": "deterministic_keep_last",
+        "datetime_policy": "parse_sort_fail_on_duplicate",
+        "duplicate_datetime_policy": "fail",
         "missing_ohlc_policy": "fail",
         "missing_volume_policy": "fill_zero",
-        "missing_data_policy": "Drop rows with missing datetime or OHLC values; keep the last row for duplicate datetimes after sorting, and fill missing volume with 0.",
+        "missing_data_policy": "Drop rows with missing datetime or OHLC values; reject duplicate datetimes; and fill missing volume with 0.",
         "source_row_count": 4,
         "duplicate_row_count": 0,
         "accepted_row_count": 4,
@@ -99,6 +99,7 @@ def test_render_and_save_experiment_report_creates_html(tmp_path: Path) -> None:
     assert "Execution Assumptions" in saved_content
     assert "Market Data Quality" in saved_content
     assert "Trade Return Semantics" in saved_content
+    assert "Duplicate Policy" in saved_content
     assert "trade_net_return" in saved_content
     assert "cost_return_contribution" in saved_content
     assert "trade_net_return &gt; 0" in saved_content
@@ -127,7 +128,7 @@ def test_render_and_save_experiment_report_creates_html(tmp_path: Path) -> None:
     assert "Close Price" in saved_content
     assert "Buy" in saved_content
     assert "Sell" in saved_content
-    assert "deterministic_keep_last" in saved_content
+    assert "fail" in saved_content
     assert "fill_zero" in saved_content
     _assert_no_external_plotly_cdn_script(saved_content)
     assert "Plotly.newPlot" in saved_content
@@ -324,11 +325,11 @@ def test_render_search_comparison_report_includes_ranked_table_and_overlay_secti
     quality_summary = {
         "required_columns": ["datetime", "open", "high", "low", "close", "volume"],
         "canonical_column_order": ["datetime", "open", "high", "low", "close", "volume"],
-        "datetime_policy": "parse_sort_keep_last",
-        "duplicate_datetime_policy": "deterministic_keep_last",
+        "datetime_policy": "parse_sort_fail_on_duplicate",
+        "duplicate_datetime_policy": "fail",
         "missing_ohlc_policy": "fail",
         "missing_volume_policy": "fill_zero",
-        "missing_data_policy": "Drop rows with missing datetime or OHLC values; keep the last row for duplicate datetimes after sorting, and fill missing volume with 0.",
+        "missing_data_policy": "Drop rows with missing datetime or OHLC values; reject duplicate datetimes; and fill missing volume with 0.",
         "source_row_count": 3,
         "duplicate_row_count": 0,
         "accepted_row_count": 3,
@@ -389,6 +390,7 @@ def test_render_search_comparison_report_includes_ranked_table_and_overlay_secti
     assert "Execution Assumptions" in report_content
     assert "Market Data Quality" in report_content
     assert "Trade Return Semantics" in report_content
+    assert "Duplicate Policy" in report_content
     assert "Ranked Comparison" in report_content
     assert "Short Window" in report_content
     assert "Long Window" in report_content
@@ -396,7 +398,7 @@ def test_render_search_comparison_report_includes_ranked_table_and_overlay_secti
     assert "Top Drawdowns" in report_content
     assert "runs/run_001" in report_content
     assert "best_report.html" in report_content
-    assert "deterministic_keep_last" in report_content
+    assert "fail" in report_content
     assert "dollar PnL" not in report_content
     _assert_no_external_plotly_cdn_script(report_content)
     assert "Plotly.newPlot" in report_content
