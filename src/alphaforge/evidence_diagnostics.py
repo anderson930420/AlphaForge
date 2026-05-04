@@ -71,6 +71,8 @@ def compute_cost_sensitivity(
         raise ValueError("cost sensitivity requires at least one market data row")
     if len(target_positions) != len(market_data):
         raise ValueError("cost sensitivity target positions must align with market data rows")
+    if isinstance(target_positions, pd.Series) and not target_positions.index.equals(market_data.index):
+        raise ValueError("cost sensitivity target positions index alignment must exactly match market data index")
 
     target_positions_series = pd.Series(target_positions, index=market_data.index, dtype=float)
     low_cost = _run_cost_scenario(market_data, target_positions_series, backtest_config, LOW_COST_MULTIPLIER)

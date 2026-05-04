@@ -256,9 +256,9 @@ def test_compute_cost_sensitivity_rejects_misaligned_target_positions() -> None:
             "volume": [1.0, 1.0, 1.0, 1.0],
         }
     )
-    target_positions = pd.Series([0.0, 1.0, 0.0])
+    target_positions = pd.Series([0.0, 1.0, 0.0, 1.0], index=pd.RangeIndex(start=1, stop=5))
 
-    with pytest.raises(ValueError, match="cost sensitivity target positions must align with market data rows"):
+    with pytest.raises(ValueError, match="cost sensitivity target positions index alignment must exactly match market data index"):
         compute_cost_sensitivity(
             market_data=market_data,
             target_positions=target_positions,
