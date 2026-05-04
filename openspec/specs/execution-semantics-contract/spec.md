@@ -1,7 +1,7 @@
 # execution-semantics-contract Specification
 
 ## Purpose
-TBD - created by archiving change formalize-execution-semantics-contract. Update Purpose after archive.
+Freeze AlphaForge's legacy close-to-close lagged execution law and the return-based trade semantics that downstream modules must treat as canonical.
 ## Requirements
 ### Requirement: `backtest.py` is the canonical owner of execution semantics
 
@@ -175,14 +175,16 @@ TBD - created by archiving change formalize-execution-semantics-contract. Update
   - `strategy_return`
   - `equity`
 - Trade-log columns in the canonical runtime execution artifact:
-  - `entry_time`
-  - `exit_time`
-  - `side`
-  - `quantity`
+  - `entry_datetime`
+  - `exit_datetime`
   - `entry_price`
   - `exit_price`
-  - `gross_return`
-  - `net_pnl`
+  - `holding_period`
+  - `trade_gross_return`
+  - `trade_net_return`
+  - `cost_return_contribution`
+  - `entry_target_position`
+  - `exit_target_position`
 
 #### Invariants
 
@@ -344,7 +346,7 @@ TBD - created by archiving change formalize-execution-semantics-contract. Update
 - `backtest.py` MUST NOT label the canonical trade contribution as dollar PnL.
 - `backtest.py` MUST NOT require shares-level accounting, partial fills, multi-leg trades, or broker-like accounting in this change.
 - `backtest.py` MUST NOT expose the canonical trade log as a dollar ledger.
-- `storage.py`, `report.py`, and `cli.py` MUST NOT rename the canonical trade contribution back into `net_pnl` or similar dollar-PnL terminology.
+- `storage.py`, `report.py`, and `cli.py` MUST NOT rename the canonical trade contribution back into dollar-PnL terminology.
 
 #### Inputs / outputs / contracts
 
@@ -371,7 +373,7 @@ TBD - created by archiving change formalize-execution-semantics-contract. Update
 - GIVEN a future persisted trade log
 - WHEN the schema is emitted or reviewed
 - THEN the fields SHALL be the return-based fields listed above
-- AND the canonical schema SHALL NOT use `net_pnl` or other dollar-PnL labels
+- AND the canonical schema SHALL NOT use other dollar-PnL labels
 
 ### Requirement: `custom_signal` uses the existing legacy close-to-close lagged execution law
 
@@ -395,4 +397,3 @@ This change SHALL NOT add a new simulator, a new order model, a new broker model
 - GIVEN AlphaForge runs `ma_crossover` or `breakout`
 - WHEN the execution contract is observed
 - THEN the existing legacy close-to-close lagged semantics SHALL remain unchanged
-
