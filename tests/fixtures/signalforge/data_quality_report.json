@@ -1,0 +1,29 @@
+{
+  "signalforge": {
+    "version": "0.1",
+    "artifact": "data_quality_report.json"
+  },
+  "source_ohlcv": {
+    "symbol": "SFDEMO",
+    "row_count": 8,
+    "start": "2025-01-02",
+    "end": "2025-01-13",
+    "timezone": "naive-local",
+    "columns": ["datetime", "open", "high", "low", "close", "volume"],
+    "checks": {
+      "duplicate_datetime_count": 0,
+      "missing_ohlc_count": 0,
+      "missing_volume_count": 0,
+      "non_positive_ohlc_count": 0,
+      "high_low_inversion_count": 0
+    },
+    "status": "pass"
+  },
+  "signal_output": {
+    "artifact": "signal.csv",
+    "row_count": 7,
+    "signal_names": ["signalforge_v01_momentum"],
+    "missing_market_dates": ["2025-01-06"],
+    "extra_signal_dates": []
+  }
+}

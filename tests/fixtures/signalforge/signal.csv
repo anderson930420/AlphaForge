@@ -1,0 +1,8 @@
+datetime,available_at,symbol,signal_name,signal_value,signal_binary,source
+2025-01-02,2025-01-01,SFDEMO,signalforge_v01_momentum,0.91,1,SignalForge v0.1
+2025-01-03,2025-01-02,SFDEMO,signalforge_v01_momentum,-0.80,1,SignalForge v0.1
+2025-01-07,2025-01-06,SFDEMO,signalforge_v01_momentum,4.20,0,SignalForge v0.1
+2025-01-08,2025-01-07,SFDEMO,signalforge_v01_momentum,-3.40,1,SignalForge v0.1
+2025-01-09,2025-01-08,SFDEMO,signalforge_v01_momentum,0.15,0,SignalForge v0.1
+2025-01-10,2025-01-09,SFDEMO,signalforge_v01_momentum,-0.22,1,SignalForge v0.1
+2025-01-13,2025-01-10,SFDEMO,signalforge_v01_momentum,0.00,0,SignalForge v0.1

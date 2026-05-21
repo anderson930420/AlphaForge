@@ -1,0 +1,49 @@
+signalforge:
+  version: "0.1"
+  artifact: signal.csv
+  producer:
+    name: SignalForge
+    runtime_required_by_consumers: false
+  schema:
+    primary_key:
+      - datetime
+      - symbol
+      - signal_name
+    columns:
+      datetime:
+        type: datetime
+        required: true
+        meaning: bar timestamp the signal applies to
+      available_at:
+        type: datetime
+        required: true
+        meaning: earliest timestamp the signal may be consumed
+      symbol:
+        type: string
+        required: true
+      signal_name:
+        type: string
+        required: true
+      signal_value:
+        type: number
+        required: true
+        execution_role: ignored
+      signal_binary:
+        type: integer
+        required: true
+        allowed_values:
+          - 0
+          - 1
+        execution_role: target_position
+      source:
+        type: string
+        required: true
+  execution:
+    long_value: 1.0
+    flat_value: 0.0
+    missing_signal_dates: flat
+    extra_signal_dates: fail
+    multi_signal_selection: explicit_signal_name_required
+  boundaries:
+    alphaforge_imports_signalforge: false
+    signalforge_runs_backtests: false
