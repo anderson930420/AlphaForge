@@ -1,11 +1,11 @@
-from __future__ import annotations
-
 """External signal-file validation for the custom-signal workflow.
 
 This module owns the file contract for precomputed signal inputs. It does not
 compute signals, import external strategy internals, or change execution
 semantics.
 """
+
+from __future__ import annotations
 
 from pathlib import Path
 
@@ -21,28 +21,34 @@ REQUIRED_SIGNAL_COLUMNS = (
     "signal_binary",
     "source",
 )
+MISSING_SIGNAL_POLICY = "flat"
 
 
 def load_custom_signal_positions(
     signal_file: Path | str,
     market_data: pd.DataFrame,
     symbol: str | None = None,
+    signal_name: str | None = None,
 ) -> tuple[pd.Series, dict[str, object]]:
     signal_frame = _load_signal_frame(signal_file)
     signal_frame = _coerce_signal_frame(signal_frame)
+    signal_frame, selected_signal_name = _select_signal_name(signal_frame, signal_name)
     target_symbol = _resolve_target_symbol(signal_frame, market_data, symbol)
     signal_frame = _filter_and_validate_symbol(signal_frame, target_symbol)
     market_datetimes = _extract_market_datetimes(market_data)
     _validate_market_alignment(signal_frame, market_datetimes)
 
     signal_binary_by_datetime = signal_frame.set_index("datetime")["signal_binary"].astype(float)
-    target_position = market_datetimes.map(signal_binary_by_datetime).astype(float)
+    target_position = signal_binary_by_datetime.reindex(market_datetimes, fill_value=0.0).astype(float)
     target_position = pd.Series(target_position.to_numpy(dtype=float), index=market_data.index, name="target_position")
 
-    metadata: dict[str, object] = {"symbol": target_symbol, "signal_row_count": int(len(signal_frame))}
-    signal_name = _single_unique_value(signal_frame["signal_name"])
-    if signal_name is not None:
-        metadata["signal_name"] = signal_name
+    metadata: dict[str, object] = {
+        "symbol": target_symbol,
+        "signal_row_count": int(len(signal_frame)),
+        "missing_signal_policy": MISSING_SIGNAL_POLICY,
+    }
+    if selected_signal_name is not None:
+        metadata["signal_name"] = selected_signal_name
     source = _single_unique_value(signal_frame["source"])
     if source is not None:
         metadata["source"] = source
@@ -73,13 +79,29 @@ def _coerce_signal_frame(signal_frame: pd.DataFrame) -> pd.DataFrame:
         raise ValueError("symbol is required")
     if cleaned["signal_binary"].isna().any():
         raise ValueError("signal_binary is required")
-    if cleaned["datetime"].duplicated().any():
-        raise ValueError("duplicate datetime for the same symbol fails")
+    if cleaned.duplicated(subset=["datetime", "symbol", "signal_name"]).any():
+        raise ValueError("duplicate datetime-symbol-signal_name rows are not allowed")
     if (cleaned["available_at"] > cleaned["datetime"]).any():
         raise ValueError("available_at must be less than or equal to datetime")
     if not cleaned["signal_binary"].isin([0, 1]).all():
         raise ValueError("signal_binary must be binary: 0 or 1")
     return cleaned
+
+
+def _select_signal_name(signal_frame: pd.DataFrame, signal_name: str | None) -> tuple[pd.DataFrame, str | None]:
+    unique_signal_names = [value for value in signal_frame["signal_name"].dropna().astype(str).unique()]
+    if signal_name is not None:
+        filtered = signal_frame.loc[signal_frame["signal_name"].astype(str) == signal_name].copy().reset_index(drop=True)
+        if filtered.empty:
+            raise ValueError(f"signal.csv does not contain requested signal_name {signal_name!r}")
+        return filtered, signal_name
+    if len(unique_signal_names) > 1:
+        names = ", ".join(sorted(unique_signal_names))
+        raise ValueError(f"signal.csv contains multiple signal_name values: {names}. Specify signal_name explicitly")
+    if len(unique_signal_names) == 1:
+        selected_signal_name = unique_signal_names[0]
+        return signal_frame.loc[signal_frame["signal_name"].astype(str) == selected_signal_name].copy().reset_index(drop=True), selected_signal_name
+    return signal_frame.copy().reset_index(drop=True), None
 
 
 def _resolve_target_symbol(signal_frame: pd.DataFrame, market_data: pd.DataFrame, symbol: str | None) -> str:
@@ -123,9 +145,8 @@ def _extract_market_datetimes(market_data: pd.DataFrame) -> pd.Index:
 
 def _validate_market_alignment(signal_frame: pd.DataFrame, market_datetimes: pd.Index) -> None:
     signal_datetimes = pd.Index(signal_frame["datetime"])
-    missing = market_datetimes.difference(signal_datetimes)
     extra = signal_datetimes.difference(market_datetimes)
-    if len(missing) or len(extra):
+    if len(extra):
         raise ValueError("signal dates must align with market data dates")
 
 

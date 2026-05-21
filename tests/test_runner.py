@@ -101,19 +101,30 @@ def _make_research_validation_config(sample_market_csv: Path) -> ResearchValidat
     )
 
 
-def _write_custom_signal_csv(tmp_path: Path, row_count: int = 16) -> Path:
+def _write_custom_signal_csv(
+    tmp_path: Path,
+    row_count: int = 16,
+    signal_names: list[str] | None = None,
+) -> Path:
     signal_path = tmp_path / "custom_signal.csv"
-    pd.DataFrame(
-        {
-            "datetime": pd.date_range("2024-01-01", periods=row_count, freq="D"),
-            "available_at": pd.date_range("2024-01-01", periods=row_count, freq="D"),
-            "symbol": ["TEST"] * row_count,
-            "signal_name": ["signalforge_moskowitz"] * row_count,
-            "signal_value": [9999.0] * row_count,
-            "signal_binary": [int(index % 2 == 0) for index in range(row_count)],
-            "source": ["SignalForge"] * row_count,
-        }
-    ).to_csv(signal_path, index=False)
+    if signal_names is None:
+        signal_names = ["signalforge_moskowitz"]
+    frames = []
+    for offset, signal_name in enumerate(signal_names):
+        frames.append(
+            pd.DataFrame(
+                {
+                    "datetime": pd.date_range("2024-01-01", periods=row_count, freq="D"),
+                    "available_at": pd.date_range("2024-01-01", periods=row_count, freq="D"),
+                    "symbol": ["TEST"] * row_count,
+                    "signal_name": [signal_name] * row_count,
+                    "signal_value": [9999.0 + offset] * row_count,
+                    "signal_binary": [int((index + offset) % 2 == 0) for index in range(row_count)],
+                    "source": ["SignalForge"] * row_count,
+                }
+            )
+        )
+    pd.concat(frames, ignore_index=True).to_csv(signal_path, index=False)
     return signal_path
 
 
@@ -469,7 +480,7 @@ def test_research_validation_workflow_supports_custom_signal_with_signal_file(
             "volume": [1000.0] * 16,
         }
     ).to_csv(data_path, index=False)
-    signal_path = _write_custom_signal_csv(tmp_path)
+    signal_path = _write_custom_signal_csv(tmp_path, signal_names=["signalforge_moskowitz", "signalforge_macd"])
 
     execution = run_research_validation_protocol_with_details(
         ResearchValidationConfig(
@@ -481,6 +492,7 @@ def test_research_validation_workflow_supports_custom_signal_with_signal_file(
             walk_forward_config=WalkForwardConfig(train_size=4, test_size=2, step_size=2),
             backtest_config=BacktestConfig(1000.0, 0.0, 0.0, 252),
             signal_file=signal_path,
+            signal_name="signalforge_moskowitz",
         )
     )
 

@@ -1,11 +1,11 @@
-from __future__ import annotations
-
 """Workflow-specific runner orchestration implementations.
 
 This module owns the concrete sequencing for single-run, search,
 validate-search, and walk-forward workflows. It consumes canonical runtime,
 evidence, persistence, and presentation owners without redefining them.
 """
+
+from __future__ import annotations
 
 from dataclasses import replace
 from pathlib import Path
@@ -623,6 +623,7 @@ def run_research_validation_protocol_with_details_workflow(
             research_config.signal_file,
             market_data,
             symbol=research_config.data_spec.symbol if research_config.data_spec.symbol != "UNKNOWN" else None,
+            signal_name=research_config.signal_name,
         )
         signal_metadata = _build_custom_signal_metadata(research_config.signal_file, signal_metadata)
 

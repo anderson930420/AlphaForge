@@ -147,7 +147,8 @@ def build_parser() -> argparse.ArgumentParser:
     research_validate.add_argument("--development-end", type=str, required=True)
     research_validate.add_argument("--holdout-start", type=str, required=True)
     research_validate.add_argument("--holdout-end", type=str, required=True)
-    research_validate.add_argument("--signal-file", type=Path, default=None)
+    research_validate.add_argument("--signal-file", "--signal-path", dest="signal_file", type=Path, default=None)
+    research_validate.add_argument("--signal-name", type=str, default=None)
     research_validate.add_argument("--short-windows", type=int, nargs="+", default=config.SHORT_WINDOW_RANGE)
     research_validate.add_argument("--long-windows", type=int, nargs="+", default=config.LONG_WINDOW_RANGE)
     research_validate.add_argument("--lookback-windows", type=int, nargs="+", default=None)
@@ -378,8 +379,8 @@ def main() -> None:
                     parser.error("--signal-file is required when --strategy custom_signal")
                 parameter_grid = {}
             else:
-                if args.signal_file is not None:
-                    parser.error("--signal-file may only be used with --strategy custom_signal")
+                if args.signal_file is not None or args.signal_name is not None:
+                    parser.error("--signal-file and --signal-name may only be used with --strategy custom_signal")
                 parameter_grid = _build_strategy_parameter_grid_from_args(args, parser)
             research_execution = run_research_validation_protocol_with_details(
                 ResearchValidationConfig(
@@ -400,6 +401,7 @@ def main() -> None:
                     output_dir=args.output_dir,
                     experiment_name=args.experiment_name,
                     signal_file=args.signal_file,
+                    signal_name=args.signal_name,
                 )
             )
             payload = serialize_research_protocol_summary(research_execution.research_protocol_summary)

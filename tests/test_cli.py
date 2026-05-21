@@ -20,7 +20,6 @@ from alphaforge.schemas import (
     SearchSummary,
     StrategyComparisonSummary,
     StrategySpec,
-    ValidationSplitConfig,
 )
 
 
@@ -38,20 +37,30 @@ def _make_search_summary(results: list[ExperimentResult], attempted: int | None 
     )
 
 
-def _write_custom_signal_csv(tmp_path: Path, row_count: int = 16) -> Path:
+def _write_custom_signal_csv(
+    tmp_path: Path,
+    row_count: int = 16,
+    signal_names: list[str] | None = None,
+) -> Path:
     signal_path = tmp_path / "custom_signal.csv"
-    frame = pd.DataFrame(
-        {
-            "datetime": pd.date_range("2024-01-01", periods=row_count, freq="D"),
-            "available_at": pd.date_range("2024-01-01", periods=row_count, freq="D"),
-            "symbol": ["TEST"] * row_count,
-            "signal_name": ["signalforge_moskowitz"] * row_count,
-            "signal_value": [9999.0] * row_count,
-            "signal_binary": [int(index % 2 == 0) for index in range(row_count)],
-            "source": ["SignalForge"] * row_count,
-        }
-    )
-    frame.to_csv(signal_path, index=False)
+    if signal_names is None:
+        signal_names = ["signalforge_moskowitz"]
+    frames = []
+    for offset, signal_name in enumerate(signal_names):
+        frames.append(
+            pd.DataFrame(
+                {
+                    "datetime": pd.date_range("2024-01-01", periods=row_count, freq="D"),
+                    "available_at": pd.date_range("2024-01-01", periods=row_count, freq="D"),
+                    "symbol": ["TEST"] * row_count,
+                    "signal_name": [signal_name] * row_count,
+                    "signal_value": [9999.0 + offset] * row_count,
+                    "signal_binary": [int((index + offset) % 2 == 0) for index in range(row_count)],
+                    "source": ["SignalForge"] * row_count,
+                }
+            )
+        )
+    pd.concat(frames, ignore_index=True).to_csv(signal_path, index=False)
     return signal_path
 
 
@@ -193,7 +202,9 @@ def test_cli_fetch_twse_does_not_require_run_arguments(
         ],
     )
 
-    request_factory = lambda **kwargs: kwargs
+    def request_factory(**kwargs):
+        return kwargs
+
     loader = (
         request_factory,
         lambda request: pd.DataFrame(columns=["datetime", "open", "high", "low", "close", "volume"]),
@@ -360,7 +371,7 @@ def test_cli_research_validate_supports_custom_signal_with_signal_file(
             "volume": [1000.0] * 16,
         }
     ).to_csv(data_path, index=False)
-    signal_path = _write_custom_signal_csv(tmp_path)
+    signal_path = _write_custom_signal_csv(tmp_path, signal_names=["signalforge_moskowitz", "signalforge_macd"])
 
     monkeypatch.setattr(
         sys,
@@ -380,6 +391,8 @@ def test_cli_research_validate_supports_custom_signal_with_signal_file(
             "custom_signal",
             "--signal-file",
             str(signal_path),
+            "--signal-name",
+            "signalforge_moskowitz",
             "--development-start",
             "2024-01-01",
             "--development-end",
@@ -483,7 +496,7 @@ def test_cli_research_validate_rejects_signal_file_for_non_custom_strategy(
 
     with pytest.raises(SystemExit):
         main()
-    assert "--signal-file may only be used with --strategy custom_signal" in capsys.readouterr().err
+    assert "--signal-file and --signal-name may only be used with --strategy custom_signal" in capsys.readouterr().err
 
 
 def test_cli_research_validate_requires_signal_file_for_custom_signal(
@@ -947,7 +960,9 @@ def test_cli_twse_search_fetches_saves_and_runs_search(
         score=0.5,
     )
 
-    request_factory = lambda **kwargs: kwargs
+    def request_factory(**kwargs):
+        return kwargs
+
     loader = (
         request_factory,
         lambda request: sample_frame,

@@ -340,6 +340,7 @@ class ResearchValidationConfig:
     output_dir: Path | None = None
     experiment_name: str = "research_validation"
     signal_file: Path | None = None
+    signal_name: str | None = None
 
 
 @dataclass(frozen=True)
