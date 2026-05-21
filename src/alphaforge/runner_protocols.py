@@ -1,11 +1,11 @@
-from __future__ import annotations
-
 """Shared runner-only protocol helpers.
 
 This module owns orchestration scaffolding reused across multiple runner
 workflows. It does not own execution semantics, search semantics, evidence
 policy, persistence schemas, or presentation behavior.
 """
+
+from __future__ import annotations
 
 from pathlib import Path
 

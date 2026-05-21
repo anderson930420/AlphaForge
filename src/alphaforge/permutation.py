@@ -13,10 +13,11 @@ from .schemas import (
     DataSpec,
     ExperimentResult,
     MetricReport,
+    PermutationTestArtifactReceipt,
     PermutationTestExecutionOutput,
+    PermutationTargetMetricName,
     PermutationTestSummary,
     StrategySpec,
-    PermutationTargetMetricName,
 )
 from .scoring import score_metrics
 from .storage import save_permutation_test_result

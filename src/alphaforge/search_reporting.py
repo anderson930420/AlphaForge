@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """Thin adapter for search-specific report artifacts.
 
 This module loads stored search artifacts and delegates report-input shaping and
@@ -7,6 +5,8 @@ rendering to :mod:`alphaforge.report`. It may coordinate the report workflow,
 but it does not own canonical view-model semantics, persisted artifact truth,
 or filename/layout decisions for raw outputs.
 """
+
+from __future__ import annotations
 
 from pathlib import Path
 

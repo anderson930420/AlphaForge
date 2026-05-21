@@ -1,6 +1,6 @@
-from __future__ import annotations
-
 """Minimal research evidence diagnostics for AlphaForge."""
+
+from __future__ import annotations
 
 import numpy as np
 import pandas as pd

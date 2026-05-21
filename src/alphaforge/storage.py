@@ -1,11 +1,11 @@
-from __future__ import annotations
-
 """Persistence boundary for AlphaForge experiment artifacts.
 
 This module owns canonical persisted experiment outputs, file naming, directory
 layout, and receipt materialization. Report HTML artifacts remain presentation
 artifacts and are not part of the canonical persisted experiment contract.
 """
+
+from __future__ import annotations
 
 import json
 from dataclasses import asdict, dataclass, field, replace

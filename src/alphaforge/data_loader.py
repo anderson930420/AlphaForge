@@ -1,11 +1,11 @@
-from __future__ import annotations
-
 """Canonical market-data acceptance for AlphaForge.
 
 This module owns the accepted runtime market-data schema, normalization rules,
 and post-load validation. Source adapters may pre-shape candidate frames, but
 this module decides what counts as accepted market data.
 """
+
+from __future__ import annotations
 
 from pathlib import Path
 

@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """Figure-building interfaces for AlphaForge experiment outputs.
 
 This module is the single place for turning backtest artifacts into visual
@@ -8,7 +6,9 @@ trade logs, but it should not run backtests, define canonical metric formulas,
 or persist files.
 """
 
-from typing import TYPE_CHECKING, Any
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
 
 import pandas as pd
 

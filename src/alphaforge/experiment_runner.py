@@ -1,10 +1,10 @@
-from __future__ import annotations
-
 """Public runner facade and compatibility bundles for AlphaForge workflows.
 
 This module preserves the public runner entry points used by CLI and tests
 while delegating workflow implementations to ``runner_workflows.py``.
 """
+
+from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path

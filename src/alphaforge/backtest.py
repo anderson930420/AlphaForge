@@ -1,11 +1,11 @@
-from __future__ import annotations
-
 """Canonical execution semantics and runtime artifact contracts.
 
 This module owns the MVP long-flat execution law for AlphaForge. Strategies
 emit next-bar target positions, while this module decides how those targets
 become realized positions, turnover, costs, equity, and trade records.
 """
+
+from __future__ import annotations
 
 from collections.abc import Sequence
 

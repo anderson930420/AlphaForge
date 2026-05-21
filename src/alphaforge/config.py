@@ -1,11 +1,11 @@
-from __future__ import annotations
-
 """Literal defaults and input-policy constants for AlphaForge.
 
 This module is intentionally constants-only. It provides shared defaults,
 ranges, and alias maps that canonical owners consume, but it does not validate
 market data, define execution semantics, or own artifact schemas.
 """
+
+from __future__ import annotations
 
 from pathlib import Path
 

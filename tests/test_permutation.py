@@ -4,7 +4,6 @@ import json
 import sys
 from pathlib import Path
 from unittest.mock import patch
-from unittest.mock import patch
 
 import numpy as np
 import pandas as pd

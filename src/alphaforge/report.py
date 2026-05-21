@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """Report assembly and export interfaces for AlphaForge experiments.
 
 This module assembles report-ready inputs into shareable HTML artifacts. It
@@ -8,6 +6,8 @@ artifact refs; it should not run backtests, compute metrics, or infer workflow
 layout when explicit presentation inputs are available. Figure construction
 stays in :mod:`alphaforge.visualization`.
 """
+
+from __future__ import annotations
 
 from dataclasses import dataclass
 from html import escape

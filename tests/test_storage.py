@@ -14,7 +14,6 @@ from alphaforge.schemas import (
     ExperimentResult,
     MetricReport,
     CandidatePolicyDecision,
-    PermutationTestArtifactReceipt,
     PermutationTestSummary,
     ResearchPeriod,
     ResearchProtocolPlan,
