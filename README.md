@@ -14,6 +14,12 @@ It is parked as a stable validation layer rather than the long-term alpha-genera
 
 Externally generated signals should enter AlphaForge through `custom_signal` and an external `signal.csv`.
 
+## SignalForge Integration
+
+AlphaForge can consume SignalForge v0.1 `signal.csv` artifacts through `custom_signal` without importing SignalForge. See [docs/signalforge_integration.md](docs/signalforge_integration.md) for the artifact contract, execution law, and CLI smoke examples.
+
+Readiness checkpoint: [docs/releases/signalforge-integration-readiness.md](docs/releases/signalforge-integration-readiness.md).
+
 ## MVP Status
 
 The current MVP supports:
@@ -142,7 +148,7 @@ Run a walk-forward validation search from a CSV:
 Run research validation against an externally generated `signal.csv`:
 
 ```powershell
-.venv\Scripts\python.exe -m alphaforge.cli research-validate --strategy custom_signal --data .\sample_data\twse_2330_2018_2025.csv --signal-file .\outputs\signalforge\moskowitz_2330_signal.csv --development-start 2018-01-01 --development-end 2024-12-31 --holdout-start 2025-01-01 --holdout-end 2025-12-31
+.venv\Scripts\python.exe -m alphaforge.cli research-validate --strategy custom_signal --data .\sample_data\twse_2330_2018_2025.csv --signal-file .\outputs\signalforge\moskowitz_2330_signal.csv --signal-name moskowitz_2330 --development-start 2018-01-01 --development-end 2024-12-31 --holdout-start 2025-01-01 --holdout-end 2025-12-31
 ```
 
 In this path:
@@ -150,7 +156,10 @@ In this path:
 - `signal_binary` maps to `target_position`
 - `signal_value` is not computed or used by AlphaForge
 - `custom_signal` uses `legacy_close_to_close_lagged` execution semantics
+- `--signal-name` is required when a `signal.csv` contains multiple `signal_name` values
+- missing signal dates default to flat positions rather than being optimized or inferred
 - AlphaForge validates `signal.csv` but does not generate it
+- SignalForge remains outside the AlphaForge runtime unless you explicitly point AlphaForge at a `signal.csv`
 
 Run a permutation/null-comparison diagnostic for a fixed MA candidate:
 
