@@ -81,6 +81,71 @@ def test_signal_binary_maps_to_float_target_position(tmp_path: Path) -> None:
     assert target_position.tolist() == [0.0, 1.0, 1.0]
 
 
+def test_utc_signal_datetime_aligns_to_naive_market_date(tmp_path: Path) -> None:
+    market_data = pd.DataFrame(
+        {
+            "datetime": ["2025-01-02"],
+            "open": [10.0],
+            "high": [10.5],
+            "low": [9.5],
+            "close": [10.0],
+            "volume": [100.0],
+            "symbol": ["2330"],
+        }
+    )
+    signal_file = _write_signal_csv(
+        tmp_path,
+        pd.DataFrame(
+            {
+                "datetime": ["2025-01-02T00:00:00+00:00"],
+                "available_at": ["2025-01-01T23:59:00+00:00"],
+                "symbol": ["2330"],
+                "signal_name": ["demo_signal"],
+                "signal_value": [999],
+                "signal_binary": [1],
+                "source": ["SignalForge"],
+            }
+        ),
+    )
+
+    target_position, _ = load_custom_signal_positions(signal_file, market_data)
+
+    expected = pd.Series([1.0], index=market_data.index, name="target_position")
+    pd.testing.assert_series_equal(target_position, expected)
+
+
+def test_utc_available_at_on_same_date_passes_daily_alignment(tmp_path: Path) -> None:
+    market_data = pd.DataFrame(
+        {
+            "datetime": ["2025-01-02"],
+            "open": [10.0],
+            "high": [10.5],
+            "low": [9.5],
+            "close": [10.0],
+            "volume": [100.0],
+            "symbol": ["2330"],
+        }
+    )
+    signal_file = _write_signal_csv(
+        tmp_path,
+        pd.DataFrame(
+            {
+                "datetime": ["2025-01-02"],
+                "available_at": ["2025-01-02T00:00:00+00:00"],
+                "symbol": ["2330"],
+                "signal_name": ["demo_signal"],
+                "signal_value": [1],
+                "signal_binary": [1],
+                "source": ["SignalForge"],
+            }
+        ),
+    )
+
+    target_position, _ = load_custom_signal_positions(signal_file, market_data)
+
+    assert target_position.tolist() == [1.0]
+
+
 def test_signal_value_is_ignored_for_execution(tmp_path: Path) -> None:
     market_data = _build_market_data()
     signal_file = _write_signal_csv(
@@ -132,6 +197,93 @@ def test_missing_required_signal_fields_fail(tmp_path: Path, column: str, value:
         load_custom_signal_positions(signal_file, market_data)
 
 
+def test_missing_signal_symbol_fails_clearly(tmp_path: Path) -> None:
+    market_data = _build_market_data()
+    signal_file = _write_signal_csv(
+        tmp_path,
+        pd.DataFrame(
+            {
+                "datetime": ["2024-01-01", "2024-01-02", "2024-01-03"],
+                "available_at": ["2023-12-31", "2024-01-01", "2024-01-02"],
+                "symbol": [None, None, None],
+                "signal_name": ["demo_signal"] * 3,
+                "signal_value": [1, 1, 1],
+                "signal_binary": [1, 0, 1],
+                "source": ["SignalForge"] * 3,
+            }
+        ),
+    )
+
+    with pytest.raises(ValueError, match="symbol is required"):
+        load_custom_signal_positions(signal_file, market_data)
+
+
+def test_multiple_signal_symbols_fail_clearly(tmp_path: Path) -> None:
+    market_data = _build_market_data()
+    signal_file = _write_signal_csv(
+        tmp_path,
+        pd.DataFrame(
+            {
+                "datetime": ["2024-01-01", "2024-01-02", "2024-01-03"],
+                "available_at": ["2023-12-31", "2024-01-01", "2024-01-02"],
+                "symbol": ["2330", "2317", "2330"],
+                "signal_name": ["demo_signal"] * 3,
+                "signal_value": [1, 1, 1],
+                "signal_binary": [1, 0, 1],
+                "source": ["SignalForge"] * 3,
+            }
+        ),
+    )
+
+    with pytest.raises(ValueError, match="signal.csv must contain exactly one symbol for custom_signal"):
+        load_custom_signal_positions(signal_file, market_data)
+
+
+def test_multiple_market_symbols_fail_clearly(tmp_path: Path) -> None:
+    market_data = _build_market_data()
+    market_data.loc[1, "symbol"] = "2317"
+    signal_file = _write_signal_csv(
+        tmp_path,
+        pd.DataFrame(
+            {
+                "datetime": ["2024-01-01", "2024-01-02", "2024-01-03"],
+                "available_at": ["2023-12-31", "2024-01-01", "2024-01-02"],
+                "symbol": ["2330", "2330", "2330"],
+                "signal_name": ["demo_signal"] * 3,
+                "signal_value": [1, 1, 1],
+                "signal_binary": [1, 0, 1],
+                "source": ["SignalForge"] * 3,
+            }
+        ),
+    )
+
+    with pytest.raises(ValueError, match="market_data must contain exactly one symbol for custom_signal"):
+        load_custom_signal_positions(signal_file, market_data)
+
+
+def test_single_signal_symbol_works_without_market_symbol_column(tmp_path: Path) -> None:
+    market_data = _build_market_data().drop(columns=["symbol"])
+    signal_file = _write_signal_csv(
+        tmp_path,
+        pd.DataFrame(
+            {
+                "datetime": ["2024-01-01", "2024-01-02", "2024-01-03"],
+                "available_at": ["2023-12-31", "2024-01-01", "2024-01-02"],
+                "symbol": ["2330", "2330", "2330"],
+                "signal_name": ["demo_signal"] * 3,
+                "signal_value": [1, 1, 1],
+                "signal_binary": [1, 0, 1],
+                "source": ["SignalForge"] * 3,
+            }
+        ),
+    )
+
+    target_position, metadata = load_custom_signal_positions(signal_file, market_data)
+
+    assert target_position.tolist() == [1.0, 0.0, 1.0]
+    assert metadata["symbol"] == "2330"
+
+
 def test_non_binary_signal_binary_fails(tmp_path: Path) -> None:
     market_data = _build_market_data()
     signal_file = _write_signal_csv(
@@ -166,6 +318,37 @@ def test_available_at_after_datetime_fails(tmp_path: Path) -> None:
                 "signal_value": [1, 1, 1],
                 "signal_binary": [0, 1, 0],
                 "source": ["SignalForge"] * 3,
+            }
+        ),
+    )
+
+    with pytest.raises(ValueError, match="available_at must be less than or equal to datetime"):
+        load_custom_signal_positions(signal_file, market_data)
+
+
+def test_utc_available_at_after_datetime_fails(tmp_path: Path) -> None:
+    market_data = pd.DataFrame(
+        {
+            "datetime": ["2025-01-02"],
+            "open": [10.0],
+            "high": [10.5],
+            "low": [9.5],
+            "close": [10.0],
+            "volume": [100.0],
+            "symbol": ["2330"],
+        }
+    )
+    signal_file = _write_signal_csv(
+        tmp_path,
+        pd.DataFrame(
+            {
+                "datetime": ["2025-01-02T00:00:00+00:00"],
+                "available_at": ["2025-01-03T00:00:00+00:00"],
+                "symbol": ["2330"],
+                "signal_name": ["demo_signal"],
+                "signal_value": [1],
+                "signal_binary": [1],
+                "source": ["SignalForge"],
             }
         ),
     )
@@ -218,6 +401,39 @@ def test_missing_signal_dates_default_to_flat_and_do_not_look_ahead(tmp_path: Pa
     assert metadata["missing_signal_policy"] == "flat"
 
 
+def test_utc_signal_missing_dates_default_to_flat(tmp_path: Path) -> None:
+    market_data = pd.DataFrame(
+        {
+            "datetime": ["2025-01-02", "2025-01-03"],
+            "open": [10.0, 11.0],
+            "high": [10.5, 11.5],
+            "low": [9.5, 10.5],
+            "close": [10.0, 11.0],
+            "volume": [100.0, 110.0],
+            "symbol": ["2330", "2330"],
+        }
+    )
+    signal_file = _write_signal_csv(
+        tmp_path,
+        pd.DataFrame(
+            {
+                "datetime": ["2025-01-03T00:00:00+00:00"],
+                "available_at": ["2025-01-02T00:00:00+00:00"],
+                "symbol": ["2330"],
+                "signal_name": ["demo_signal"],
+                "signal_value": [1],
+                "signal_binary": [1],
+                "source": ["SignalForge"],
+            }
+        ),
+    )
+
+    target_position, metadata = load_custom_signal_positions(signal_file, market_data)
+
+    assert target_position.tolist() == [0.0, 1.0]
+    assert metadata["missing_signal_policy"] == "flat"
+
+
 def test_extra_signal_date_not_in_market_data_fails(tmp_path: Path) -> None:
     market_data = _build_market_data()
     signal_file = _write_signal_csv(
@@ -231,6 +447,37 @@ def test_extra_signal_date_not_in_market_data_fails(tmp_path: Path) -> None:
                 "signal_value": [1, 1, 1, 1],
                 "signal_binary": [0, 1, 0, 1],
                 "source": ["SignalForge"] * 4,
+            }
+        ),
+    )
+
+    with pytest.raises(ValueError, match="signal dates must align with market data dates"):
+        load_custom_signal_positions(signal_file, market_data)
+
+
+def test_utc_extra_signal_date_not_in_market_data_fails(tmp_path: Path) -> None:
+    market_data = pd.DataFrame(
+        {
+            "datetime": ["2025-01-02"],
+            "open": [10.0],
+            "high": [10.5],
+            "low": [9.5],
+            "close": [10.0],
+            "volume": [100.0],
+            "symbol": ["2330"],
+        }
+    )
+    signal_file = _write_signal_csv(
+        tmp_path,
+        pd.DataFrame(
+            {
+                "datetime": ["2025-01-02T00:00:00+00:00", "2025-01-03T00:00:00+00:00"],
+                "available_at": ["2025-01-01T00:00:00+00:00", "2025-01-02T00:00:00+00:00"],
+                "symbol": ["2330", "2330"],
+                "signal_name": ["demo_signal", "demo_signal"],
+                "signal_value": [1, 1],
+                "signal_binary": [1, 0],
+                "source": ["SignalForge", "SignalForge"],
             }
         ),
     )
@@ -319,6 +566,28 @@ def test_metadata_preserves_signal_name_source_and_symbol_when_unambiguous(tmp_p
     assert metadata["symbol"] == "2330"
     assert metadata["signal_name"] == "my_signal"
     assert metadata["source"] == "SignalForge"
+
+
+def test_metadata_omits_source_when_ambiguous(tmp_path: Path) -> None:
+    market_data = _build_market_data()
+    signal_file = _write_signal_csv(
+        tmp_path,
+        pd.DataFrame(
+            {
+                "datetime": ["2024-01-01", "2024-01-02", "2024-01-03"],
+                "available_at": ["2023-12-31", "2024-01-01", "2024-01-02"],
+                "symbol": ["2330", "2330", "2330"],
+                "signal_name": ["my_signal"] * 3,
+                "signal_value": [10, 11, 12],
+                "signal_binary": [1, 0, 1],
+                "source": ["SignalForge", "manual", "SignalForge"],
+            }
+        ),
+    )
+
+    _, metadata = load_custom_signal_positions(signal_file, market_data)
+
+    assert "source" not in metadata
 
 
 def test_no_signalforge_import_exists() -> None:

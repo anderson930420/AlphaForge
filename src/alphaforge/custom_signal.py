@@ -49,7 +49,7 @@ def load_custom_signal_positions(
     }
     if selected_signal_name is not None:
         metadata["signal_name"] = selected_signal_name
-    source = _single_unique_value(signal_frame["source"])
+    source = _optional_single_unique_value(signal_frame["source"], "source", on_multiple="omit")
     if source is not None:
         metadata["source"] = source
     return target_position, metadata
@@ -67,8 +67,8 @@ def _load_signal_frame(signal_file: Path | str) -> pd.DataFrame:
 
 def _coerce_signal_frame(signal_frame: pd.DataFrame) -> pd.DataFrame:
     cleaned = signal_frame.copy()
-    cleaned["datetime"] = pd.to_datetime(cleaned["datetime"], utc=False, errors="raise")
-    cleaned["available_at"] = pd.to_datetime(cleaned["available_at"], utc=False, errors="raise")
+    cleaned["datetime"] = _normalize_daily_datetimes(cleaned["datetime"])
+    cleaned["available_at"] = _normalize_daily_datetimes(cleaned["available_at"])
     cleaned["signal_binary"] = pd.to_numeric(cleaned["signal_binary"], errors="raise")
 
     if cleaned["datetime"].isna().any():
@@ -89,7 +89,7 @@ def _coerce_signal_frame(signal_frame: pd.DataFrame) -> pd.DataFrame:
 
 
 def _select_signal_name(signal_frame: pd.DataFrame, signal_name: str | None) -> tuple[pd.DataFrame, str | None]:
-    unique_signal_names = [value for value in signal_frame["signal_name"].dropna().astype(str).unique()]
+    unique_signal_names = _unique_non_null_values(signal_frame["signal_name"])
     if signal_name is not None:
         filtered = signal_frame.loc[signal_frame["signal_name"].astype(str) == signal_name].copy().reset_index(drop=True)
         if filtered.empty:
@@ -105,10 +105,21 @@ def _select_signal_name(signal_frame: pd.DataFrame, signal_name: str | None) -> 
 
 
 def _resolve_target_symbol(signal_frame: pd.DataFrame, market_data: pd.DataFrame, symbol: str | None) -> str:
-    market_symbol = _single_unique_value(market_data["symbol"]) if "symbol" in market_data.columns else None
-    signal_symbol = _single_unique_value(signal_frame["symbol"])
-    if signal_symbol is None:
-        raise ValueError("custom-signal validation requires a single symbol in signal.csv")
+    market_symbol = (
+        _optional_single_unique_value(
+            market_data["symbol"],
+            "market_data symbol",
+            multiple_message="market_data must contain exactly one symbol for custom_signal",
+        )
+        if "symbol" in market_data.columns
+        else None
+    )
+    signal_symbol = _require_single_unique_value(
+        signal_frame["symbol"],
+        "symbol",
+        missing_message="symbol is required",
+        multiple_message="signal.csv must contain exactly one symbol for custom_signal",
+    )
 
     if symbol is not None:
         if signal_symbol != symbol:
@@ -133,14 +144,17 @@ def _filter_and_validate_symbol(signal_frame: pd.DataFrame, target_symbol: str) 
 def _extract_market_datetimes(market_data: pd.DataFrame) -> pd.Index:
     if "datetime" not in market_data.columns:
         raise ValueError("market_data requires a datetime column")
-    market_datetimes = pd.to_datetime(market_data["datetime"], utc=False, errors="raise")
+    market_datetimes = _normalize_daily_datetimes(market_data["datetime"])
     if market_datetimes.isna().any():
         raise ValueError("market_data datetime column contains missing values")
     if market_datetimes.duplicated().any():
         raise ValueError("market_data datetime values must be unique")
-    if "symbol" in market_data.columns and _single_unique_value(market_data["symbol"]) is None:
-        raise ValueError("market_data must contain a single symbol for custom-signal validation")
     return pd.Index(market_datetimes)
+
+
+def _normalize_daily_datetimes(values: pd.Series) -> pd.Series:
+    parsed = pd.to_datetime(values, utc=True, errors="raise", format="mixed")
+    return parsed.dt.normalize().dt.tz_localize(None)
 
 
 def _validate_market_alignment(signal_frame: pd.DataFrame, market_datetimes: pd.Index) -> None:
@@ -150,11 +164,39 @@ def _validate_market_alignment(signal_frame: pd.DataFrame, market_datetimes: pd.
         raise ValueError("signal dates must align with market data dates")
 
 
-def _single_unique_value(series: pd.Series) -> str | None:
-    non_null = series.dropna().astype(str)
-    unique_values = pd.Index(non_null.unique())
+def _require_single_unique_value(
+    series: pd.Series,
+    field_name: str,
+    *,
+    missing_message: str | None = None,
+    multiple_message: str | None = None,
+) -> str:
+    unique_values = _unique_non_null_values(series)
     if len(unique_values) == 1:
-        return str(unique_values[0])
+        return unique_values[0]
+    if len(unique_values) == 0:
+        raise ValueError(missing_message or f"{field_name} is required")
+    raise ValueError(multiple_message or f"{field_name} must contain exactly one value")
+
+
+def _optional_single_unique_value(
+    series: pd.Series,
+    field_name: str,
+    *,
+    multiple_message: str | None = None,
+    on_multiple: str = "raise",
+) -> str | None:
+    unique_values = _unique_non_null_values(series)
+    if len(unique_values) == 1:
+        return unique_values[0]
     if len(unique_values) == 0:
         return None
-    return None
+    if on_multiple == "omit":
+        return None
+    raise ValueError(multiple_message or f"{field_name} must contain exactly one value")
+
+
+def _unique_non_null_values(series: pd.Series) -> list[str]:
+    non_null = series.dropna().astype(str)
+    unique_values = pd.Index(non_null.unique())
+    return [str(value) for value in unique_values]
