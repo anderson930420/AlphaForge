@@ -37,6 +37,14 @@ AlphaForge uses only `signal_binary` for execution:
 
 The usual AlphaForge backtest semantics still apply after the target-position series is built.
 
+## Custom Signal Validation Semantics
+
+`custom_signal` is an externally frozen signal workflow. AlphaForge treats the supplied `signal.csv` as a frozen external signal file and does not search, tune, or infer signal parameters from the market data.
+
+For this MVP path, AlphaForge validates the signal schema and alignment rules, then runs the configured development-period evaluation and final-holdout evaluation. It does not perform parameter search, and it does not perform parameter-search walk-forward folds for `custom_signal`.
+
+The runtime may still record a `WalkForwardResult` for evidence consistency, but `walk_forward_summary` may report `fold_count` 0 for `custom_signal` because there are no walk-forward folds in this workflow.
+
 ## CLI Examples
 
 Run research validation with a SignalForge signal file:

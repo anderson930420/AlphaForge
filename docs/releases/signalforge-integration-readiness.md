@@ -108,6 +108,7 @@ python3 -m pytest tests/test_custom_signal.py tests/test_signalforge_integration
 - No SignalForge runtime integration.
 - No AlphaForge-side factor calculation.
 - No performance-based signal search for SignalForge outputs.
+- `custom_signal` is an externally frozen signal workflow: AlphaForge treats `signal.csv` as a frozen external signal file, validates schema, and runs development/final-holdout evaluation, but does not perform parameter search or parameter-search walk-forward folds; `walk_forward_summary` may report `fold_count` 0.
 
 ## Suggested Next Milestones
 

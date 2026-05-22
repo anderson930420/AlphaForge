@@ -18,6 +18,8 @@ Externally generated signals should enter AlphaForge through `custom_signal` and
 
 AlphaForge can consume SignalForge v0.1 `signal.csv` artifacts through `custom_signal` without importing SignalForge. See [docs/signalforge_integration.md](docs/signalforge_integration.md) for the artifact contract, execution law, and CLI smoke examples.
 
+For `custom_signal`, AlphaForge treats the input as a frozen external signal and does not run parameter search or walk-forward folds.
+
 Readiness checkpoint: [docs/releases/signalforge-integration-readiness.md](docs/releases/signalforge-integration-readiness.md).
 
 ## MVP Status
@@ -159,6 +161,7 @@ In this path:
 - `--signal-name` is required when a `signal.csv` contains multiple `signal_name` values
 - missing signal dates default to flat positions rather than being optimized or inferred
 - AlphaForge validates `signal.csv` but does not generate it
+- AlphaForge does not tune signal parameters or run walk-forward folds for `custom_signal`
 - SignalForge remains outside the AlphaForge runtime unless you explicitly point AlphaForge at a `signal.csv`
 
 Run a permutation/null-comparison diagnostic for a fixed MA candidate:
