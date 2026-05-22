@@ -35,3 +35,11 @@ def test_signalforge_docs_name_custom_signal_walk_forward_limitation() -> None:
         assert "frozen external signal" in content
         assert "does not perform parameter search" in content
         assert ("fold_count` 0" in content) or ("no walk-forward folds" in content)
+
+
+def test_signalforge_docs_name_daily_datetime_policy() -> None:
+    content = (ROOT / "docs" / "signalforge_integration.md").read_text(encoding="utf-8").lower()
+
+    assert "daily trading-date" in content
+    assert "does not utc-shift" in content
+    assert "does not perform intraday timing validation" in content

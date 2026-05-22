@@ -37,6 +37,14 @@ AlphaForge uses only `signal_binary` for execution:
 
 The usual AlphaForge backtest semantics still apply after the target-position series is built.
 
+## Daily Datetime Policy
+
+For the `custom_signal` MVP, `datetime` and `available_at` are daily trading-date labels. AlphaForge aligns signal rows to market data by the declared daily trading date in the input value.
+
+Date-only strings, UTC timestamps, and offset timestamps preserve their declared calendar date for daily alignment. AlphaForge does not UTC-shift an offset timestamp before extracting the daily trading date, so `2025-01-02T00:00:00+08:00` aligns to market date `2025-01-02`, not `2025-01-01`.
+
+The `available_at <= datetime` rule is also checked at the daily trading-date level. AlphaForge does not perform intraday timing validation for the `custom_signal` MVP, so same-date values such as `available_at = 2025-01-02T23:00:00+08:00` and `datetime = 2025-01-02T09:30:00+08:00` normalize to the same trading date and pass.
+
 ## Custom Signal Validation Semantics
 
 `custom_signal` is an externally frozen signal workflow. AlphaForge treats the supplied `signal.csv` as a frozen external signal file and does not search, tune, or infer signal parameters from the market data.

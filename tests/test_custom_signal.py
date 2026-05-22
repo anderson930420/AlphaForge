@@ -81,7 +81,18 @@ def test_signal_binary_maps_to_float_target_position(tmp_path: Path) -> None:
     assert target_position.tolist() == [0.0, 1.0, 1.0]
 
 
-def test_utc_signal_datetime_aligns_to_naive_market_date(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    "signal_datetime",
+    [
+        "2025-01-02T00:00:00+08:00",
+        "2025-01-02T00:00:00Z",
+        "2025-01-02 09:30:00+08:00",
+    ],
+)
+def test_signal_datetime_uses_declared_calendar_date_for_daily_alignment(
+    tmp_path: Path,
+    signal_datetime: str,
+) -> None:
     market_data = pd.DataFrame(
         {
             "datetime": ["2025-01-02"],
@@ -97,7 +108,7 @@ def test_utc_signal_datetime_aligns_to_naive_market_date(tmp_path: Path) -> None
         tmp_path,
         pd.DataFrame(
             {
-                "datetime": ["2025-01-02T00:00:00+00:00"],
+                "datetime": [signal_datetime],
                 "available_at": ["2025-01-01T23:59:00+00:00"],
                 "symbol": ["2330"],
                 "signal_name": ["demo_signal"],
@@ -114,7 +125,7 @@ def test_utc_signal_datetime_aligns_to_naive_market_date(tmp_path: Path) -> None
     pd.testing.assert_series_equal(target_position, expected)
 
 
-def test_utc_available_at_on_same_date_passes_daily_alignment(tmp_path: Path) -> None:
+def test_offset_available_at_on_same_date_passes_daily_alignment(tmp_path: Path) -> None:
     market_data = pd.DataFrame(
         {
             "datetime": ["2025-01-02"],
@@ -131,7 +142,39 @@ def test_utc_available_at_on_same_date_passes_daily_alignment(tmp_path: Path) ->
         pd.DataFrame(
             {
                 "datetime": ["2025-01-02"],
-                "available_at": ["2025-01-02T00:00:00+00:00"],
+                "available_at": ["2025-01-02T00:00:00+08:00"],
+                "symbol": ["2330"],
+                "signal_name": ["demo_signal"],
+                "signal_value": [1],
+                "signal_binary": [1],
+                "source": ["SignalForge"],
+            }
+        ),
+    )
+
+    target_position, _ = load_custom_signal_positions(signal_file, market_data)
+
+    assert target_position.tolist() == [1.0]
+
+
+def test_intraday_available_at_ordering_on_same_date_is_not_validated(tmp_path: Path) -> None:
+    market_data = pd.DataFrame(
+        {
+            "datetime": ["2025-01-02"],
+            "open": [10.0],
+            "high": [10.5],
+            "low": [9.5],
+            "close": [10.0],
+            "volume": [100.0],
+            "symbol": ["2330"],
+        }
+    )
+    signal_file = _write_signal_csv(
+        tmp_path,
+        pd.DataFrame(
+            {
+                "datetime": ["2025-01-02T09:30:00+08:00"],
+                "available_at": ["2025-01-02T23:00:00+08:00"],
                 "symbol": ["2330"],
                 "signal_name": ["demo_signal"],
                 "signal_value": [1],
@@ -194,6 +237,27 @@ def test_missing_required_signal_fields_fail(tmp_path: Path, column: str, value:
     signal_file = _write_signal_csv(tmp_path, frame)
 
     with pytest.raises(ValueError, match=message):
+        load_custom_signal_positions(signal_file, market_data)
+
+
+def test_unparseable_signal_datetime_fails_clearly(tmp_path: Path) -> None:
+    market_data = _build_market_data()
+    signal_file = _write_signal_csv(
+        tmp_path,
+        pd.DataFrame(
+            {
+                "datetime": ["not-a-date"],
+                "available_at": ["2024-01-01"],
+                "symbol": ["2330"],
+                "signal_name": ["demo_signal"],
+                "signal_value": [1],
+                "signal_binary": [1],
+                "source": ["SignalForge"],
+            }
+        ),
+    )
+
+    with pytest.raises(ValueError, match="Could not parse datetime value 'not-a-date'"):
         load_custom_signal_positions(signal_file, market_data)
 
 
@@ -326,7 +390,7 @@ def test_available_at_after_datetime_fails(tmp_path: Path) -> None:
         load_custom_signal_positions(signal_file, market_data)
 
 
-def test_utc_available_at_after_datetime_fails(tmp_path: Path) -> None:
+def test_available_at_declared_calendar_date_after_datetime_fails(tmp_path: Path) -> None:
     market_data = pd.DataFrame(
         {
             "datetime": ["2025-01-02"],
@@ -342,8 +406,8 @@ def test_utc_available_at_after_datetime_fails(tmp_path: Path) -> None:
         tmp_path,
         pd.DataFrame(
             {
-                "datetime": ["2025-01-02T00:00:00+00:00"],
-                "available_at": ["2025-01-03T00:00:00+00:00"],
+                "datetime": ["2025-01-02T23:00:00+08:00"],
+                "available_at": ["2025-01-03T00:00:00+08:00"],
                 "symbol": ["2330"],
                 "signal_name": ["demo_signal"],
                 "signal_value": [1],

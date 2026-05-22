@@ -153,8 +153,17 @@ def _extract_market_datetimes(market_data: pd.DataFrame) -> pd.Index:
 
 
 def _normalize_daily_datetimes(values: pd.Series) -> pd.Series:
-    parsed = pd.to_datetime(values, utc=True, errors="raise", format="mixed")
-    return parsed.dt.normalize().dt.tz_localize(None)
+    return values.map(_normalize_daily_datetime)
+
+
+def _normalize_daily_datetime(value: object) -> pd.Timestamp:
+    if pd.isna(value):
+        return pd.NaT
+    try:
+        parsed = pd.to_datetime(value, errors="raise")
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"Could not parse datetime value {value!r}") from exc
+    return pd.Timestamp(parsed.date())
 
 
 def _validate_market_alignment(signal_frame: pd.DataFrame, market_datetimes: pd.Index) -> None:
