@@ -7,6 +7,8 @@ import pytest
 from alphaforge.backtest import (
     BACKTEST_EQUITY_CURVE_COLUMNS,
     BACKTEST_TRADE_LOG_COLUMNS,
+    LEGACY_EXECUTION_SEMANTICS,
+    SIGNED_EXECUTION_SEMANTICS,
     build_execution_semantics_metadata,
     run_backtest,
 )
@@ -152,6 +154,71 @@ def test_backtest_extracts_return_based_trade_fields_for_one_trade() -> None:
     assert trade["exit_target_position"] == 0.0
 
 
+def test_legacy_execution_semantics_still_clip_to_long_flat() -> None:
+    market_data = _make_market_data([100, 90, 81])
+    target_positions = pd.Series([-1.0, -1.0, 0.0])
+
+    equity_curve, trades = run_backtest(market_data, target_positions, _make_config())
+
+    assert equity_curve["target_position"].tolist() == [0.0, 0.0, 0.0]
+    assert equity_curve["position"].tolist() == [0.0, 0.0, 0.0]
+    assert equity_curve["strategy_return"].tolist() == [0.0, 0.0, 0.0]
+    assert trades.empty
+
+
+def test_signed_execution_semantics_support_short_returns() -> None:
+    market_data = _make_market_data([100, 90, 81])
+    target_positions = pd.Series([-1.0, -1.0, 0.0])
+
+    equity_curve, trades = run_backtest(
+        market_data,
+        target_positions,
+        _make_config(),
+        execution_semantics=SIGNED_EXECUTION_SEMANTICS,
+    )
+
+    assert equity_curve["target_position"].tolist() == [-1.0, -1.0, 0.0]
+    assert equity_curve["position"].tolist() == [0.0, -1.0, -1.0]
+    assert equity_curve["close_return"].tolist() == pytest.approx([0.0, -0.10, -0.10])
+    assert equity_curve["strategy_return"].tolist() == pytest.approx([0.0, 0.10, 0.10])
+    assert equity_curve.iloc[-1]["equity"] == pytest.approx(1210.0)
+    assert trades.shape[0] == 1
+    assert trades.iloc[0]["entry_target_position"] == -1.0
+    assert trades.iloc[0]["trade_gross_return"] == pytest.approx(0.21)
+
+
+def test_signed_execution_semantics_charges_turnover_for_reversal() -> None:
+    market_data = _make_market_data([100, 110, 99, 99])
+    target_positions = pd.Series([1.0, -1.0, 0.0, 0.0])
+    config = BacktestConfig(initial_capital=1000, fee_rate=0.01, slippage_rate=0.0, annualization_factor=252)
+
+    equity_curve, trades = run_backtest(
+        market_data,
+        target_positions,
+        config,
+        execution_semantics=SIGNED_EXECUTION_SEMANTICS,
+    )
+
+    assert equity_curve["position"].tolist() == [0.0, 1.0, -1.0, 0.0]
+    assert equity_curve["turnover"].tolist() == [0.0, 1.0, 2.0, 1.0]
+    assert equity_curve["strategy_return"].tolist() == pytest.approx([0.0, 0.09, 0.08, -0.01])
+    assert trades.shape[0] == 2
+    assert trades.iloc[0]["entry_target_position"] == 1.0
+    assert trades.iloc[1]["entry_target_position"] == -1.0
+
+
+def test_signed_execution_semantics_rejects_leverage() -> None:
+    market_data = _make_market_data([100, 101, 102])
+
+    with pytest.raises(ValueError, match=r"target_positions must be within \[-1.0, 1.0\]"):
+        run_backtest(
+            market_data,
+            [0.0, -1.1, 0.0],
+            _make_config(),
+            execution_semantics=SIGNED_EXECUTION_SEMANTICS,
+        )
+
+
 def test_execution_semantics_metadata_is_explicit() -> None:
     metadata = build_execution_semantics_metadata()
 
@@ -163,3 +230,23 @@ def test_execution_semantics_metadata_is_explicit() -> None:
         "supports_shorting": False,
         "supports_leverage": False,
     }
+
+
+def test_signed_execution_semantics_metadata_is_explicit() -> None:
+    metadata = build_execution_semantics_metadata(SIGNED_EXECUTION_SEMANTICS)
+
+    assert metadata == {
+        "execution_semantics": "signed_close_to_close_lagged",
+        "position_rule": "position[t] = target_position[t-1]",
+        "return_rule": "close_to_close",
+        "position_bounds": [-1.0, 1.0],
+        "supports_shorting": True,
+        "supports_leverage": False,
+    }
+
+
+def test_unknown_execution_semantics_fails() -> None:
+    with pytest.raises(ValueError, match="Unsupported execution_semantics"):
+        build_execution_semantics_metadata("unknown")
+    with pytest.raises(ValueError, match="Unsupported execution_semantics"):
+        run_backtest(_make_market_data([100, 101]), [0.0, 0.0], _make_config(), execution_semantics="unknown")
