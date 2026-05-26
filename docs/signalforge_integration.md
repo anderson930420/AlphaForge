@@ -37,6 +37,33 @@ AlphaForge uses only `signal_binary` for execution:
 
 The usual AlphaForge backtest semantics still apply after the target-position series is built.
 
+## Signal Semantics v0.2
+
+SignalForge v0.1 remains a binary long/flat handoff. SignalForge / AlphaForge v0.2 introduces a shared vocabulary for long/flat/short-capable signals without changing the existing `custom_signal` runtime path.
+
+The v0.2 semantic layers are:
+
+```text
+alpha score / direction
+        ↓
+target weight / target side
+        ↓
+execution action derived from current weight and target weight
+```
+
+Core definitions:
+
+- `score`: a continuous alpha value, such as a signed characteristic, normalized rank, z-score, or predicted return.
+- `direction`: `-1` bearish, `0` neutral, `+1` bullish.
+- `target_weight`: the desired signed portfolio exposure for an asset.
+- `target_side`: the side implied by `target_weight`: negative is short, zero is flat, positive is long.
+- `order_side`: derived from the signed delta between current and target exposure: positive delta is `BUY`, negative delta is `SELL`, no material delta is `NONE`.
+- `position_effect`: the position transition, such as `OPEN_LONG`, `CLOSE_LONG`, `OPEN_SHORT`, `CLOSE_SHORT`, `REVERSE_LONG_TO_SHORT`, or `REVERSE_SHORT_TO_LONG`.
+
+Important boundary rule: strategies and signal producers should not encode `Buy`, `Sell`, `Close`, or `Hold` as alpha labels. They should emit score/direction/target exposure. Buy, Sell, Close, and Hold are execution-layer effects derived from `current_weight -> target_weight`.
+
+This repository currently exposes these consumer-side semantics in `alphaforge.signal_semantics`. The existing `custom_signal` file contract is intentionally unchanged until a later phase introduces a v0.2 `signal.csv` adapter.
+
 ## Daily Datetime Policy
 
 For the `custom_signal` MVP, `datetime` and `available_at` are daily trading-date labels. AlphaForge aligns signal rows to market data by the declared daily trading date in the input value.
@@ -102,4 +129,6 @@ python3 -m alphaforge.cli research-validate \
 
 AlphaForge does not import SignalForge, call SignalForge APIs, calculate SignalForge factors, or search for signals by backtest performance. SignalForge does not run AlphaForge backtests.
 
-The handoff contract is intentionally narrow: SignalForge generates a valid `signal.csv`; AlphaForge validates that file, maps `signal_binary` to long/flat target positions, and runs the research validation/backtest workflow.
+The v0.1 handoff contract is intentionally narrow: SignalForge generates a valid `signal.csv`; AlphaForge validates that file, maps `signal_binary` to long/flat target positions, and runs the research validation/backtest workflow.
+
+The v0.2 semantics define the next shared vocabulary for long/flat/short-capable signal adapters, but they do not yet alter the v0.1 `custom_signal` runtime behavior.
