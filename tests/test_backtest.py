@@ -179,8 +179,8 @@ def test_signed_execution_semantics_support_short_returns() -> None:
 
     assert equity_curve["target_position"].tolist() == [-1.0, -1.0, 0.0]
     assert equity_curve["position"].tolist() == [0.0, -1.0, -1.0]
-    assert equity_curve["close_return"].tolist() == [0.0, -0.10, -0.10]
-    assert equity_curve["strategy_return"].tolist() == [0.0, 0.10, 0.10]
+    assert equity_curve["close_return"].tolist() == pytest.approx([0.0, -0.10, -0.10])
+    assert equity_curve["strategy_return"].tolist() == pytest.approx([0.0, 0.10, 0.10])
     assert equity_curve.iloc[-1]["equity"] == pytest.approx(1210.0)
     assert trades.shape[0] == 1
     assert trades.iloc[0]["entry_target_position"] == -1.0
@@ -201,7 +201,7 @@ def test_signed_execution_semantics_charges_turnover_for_reversal() -> None:
 
     assert equity_curve["position"].tolist() == [0.0, 1.0, -1.0, 0.0]
     assert equity_curve["turnover"].tolist() == [0.0, 1.0, 2.0, 1.0]
-    assert equity_curve["strategy_return"].tolist() == [0.0, 0.09, 0.08, -0.01]
+    assert equity_curve["strategy_return"].tolist() == pytest.approx([0.0, 0.09, 0.08, -0.01])
     assert trades.shape[0] == 2
     assert trades.iloc[0]["entry_target_position"] == 1.0
     assert trades.iloc[1]["entry_target_position"] == -1.0
