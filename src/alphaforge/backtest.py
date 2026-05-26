@@ -1,8 +1,8 @@
 """Canonical execution semantics and runtime artifact contracts.
 
-This module owns the MVP long-flat execution law for AlphaForge. Strategies
-emit next-bar target positions, while this module decides how those targets
-become realized positions, turnover, costs, equity, and trade records.
+This module owns AlphaForge's close-to-close execution laws. Strategies emit
+next-bar target positions, while this module decides how those targets become
+realized positions, turnover, costs, equity, and trade records.
 """
 
 from __future__ import annotations
@@ -29,36 +29,59 @@ BACKTEST_EQUITY_CURVE_COLUMNS = (
 )
 
 BACKTEST_TRADE_LOG_COLUMNS = tuple(TradeRecord.__annotations__.keys())
-EXECUTION_SEMANTICS = "legacy_close_to_close_lagged"
+LEGACY_EXECUTION_SEMANTICS = "legacy_close_to_close_lagged"
+SIGNED_EXECUTION_SEMANTICS = "signed_close_to_close_lagged"
+EXECUTION_SEMANTICS = LEGACY_EXECUTION_SEMANTICS
+SUPPORTED_EXECUTION_SEMANTICS = (LEGACY_EXECUTION_SEMANTICS, SIGNED_EXECUTION_SEMANTICS)
 
 
-def build_execution_semantics_metadata() -> dict[str, object]:
-    """Describe the canonical execution law used by the current backtest."""
-    return {
-        "execution_semantics": EXECUTION_SEMANTICS,
-        "position_rule": "position[t] = target_position[t-1]",
-        "return_rule": "close_to_close",
-        "position_bounds": [0.0, 1.0],
-        "supports_shorting": False,
-        "supports_leverage": False,
-    }
+def build_execution_semantics_metadata(execution_semantics: str = LEGACY_EXECUTION_SEMANTICS) -> dict[str, object]:
+    """Describe an AlphaForge close-to-close execution law."""
+    if execution_semantics == LEGACY_EXECUTION_SEMANTICS:
+        return {
+            "execution_semantics": LEGACY_EXECUTION_SEMANTICS,
+            "position_rule": "position[t] = target_position[t-1]",
+            "return_rule": "close_to_close",
+            "position_bounds": [0.0, 1.0],
+            "supports_shorting": False,
+            "supports_leverage": False,
+        }
+    if execution_semantics == SIGNED_EXECUTION_SEMANTICS:
+        return {
+            "execution_semantics": SIGNED_EXECUTION_SEMANTICS,
+            "position_rule": "position[t] = target_position[t-1]",
+            "return_rule": "close_to_close",
+            "position_bounds": [-1.0, 1.0],
+            "supports_shorting": True,
+            "supports_leverage": False,
+        }
+    raise ValueError(f"Unsupported execution_semantics {execution_semantics!r}")
 
 
 def run_backtest(
     market_data: pd.DataFrame,
     target_positions: pd.Series | Sequence[float],
     config: BacktestConfig,
+    *,
+    execution_semantics: str = LEGACY_EXECUTION_SEMANTICS,
 ) -> tuple[EquityCurveFrame, pd.DataFrame]:
-    """Run the canonical MVP long-flat backtest on validated market data.
+    """Run a close-to-close backtest on validated market data.
 
     Strategy outputs are interpreted as target positions for the next tradable
     interval. This execution layer applies a one-bar lag, computes
     close-to-close returns, charges turnover-based fee and slippage costs, and
     compounds equity multiplicatively from the configured initial capital.
+
+    The legacy semantics preserve the original long/flat clipping behavior.
+    The signed semantics validate target positions in ``[-1.0, 1.0]`` and can
+    realize long, flat, and short positions without leverage.
     """
+    if execution_semantics not in SUPPORTED_EXECUTION_SEMANTICS:
+        raise ValueError(f"Unsupported execution_semantics {execution_semantics!r}")
+
     frame = market_data.copy()
     coerced_target_positions = _coerce_target_positions(target_positions, frame.index)
-    frame["target_position"] = coerced_target_positions.astype(float).fillna(0.0).clip(lower=0.0, upper=1.0)
+    frame["target_position"] = _normalize_target_positions(coerced_target_positions, execution_semantics)
     frame["position"] = frame["target_position"].shift(1).fillna(0.0)
     frame["close_return"] = frame["close"].pct_change().fillna(0.0)
     frame["turnover"] = frame["position"].diff().abs().fillna(frame["position"].abs())
@@ -66,9 +89,21 @@ def run_backtest(
     frame["strategy_return"] = (frame["position"] * frame["close_return"]) - trading_cost
     frame["equity"] = config.initial_capital * (1.0 + frame["strategy_return"]).cumprod()
 
-    trades = _extract_trades(frame)
+    if execution_semantics == SIGNED_EXECUTION_SEMANTICS:
+        trades = _extract_signed_trades(frame)
+    else:
+        trades = _extract_trades(frame)
     trade_frame = pd.DataFrame([trade.__dict__ for trade in trades], columns=list(BACKTEST_TRADE_LOG_COLUMNS))
     return frame.reindex(columns=BACKTEST_EQUITY_CURVE_COLUMNS), trade_frame
+
+
+def _normalize_target_positions(target_positions: pd.Series, execution_semantics: str) -> pd.Series:
+    normalized = target_positions.astype(float).fillna(0.0)
+    if execution_semantics == LEGACY_EXECUTION_SEMANTICS:
+        return normalized.clip(lower=0.0, upper=1.0)
+    if (normalized < -1.0).any() or (normalized > 1.0).any():
+        raise ValueError("target_positions must be within [-1.0, 1.0] for signed execution semantics")
+    return normalized
 
 
 def _coerce_target_positions(target_positions: pd.Series | Sequence[float], data_index: pd.Index) -> pd.Series:
@@ -91,7 +126,7 @@ def _coerce_target_positions(target_positions: pd.Series | Sequence[float], data
 
 
 def _extract_trades(frame: pd.DataFrame) -> list[TradeRecord]:
-    """Extract runtime trade records from realized positions.
+    """Extract runtime trade records from realized long-only positions.
 
     A trade starts when realized position changes from flat to long, and ends
     when realized position changes from long to flat. Any open position is
@@ -191,3 +226,45 @@ def _extract_trades(frame: pd.DataFrame) -> list[TradeRecord]:
         )
         for row in trade_frame.itertuples(index=False)
     ]
+
+
+def _extract_signed_trades(frame: pd.DataFrame) -> list[TradeRecord]:
+    """Extract trade records from signed long/short realized positions."""
+    if frame.empty:
+        return []
+
+    position = frame["position"].astype(float)
+    active_mask = position.ne(0.0)
+    if not bool(active_mask.any()):
+        return []
+
+    previous_position = position.shift(1, fill_value=0.0)
+    new_segment_mask = active_mask & (
+        previous_position.eq(0.0) | (position.gt(0.0) != previous_position.gt(0.0))
+    )
+    trade_ids = new_segment_mask.cumsum().where(active_mask, 0).astype(int)
+
+    trades: list[TradeRecord] = []
+    for trade_id in range(1, int(trade_ids.max()) + 1):
+        trade_rows = frame.loc[trade_ids == trade_id].copy()
+        if trade_rows.empty:
+            continue
+        first_row = trade_rows.iloc[0]
+        last_row = trade_rows.iloc[-1]
+        gross_return = float((1.0 + (trade_rows["position"].astype(float) * trade_rows["close_return"].astype(float))).prod() - 1.0)
+        net_return = float((1.0 + trade_rows["strategy_return"].astype(float)).prod() - 1.0)
+        trades.append(
+            TradeRecord(
+                entry_datetime=str(first_row["datetime"]),
+                exit_datetime=str(last_row["datetime"]),
+                entry_price=float(first_row["close"]),
+                exit_price=float(last_row["close"]),
+                holding_period=int(len(trade_rows)),
+                trade_gross_return=gross_return,
+                trade_net_return=net_return,
+                cost_return_contribution=gross_return - net_return,
+                entry_target_position=float(first_row["position"]),
+                exit_target_position=float(last_row["target_position"]),
+            )
+        )
+    return trades
