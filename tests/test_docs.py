@@ -63,3 +63,13 @@ def test_phase_2_signal_adapter_doc_names_target_weight_boundary() -> None:
     assert "target_position" in content
     assert "between `0.0` and `1.0`" in content
     assert "silently clipped" in content
+
+
+def test_phase_3_signed_runtime_doc_names_execution_boundary() -> None:
+    content = (ROOT / "docs" / "releases" / "phase-3-signed-backtest-runtime.md").read_text(encoding="utf-8")
+
+    assert "signed_close_to_close_lagged" in content
+    assert "legacy_close_to_close_lagged" in content
+    assert "[-1.0, 1.0]" in content
+    assert "strategy_return[t] = position[t] * close_return[t]" in content
+    assert "Existing CLI paths still call the default legacy runtime" in content
