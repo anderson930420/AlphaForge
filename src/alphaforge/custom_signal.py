@@ -12,16 +12,30 @@ from pathlib import Path
 import pandas as pd
 
 
-REQUIRED_SIGNAL_COLUMNS = (
+COMMON_SIGNAL_COLUMNS = (
     "datetime",
     "available_at",
     "symbol",
     "signal_name",
-    "signal_value",
-    "signal_binary",
     "source",
 )
+V1_SIGNAL_COLUMNS = COMMON_SIGNAL_COLUMNS + (
+    "signal_value",
+    "signal_binary",
+)
+V2_SIGNAL_COLUMNS = COMMON_SIGNAL_COLUMNS + (
+    "score",
+    "direction",
+    "target_weight",
+)
+REQUIRED_SIGNAL_COLUMNS = V1_SIGNAL_COLUMNS
 MISSING_SIGNAL_POLICY = "flat"
+SIGNAL_CONTRACT_V1 = "v0.1"
+SIGNAL_CONTRACT_V2 = "v0.2"
+TARGET_COLUMN_BY_CONTRACT_VERSION = {
+    SIGNAL_CONTRACT_V1: "signal_binary",
+    SIGNAL_CONTRACT_V2: "target_weight",
+}
 
 
 def load_custom_signal_positions(
@@ -30,22 +44,25 @@ def load_custom_signal_positions(
     symbol: str | None = None,
     signal_name: str | None = None,
 ) -> tuple[pd.Series, dict[str, object]]:
-    signal_frame = _load_signal_frame(signal_file)
-    signal_frame = _coerce_signal_frame(signal_frame)
+    signal_frame, contract_version = _load_signal_frame(signal_file)
+    signal_frame = _coerce_signal_frame(signal_frame, contract_version)
     signal_frame, selected_signal_name = _select_signal_name(signal_frame, signal_name)
     target_symbol = _resolve_target_symbol(signal_frame, market_data, symbol)
     signal_frame = _filter_and_validate_symbol(signal_frame, target_symbol)
     market_datetimes = _extract_market_datetimes(market_data)
     _validate_market_alignment(signal_frame, market_datetimes)
 
-    signal_binary_by_datetime = signal_frame.set_index("datetime")["signal_binary"].astype(float)
-    target_position = signal_binary_by_datetime.reindex(market_datetimes, fill_value=0.0).astype(float)
+    target_column = TARGET_COLUMN_BY_CONTRACT_VERSION[contract_version]
+    target_by_datetime = signal_frame.set_index("datetime")[target_column].astype(float)
+    target_position = target_by_datetime.reindex(market_datetimes, fill_value=0.0).astype(float)
     target_position = pd.Series(target_position.to_numpy(dtype=float), index=market_data.index, name="target_position")
 
     metadata: dict[str, object] = {
         "symbol": target_symbol,
         "signal_row_count": int(len(signal_frame)),
         "missing_signal_policy": MISSING_SIGNAL_POLICY,
+        "signal_contract_version": contract_version,
+        "target_position_source_column": target_column,
     }
     if selected_signal_name is not None:
         metadata["signal_name"] = selected_signal_name
@@ -55,21 +72,35 @@ def load_custom_signal_positions(
     return target_position, metadata
 
 
-def _load_signal_frame(signal_file: Path | str) -> pd.DataFrame:
+def _load_signal_frame(signal_file: Path | str) -> tuple[pd.DataFrame, str]:
     signal_path = Path(signal_file)
     frame = pd.read_csv(signal_path)
     renamed = frame.rename(columns={name: name.strip().lower() for name in frame.columns})
-    missing = [column for column in REQUIRED_SIGNAL_COLUMNS if column not in renamed.columns]
+    contract_version = _detect_signal_contract_version(renamed)
+    required_columns = V2_SIGNAL_COLUMNS if contract_version == SIGNAL_CONTRACT_V2 else V1_SIGNAL_COLUMNS
+    missing = [column for column in required_columns if column not in renamed.columns]
     if missing:
-        raise ValueError(f"Missing required signal columns: {missing}")
-    return renamed[list(REQUIRED_SIGNAL_COLUMNS)].copy()
+        raise ValueError(f"Missing required {contract_version} signal columns: {missing}")
+    return renamed[list(required_columns)].copy(), contract_version
 
 
-def _coerce_signal_frame(signal_frame: pd.DataFrame) -> pd.DataFrame:
+def _detect_signal_contract_version(frame: pd.DataFrame) -> str:
+    if "target_weight" in frame.columns:
+        return SIGNAL_CONTRACT_V2
+    return SIGNAL_CONTRACT_V1
+
+
+def _coerce_signal_frame(signal_frame: pd.DataFrame, contract_version: str) -> pd.DataFrame:
     cleaned = signal_frame.copy()
     cleaned["datetime"] = _normalize_daily_datetimes(cleaned["datetime"])
     cleaned["available_at"] = _normalize_daily_datetimes(cleaned["available_at"])
-    cleaned["signal_binary"] = pd.to_numeric(cleaned["signal_binary"], errors="raise")
+
+    if contract_version == SIGNAL_CONTRACT_V2:
+        cleaned["score"] = pd.to_numeric(cleaned["score"], errors="raise")
+        cleaned["direction"] = pd.to_numeric(cleaned["direction"], errors="raise")
+        cleaned["target_weight"] = pd.to_numeric(cleaned["target_weight"], errors="raise")
+    else:
+        cleaned["signal_binary"] = pd.to_numeric(cleaned["signal_binary"], errors="raise")
 
     if cleaned["datetime"].isna().any():
         raise ValueError("datetime is required")
@@ -77,15 +108,37 @@ def _coerce_signal_frame(signal_frame: pd.DataFrame) -> pd.DataFrame:
         raise ValueError("available_at is required")
     if cleaned["symbol"].isna().any():
         raise ValueError("symbol is required")
-    if cleaned["signal_binary"].isna().any():
-        raise ValueError("signal_binary is required")
+    if contract_version == SIGNAL_CONTRACT_V2:
+        _validate_v02_signal_columns(cleaned)
+    else:
+        _validate_v01_signal_columns(cleaned)
     if cleaned.duplicated(subset=["datetime", "symbol", "signal_name"]).any():
         raise ValueError("duplicate datetime-symbol-signal_name rows are not allowed")
     if (cleaned["available_at"] > cleaned["datetime"]).any():
         raise ValueError("available_at must be less than or equal to datetime")
-    if not cleaned["signal_binary"].isin([0, 1]).all():
-        raise ValueError("signal_binary must be binary: 0 or 1")
     return cleaned
+
+
+def _validate_v01_signal_columns(signal_frame: pd.DataFrame) -> None:
+    if signal_frame["signal_binary"].isna().any():
+        raise ValueError("signal_binary is required")
+    if not signal_frame["signal_binary"].isin([0, 1]).all():
+        raise ValueError("signal_binary must be binary: 0 or 1")
+
+
+def _validate_v02_signal_columns(signal_frame: pd.DataFrame) -> None:
+    if signal_frame["score"].isna().any():
+        raise ValueError("score is required")
+    if signal_frame["direction"].isna().any():
+        raise ValueError("direction is required")
+    if signal_frame["target_weight"].isna().any():
+        raise ValueError("target_weight is required")
+    if not signal_frame["direction"].isin([-1, 0, 1]).all():
+        raise ValueError("direction must be ternary: -1, 0, or 1")
+    if (signal_frame["target_weight"] < 0.0).any():
+        raise ValueError("negative target_weight is not supported by the current long-only runtime")
+    if (signal_frame["target_weight"] > 1.0).any():
+        raise ValueError("target_weight must be less than or equal to 1.0 for the current runtime")
 
 
 def _select_signal_name(signal_frame: pd.DataFrame, signal_name: str | None) -> tuple[pd.DataFrame, str | None]:

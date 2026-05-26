@@ -53,6 +53,8 @@ def test_load_custom_signal_positions_returns_aligned_target_positions(tmp_path:
         "symbol": "2330",
         "signal_row_count": 3,
         "missing_signal_policy": "flat",
+        "signal_contract_version": "v0.1",
+        "target_position_source_column": "signal_binary",
         "signal_name": "demo_signal",
         "source": "SignalForge",
     }
@@ -79,6 +81,143 @@ def test_signal_binary_maps_to_float_target_position(tmp_path: Path) -> None:
 
     assert target_position.dtype == float
     assert target_position.tolist() == [0.0, 1.0, 1.0]
+
+
+def test_v02_target_weight_signal_maps_to_float_target_position(tmp_path: Path) -> None:
+    market_data = _build_market_data()
+    signal_file = _write_signal_csv(
+        tmp_path,
+        pd.DataFrame(
+            {
+                "datetime": ["2024-01-01", "2024-01-02", "2024-01-03"],
+                "available_at": ["2023-12-31", "2024-01-01", "2024-01-02"],
+                "symbol": ["2330", "2330", "2330"],
+                "signal_name": ["demo_v02"] * 3,
+                "score": [0.3, 0.0, 0.8],
+                "direction": [1, 0, 1],
+                "target_weight": [0.25, 0.0, 0.75],
+                "source": ["SignalForge"] * 3,
+            }
+        ),
+    )
+
+    target_position, metadata = load_custom_signal_positions(signal_file, market_data)
+
+    assert target_position.tolist() == [0.25, 0.0, 0.75]
+    assert metadata["signal_contract_version"] == "v0.2"
+    assert metadata["target_position_source_column"] == "target_weight"
+    assert metadata["signal_name"] == "demo_v02"
+
+
+def test_v02_missing_signal_dates_default_to_flat(tmp_path: Path) -> None:
+    market_data = _build_market_data()
+    signal_file = _write_signal_csv(
+        tmp_path,
+        pd.DataFrame(
+            {
+                "datetime": ["2024-01-03"],
+                "available_at": ["2024-01-02"],
+                "symbol": ["2330"],
+                "signal_name": ["demo_v02"],
+                "score": [0.8],
+                "direction": [1],
+                "target_weight": [0.5],
+                "source": ["SignalForge"],
+            }
+        ),
+    )
+
+    target_position, metadata = load_custom_signal_positions(signal_file, market_data)
+
+    assert target_position.tolist() == [0.0, 0.0, 0.5]
+    assert metadata["missing_signal_policy"] == "flat"
+    assert metadata["signal_contract_version"] == "v0.2"
+
+
+def test_v02_negative_target_weight_fails_until_short_runtime_exists(tmp_path: Path) -> None:
+    market_data = _build_market_data()
+    signal_file = _write_signal_csv(
+        tmp_path,
+        pd.DataFrame(
+            {
+                "datetime": ["2024-01-01"],
+                "available_at": ["2023-12-31"],
+                "symbol": ["2330"],
+                "signal_name": ["demo_v02"],
+                "score": [-0.8],
+                "direction": [-1],
+                "target_weight": [-0.25],
+                "source": ["SignalForge"],
+            }
+        ),
+    )
+
+    with pytest.raises(ValueError, match="negative target_weight is not supported"):
+        load_custom_signal_positions(signal_file, market_data)
+
+
+def test_v02_target_weight_above_one_fails_for_current_runtime(tmp_path: Path) -> None:
+    market_data = _build_market_data()
+    signal_file = _write_signal_csv(
+        tmp_path,
+        pd.DataFrame(
+            {
+                "datetime": ["2024-01-01"],
+                "available_at": ["2023-12-31"],
+                "symbol": ["2330"],
+                "signal_name": ["demo_v02"],
+                "score": [1.2],
+                "direction": [1],
+                "target_weight": [1.1],
+                "source": ["SignalForge"],
+            }
+        ),
+    )
+
+    with pytest.raises(ValueError, match="target_weight must be less than or equal to 1.0"):
+        load_custom_signal_positions(signal_file, market_data)
+
+
+def test_v02_non_ternary_direction_fails(tmp_path: Path) -> None:
+    market_data = _build_market_data()
+    signal_file = _write_signal_csv(
+        tmp_path,
+        pd.DataFrame(
+            {
+                "datetime": ["2024-01-01"],
+                "available_at": ["2023-12-31"],
+                "symbol": ["2330"],
+                "signal_name": ["demo_v02"],
+                "score": [0.3],
+                "direction": [2],
+                "target_weight": [0.25],
+                "source": ["SignalForge"],
+            }
+        ),
+    )
+
+    with pytest.raises(ValueError, match="direction must be ternary"):
+        load_custom_signal_positions(signal_file, market_data)
+
+
+def test_v02_missing_required_column_fails_with_contract_version(tmp_path: Path) -> None:
+    signal_file = _write_signal_csv(
+        tmp_path,
+        pd.DataFrame(
+            {
+                "datetime": ["2024-01-01"],
+                "available_at": ["2023-12-31"],
+                "symbol": ["2330"],
+                "signal_name": ["demo_v02"],
+                "score": [0.3],
+                "target_weight": [0.25],
+                "source": ["SignalForge"],
+            }
+        ),
+    )
+
+    with pytest.raises(ValueError, match="Missing required v0.2 signal columns: \['direction'\]"):
+        load_custom_signal_positions(signal_file, _build_market_data())
 
 
 @pytest.mark.parametrize(
