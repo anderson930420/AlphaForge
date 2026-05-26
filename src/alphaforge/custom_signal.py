@@ -135,10 +135,8 @@ def _validate_v02_signal_columns(signal_frame: pd.DataFrame) -> None:
         raise ValueError("target_weight is required")
     if not signal_frame["direction"].isin([-1, 0, 1]).all():
         raise ValueError("direction must be ternary: -1, 0, or 1")
-    if (signal_frame["target_weight"] < 0.0).any():
-        raise ValueError("negative target_weight is not supported by the current long-only runtime")
-    if (signal_frame["target_weight"] > 1.0).any():
-        raise ValueError("target_weight must be less than or equal to 1.0 for the current runtime")
+    if (signal_frame["target_weight"] < -1.0).any() or (signal_frame["target_weight"] > 1.0).any():
+        raise ValueError("target_weight must be within [-1.0, 1.0]")
 
 
 def _select_signal_name(signal_frame: pd.DataFrame, signal_name: str | None) -> tuple[pd.DataFrame, str | None]:
