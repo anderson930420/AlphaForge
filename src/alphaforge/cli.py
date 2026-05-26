@@ -5,7 +5,10 @@ import importlib
 import json
 from pathlib import Path
 
+import pandas as pd
+
 from . import config
+from .open_asset_pricing import OAPQuantilePolicy, build_oap_v02_signal_frame
 from .backtest import LEGACY_EXECUTION_SEMANTICS, SUPPORTED_EXECUTION_SEMANTICS
 from .experiment_runner import (
     run_experiment_with_artifacts,
@@ -217,6 +220,25 @@ def build_parser() -> argparse.ArgumentParser:
         default=LEGACY_EXECUTION_SEMANTICS,
     )
     twse_search.add_argument("--holdout-cutoff-date", type=str, default=None)
+
+    build_oap_signal = subparsers.add_parser(
+        "build-oap-signal",
+        help="Build AlphaForge v0.2 signal.csv from an Open Asset Pricing-style characteristic CSV",
+    )
+    build_oap_signal.add_argument("--input", required=True, type=Path)
+    build_oap_signal.add_argument("--output", required=True, type=Path)
+    build_oap_signal.add_argument("--characteristic", required=True)
+    build_oap_signal.add_argument("--date-col", default="date")
+    build_oap_signal.add_argument("--asset-id-col", default="asset_id")
+    build_oap_signal.add_argument("--available-at-col", default=None)
+    build_oap_signal.add_argument("--signal-name", default=None)
+    build_oap_signal.add_argument("--source", default="OpenAssetPricing")
+    build_oap_signal.add_argument("--long-quantile", type=float, default=0.8)
+    build_oap_signal.add_argument("--short-quantile", type=float, default=0.2)
+    build_oap_signal.add_argument("--gross-long-weight", type=float, default=1.0)
+    build_oap_signal.add_argument("--gross-short-weight", type=float, default=-1.0)
+    build_oap_signal.add_argument("--invert-score", action="store_true")
+
     return parser
 
 
@@ -242,6 +264,30 @@ def main() -> None:
     args = parser.parse_args()
 
     try:
+        if args.command == "build-oap-signal":
+            characteristics = pd.read_csv(args.input)
+            policy = OAPQuantilePolicy(
+                long_quantile=args.long_quantile,
+                short_quantile=args.short_quantile,
+                gross_long_weight=args.gross_long_weight,
+                gross_short_weight=args.gross_short_weight,
+            )
+            signal_frame = build_oap_v02_signal_frame(
+                characteristics,
+                characteristic=args.characteristic,
+                date_col=args.date_col,
+                asset_id_col=args.asset_id_col,
+                available_at_col=args.available_at_col,
+                signal_name=args.signal_name,
+                source=args.source,
+                policy=policy,
+                invert_score=args.invert_score,
+            )
+            args.output.parent.mkdir(parents=True, exist_ok=True)
+            signal_frame.to_csv(args.output, index=False)
+            print(f"Wrote {len(signal_frame)} v0.2 signal rows to {args.output}")
+            return
+
         if args.command == "fetch-twse":
             TwseFetchRequest, fetch_stock_day_history, save_stock_day_history = _load_twse_client()
             frame = fetch_stock_day_history(
