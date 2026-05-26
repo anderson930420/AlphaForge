@@ -216,7 +216,7 @@ def test_v02_missing_required_column_fails_with_contract_version(tmp_path: Path)
         ),
     )
 
-    with pytest.raises(ValueError, match="Missing required v0.2 signal columns: \['direction'\]"):
+    with pytest.raises(ValueError, match=r"Missing required v0.2 signal columns: \['direction'\]"):
         load_custom_signal_positions(signal_file, _build_market_data())
 
 
