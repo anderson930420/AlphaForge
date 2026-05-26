@@ -43,3 +43,13 @@ def test_signalforge_docs_name_daily_datetime_policy() -> None:
     assert "daily trading-date" in content
     assert "does not utc-shift" in content
     assert "does not perform intraday timing validation" in content
+
+
+def test_signalforge_docs_name_v02_signal_semantics_boundary() -> None:
+    content = (ROOT / "docs" / "signalforge_integration.md").read_text(encoding="utf-8").lower()
+
+    assert "signal semantics v0.2" in content
+    assert "target_weight" in content
+    assert "direction" in content
+    assert "current_weight -> target_weight" in content
+    assert "do not yet alter the v0.1 `custom_signal` runtime behavior" in content
