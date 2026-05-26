@@ -9,6 +9,7 @@ import pandas as pd
 
 from . import config
 from .open_asset_pricing import OAPQuantilePolicy, build_oap_v02_signal_frame
+from .signalforge_package import run_signalforge_v02_package_smoke
 from .backtest import LEGACY_EXECUTION_SEMANTICS, SUPPORTED_EXECUTION_SEMANTICS
 from .experiment_runner import (
     run_experiment_with_artifacts,
@@ -239,6 +240,16 @@ def build_parser() -> argparse.ArgumentParser:
     build_oap_signal.add_argument("--gross-short-weight", type=float, default=-1.0)
     build_oap_signal.add_argument("--invert-score", action="store_true")
 
+    smoke_signalforge_package = subparsers.add_parser(
+        "smoke-signalforge-package",
+        help="Validate and smoke-test a SignalForge v0.2 package through AlphaForge custom_signal",
+    )
+    smoke_signalforge_package.add_argument("--package", required=True, type=Path)
+    smoke_signalforge_package.add_argument("--initial-capital", type=float, default=config.INITIAL_CAPITAL)
+    smoke_signalforge_package.add_argument("--fee-rate", type=float, default=config.DEFAULT_FEE_RATE)
+    smoke_signalforge_package.add_argument("--slippage-rate", type=float, default=config.DEFAULT_SLIPPAGE_RATE)
+    smoke_signalforge_package.add_argument("--annualization-factor", type=int, default=config.DEFAULT_ANNUALIZATION)
+
     return parser
 
 
@@ -264,6 +275,33 @@ def main() -> None:
     args = parser.parse_args()
 
     try:
+        if args.command == "smoke-signalforge-package":
+            smoke_config = BacktestConfig(
+                initial_capital=args.initial_capital,
+                fee_rate=args.fee_rate,
+                slippage_rate=args.slippage_rate,
+                annualization_factor=args.annualization_factor,
+                execution_semantics="signed_close_to_close_lagged",
+            )
+            result = run_signalforge_v02_package_smoke(
+                args.package,
+                backtest_config=smoke_config,
+            )
+            summary = {
+                "status": "passed",
+                "package": str(result.package_dir),
+                "market_data_row_count": result.market_data_row_count,
+                "signal_row_count": result.signal_row_count,
+                "signal_contract_version": result.signal_metadata.get("signal_contract_version"),
+                "target_position_source_column": result.signal_metadata.get("target_position_source_column"),
+                "execution_semantics": "signed_close_to_close_lagged",
+                "equity_curve_rows": int(len(result.equity_curve)),
+                "trade_count": int(len(result.trades)),
+                "final_equity": float(result.equity_curve["equity"].iloc[-1]),
+            }
+            print(json.dumps(summary, indent=2, sort_keys=True))
+            return
+
         if args.command == "build-oap-signal":
             characteristics = pd.read_csv(args.input)
             policy = OAPQuantilePolicy(
