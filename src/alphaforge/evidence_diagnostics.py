@@ -97,8 +97,14 @@ def _run_cost_scenario(
         fee_rate=backtest_config.fee_rate * multiplier,
         slippage_rate=backtest_config.slippage_rate * multiplier,
         annualization_factor=backtest_config.annualization_factor,
+        execution_semantics=backtest_config.execution_semantics,
     )
-    equity_curve, trades = run_backtest(market_data, target_positions, scenario_config)
+    equity_curve, trades = run_backtest(
+        market_data,
+        target_positions,
+        scenario_config,
+        execution_semantics=scenario_config.execution_semantics,
+    )
     metrics = compute_metrics(equity_curve, trades, scenario_config.annualization_factor)
     return CostScenarioSummary(
         annualized_return=float(metrics.annualized_return),
