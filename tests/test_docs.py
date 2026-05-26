@@ -53,3 +53,13 @@ def test_signalforge_docs_name_v02_signal_semantics_boundary() -> None:
     assert "direction" in content
     assert "current_weight -> target_weight" in content
     assert "do not yet alter the v0.1 `custom_signal` runtime behavior" in content
+
+
+def test_phase_2_signal_adapter_doc_names_target_weight_boundary() -> None:
+    content = (ROOT / "docs" / "releases" / "phase-2-v02-signal-adapter.md").read_text(encoding="utf-8")
+
+    assert "v0.2 `signal.csv`" in content
+    assert "target_weight" in content
+    assert "target_position" in content
+    assert "between `0.0` and `1.0`" in content
+    assert "silently clipped" in content
