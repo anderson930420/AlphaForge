@@ -12,7 +12,7 @@ from pathlib import Path
 import pandas as pd
 
 from . import config
-from .backtest import build_execution_semantics_metadata
+from .backtest import LEGACY_EXECUTION_SEMANTICS, build_execution_semantics_metadata
 from .policy_types import ParameterGrid
 from .schemas import BacktestConfig, ResearchPeriod, StrategySpec
 from .strategy.base import Strategy
@@ -26,6 +26,7 @@ def resolve_backtest_config(backtest_config: BacktestConfig | None) -> BacktestC
         fee_rate=config.DEFAULT_FEE_RATE,
         slippage_rate=config.DEFAULT_SLIPPAGE_RATE,
         annualization_factor=config.DEFAULT_ANNUALIZATION,
+        execution_semantics=LEGACY_EXECUTION_SEMANTICS,
     )
 
 
@@ -34,10 +35,19 @@ def workflow_root(output_dir: Path | None, experiment_name: str) -> Path | None:
     return (output_dir / experiment_name) if output_dir is not None else None
 
 
-def build_execution_metadata(market_data: pd.DataFrame, benchmark_summary: dict[str, float]) -> dict[str, object]:
+def build_execution_metadata(
+    market_data: pd.DataFrame,
+    benchmark_summary: dict[str, float],
+    backtest_config: BacktestConfig | None = None,
+) -> dict[str, object]:
     """Assemble runner-local execution metadata from canonical owners."""
+    execution_semantics = (
+        backtest_config.execution_semantics
+        if backtest_config is not None
+        else LEGACY_EXECUTION_SEMANTICS
+    )
     metadata: dict[str, object] = {
-        **build_execution_semantics_metadata(),
+        **build_execution_semantics_metadata(execution_semantics),
         "missing_data_policy": market_data.attrs.get("missing_data_policy", ""),
         "benchmark_summary": benchmark_summary,
     }

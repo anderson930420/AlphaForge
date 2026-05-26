@@ -33,6 +33,7 @@ class BacktestConfig:
     fee_rate: float
     slippage_rate: float
     annualization_factor: int = 252
+    execution_semantics: str = "legacy_close_to_close_lagged"
 
 
 @dataclass(frozen=True)

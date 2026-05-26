@@ -151,10 +151,15 @@ def _run_backtest_with_explicit_target_positions(
     metadata_overrides: dict[str, object] | None = None,
 ) -> ExperimentExecutionOutput:
     receipt: ArtifactReceipt | None = None
-    equity_curve, trades = run_backtest(market_data, target_positions, backtest_config)
+    equity_curve, trades = run_backtest(
+        market_data,
+        target_positions,
+        backtest_config,
+        execution_semantics=backtest_config.execution_semantics,
+    )
     metrics = compute_metrics(equity_curve, trades, backtest_config.annualization_factor)
     benchmark_summary = summarize_buy_and_hold(market_data, backtest_config.initial_capital)
-    metadata = build_execution_metadata(market_data, benchmark_summary)
+    metadata = build_execution_metadata(market_data, benchmark_summary, backtest_config)
     if metadata_overrides is not None:
         metadata.update(metadata_overrides)
     result = ExperimentResult(
@@ -714,6 +719,8 @@ def run_research_validation_protocol_with_details_workflow(
                 "fee_rate": backtest_config.fee_rate,
                 "slippage_rate": backtest_config.slippage_rate,
                 "annualization_factor": backtest_config.annualization_factor,
+        "execution_semantics": backtest_config.execution_semantics,
+                "execution_semantics": backtest_config.execution_semantics,
             },
             development_period=research_config.development_period,
             holdout_period=research_config.holdout_period,
@@ -836,6 +843,7 @@ def run_research_validation_protocol_with_details_workflow(
         "fee_rate": backtest_config.fee_rate,
         "slippage_rate": backtest_config.slippage_rate,
         "annualization_factor": backtest_config.annualization_factor,
+        "execution_semantics": backtest_config.execution_semantics,
     }
     selection_rule = "highest_development_score_after_configured_filters"
     frozen_plan = ResearchProtocolPlan(

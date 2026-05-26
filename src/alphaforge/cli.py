@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 
 from . import config
+from .backtest import LEGACY_EXECUTION_SEMANTICS, SUPPORTED_EXECUTION_SEMANTICS
 from .experiment_runner import (
     run_experiment_with_artifacts,
     run_research_validation_protocol_with_details,
@@ -209,6 +210,12 @@ def build_parser() -> argparse.ArgumentParser:
     twse_search.add_argument("--fee-rate", type=float, default=config.DEFAULT_FEE_RATE)
     twse_search.add_argument("--slippage-rate", type=float, default=config.DEFAULT_SLIPPAGE_RATE)
     twse_search.add_argument("--annualization-factor", type=int, default=config.DEFAULT_ANNUALIZATION)
+    twse_search.add_argument(
+        "--execution-semantics",
+        type=str,
+        choices=SUPPORTED_EXECUTION_SEMANTICS,
+        default=LEGACY_EXECUTION_SEMANTICS,
+    )
     twse_search.add_argument("--holdout-cutoff-date", type=str, default=None)
     return parser
 
@@ -222,6 +229,12 @@ def _add_common_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--fee-rate", type=float, default=config.DEFAULT_FEE_RATE)
     parser.add_argument("--slippage-rate", type=float, default=config.DEFAULT_SLIPPAGE_RATE)
     parser.add_argument("--annualization-factor", type=int, default=config.DEFAULT_ANNUALIZATION)
+    parser.add_argument(
+        "--execution-semantics",
+        type=str,
+        choices=SUPPORTED_EXECUTION_SEMANTICS,
+        default=LEGACY_EXECUTION_SEMANTICS,
+    )
 
 
 def main() -> None:
@@ -258,6 +271,7 @@ def main() -> None:
                 fee_rate=args.fee_rate,
                 slippage_rate=args.slippage_rate,
                 annualization_factor=args.annualization_factor,
+                execution_semantics=args.execution_semantics,
             )
             search_execution = run_search_with_details(
                 data_spec=data_spec,
@@ -292,6 +306,7 @@ def main() -> None:
             fee_rate=args.fee_rate,
             slippage_rate=args.slippage_rate,
             annualization_factor=args.annualization_factor,
+            execution_semantics=args.execution_semantics,
         )
 
         if args.command == "run":

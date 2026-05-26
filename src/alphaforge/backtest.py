@@ -63,7 +63,7 @@ def run_backtest(
     target_positions: pd.Series | Sequence[float],
     config: BacktestConfig,
     *,
-    execution_semantics: str = LEGACY_EXECUTION_SEMANTICS,
+    execution_semantics: str | None = None,
 ) -> tuple[EquityCurveFrame, pd.DataFrame]:
     """Run a close-to-close backtest on validated market data.
 
@@ -76,12 +76,13 @@ def run_backtest(
     The signed semantics validate target positions in ``[-1.0, 1.0]`` and can
     realize long, flat, and short positions without leverage.
     """
-    if execution_semantics not in SUPPORTED_EXECUTION_SEMANTICS:
-        raise ValueError(f"Unsupported execution_semantics {execution_semantics!r}")
+    resolved_execution_semantics = execution_semantics or config.execution_semantics
+    if resolved_execution_semantics not in SUPPORTED_EXECUTION_SEMANTICS:
+        raise ValueError(f"Unsupported execution_semantics {resolved_execution_semantics!r}")
 
     frame = market_data.copy()
     coerced_target_positions = _coerce_target_positions(target_positions, frame.index)
-    frame["target_position"] = _normalize_target_positions(coerced_target_positions, execution_semantics)
+    frame["target_position"] = _normalize_target_positions(coerced_target_positions, resolved_execution_semantics)
     frame["position"] = frame["target_position"].shift(1).fillna(0.0)
     frame["close_return"] = frame["close"].pct_change().fillna(0.0)
     frame["turnover"] = frame["position"].diff().abs().fillna(frame["position"].abs())
@@ -89,7 +90,7 @@ def run_backtest(
     frame["strategy_return"] = (frame["position"] * frame["close_return"]) - trading_cost
     frame["equity"] = config.initial_capital * (1.0 + frame["strategy_return"]).cumprod()
 
-    if execution_semantics == SIGNED_EXECUTION_SEMANTICS:
+    if resolved_execution_semantics == SIGNED_EXECUTION_SEMANTICS:
         trades = _extract_signed_trades(frame)
     else:
         trades = _extract_trades(frame)
