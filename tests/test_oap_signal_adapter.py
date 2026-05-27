@@ -139,4 +139,3 @@ def test_oap_signal_adapter_output_can_be_consumed_by_custom_signal_loader(tmp_p
     assert target_position.tolist() == [1.0]
     assert metadata["signal_contract_version"] == "v0.2"
     assert metadata["target_position_source_column"] == "target_weight"
-}
