@@ -62,6 +62,10 @@ def test_run_oap_mom12m_pipeline_cli_writes_signal_and_prints_summary(tmp_path, 
             "AAA",
             "--initial-capital",
             "1000",
+            "--fee-rate",
+            "0",
+            "--slippage-rate",
+            "0",
         ],
     )
 
