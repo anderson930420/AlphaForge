@@ -1,0 +1,6 @@
+{
+  "dataset_name": "market_data.csv",
+  "source_type": "local_ohlcv_csv",
+  "row_count": 4,
+  "issues": []
+}

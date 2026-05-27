@@ -1,0 +1,19 @@
+{
+  "alpha_forge_strategy": "custom_signal",
+  "contains_backtest_results": false,
+  "contains_performance_metrics": false,
+  "data_quality_report_file": "data_quality_report.json",
+  "end_date": "2025-01-07",
+  "expected_alpha_forge_execution_semantics": "signed_close_to_close_lagged",
+  "generated_for": "sample_data/signalforge/demo_v02_package",
+  "generator": "SignalForge",
+  "market_data_file": "market_data.csv",
+  "package_name": "alphaforge_v02_sample_data_package",
+  "package_version": "1.0.0",
+  "row_count": 4,
+  "schema_version": "v0.2",
+  "signal_contract_file": "signal_contract.yaml",
+  "signal_file": "signal.csv",
+  "start_date": "2025-01-02",
+  "symbol": "SFDEMO"
+}
