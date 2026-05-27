@@ -9,8 +9,9 @@ import pandas as pd
 
 from . import config
 from .open_asset_pricing import OAPQuantilePolicy, build_oap_v02_signal_frame
+from .oap_mom12m_pipeline import run_oap_mom12m_pipeline_smoke
 from .signalforge_package import run_signalforge_v02_package_smoke
-from .backtest import LEGACY_EXECUTION_SEMANTICS, SUPPORTED_EXECUTION_SEMANTICS
+from .backtest import LEGACY_EXECUTION_SEMANTICS, SIGNED_EXECUTION_SEMANTICS, SUPPORTED_EXECUTION_SEMANTICS
 from .experiment_runner import (
     run_experiment_with_artifacts,
     run_research_validation_protocol_with_details,
@@ -98,11 +99,7 @@ def build_parser() -> argparse.ArgumentParser:
     validate_search.add_argument("--permutations", type=int, default=25)
     validate_search.add_argument("--permutation-seed", type=int, default=42)
     validate_search.add_argument("--permutation-block-size", type=int, default=2)
-    validate_search.add_argument(
-        "--permutation-null-model",
-        type=str,
-        default="return_block_reconstruction",
-    )
+    validate_search.add_argument("--permutation-null-model", type=str, default="return_block_reconstruction")
     validate_search.add_argument("--permutation-scope", type=str, default="test")
 
     compare_strategies = subparsers.add_parser(
@@ -122,11 +119,7 @@ def build_parser() -> argparse.ArgumentParser:
     compare_strategies.add_argument("--permutations", type=int, default=25)
     compare_strategies.add_argument("--permutation-seed", type=int, default=42)
     compare_strategies.add_argument("--permutation-block-size", type=int, default=2)
-    compare_strategies.add_argument(
-        "--permutation-null-model",
-        type=str,
-        default="return_block_reconstruction",
-    )
+    compare_strategies.add_argument("--permutation-null-model", type=str, default="return_block_reconstruction")
     compare_strategies.add_argument("--permutation-scope", type=str, default="test")
 
     walk_forward = subparsers.add_parser("walk-forward", help="Run walk-forward validation for a selected strategy family")
@@ -165,11 +158,7 @@ def build_parser() -> argparse.ArgumentParser:
     research_validate.add_argument("--permutations", type=int, default=0)
     research_validate.add_argument("--seed", type=int, default=42)
     research_validate.add_argument("--block-size", type=int, default=2)
-    research_validate.add_argument(
-        "--permutation-null-model",
-        type=str,
-        default="return_block_reconstruction",
-    )
+    research_validate.add_argument("--permutation-null-model", type=str, default="return_block_reconstruction")
     research_validate.add_argument("--permutation-scope", type=str, default="development")
 
     permutation_test = subparsers.add_parser(
@@ -240,6 +229,20 @@ def build_parser() -> argparse.ArgumentParser:
     build_oap_signal.add_argument("--gross-short-weight", type=float, default=-1.0)
     build_oap_signal.add_argument("--invert-score", action="store_true")
 
+    run_oap_mom12m = subparsers.add_parser(
+        "run-oap-mom12m-pipeline",
+        help="Run the local OAP / JKP Mom12m pipeline smoke through AlphaForge",
+    )
+    run_oap_mom12m.add_argument("--characteristics", required=True, type=Path)
+    run_oap_mom12m.add_argument("--contract", required=True, type=Path)
+    run_oap_mom12m.add_argument("--market-data", required=True, type=Path)
+    run_oap_mom12m.add_argument("--signal-output", required=True, type=Path)
+    run_oap_mom12m.add_argument("--symbol", type=str, default=None)
+    run_oap_mom12m.add_argument("--initial-capital", type=float, default=config.INITIAL_CAPITAL)
+    run_oap_mom12m.add_argument("--fee-rate", type=float, default=config.DEFAULT_FEE_RATE)
+    run_oap_mom12m.add_argument("--slippage-rate", type=float, default=config.DEFAULT_SLIPPAGE_RATE)
+    run_oap_mom12m.add_argument("--annualization-factor", type=int, default=config.DEFAULT_ANNUALIZATION)
+
     smoke_signalforge_package = subparsers.add_parser(
         "smoke-signalforge-package",
         help="Validate and smoke-test a SignalForge v0.2 package through AlphaForge custom_signal",
@@ -275,6 +278,43 @@ def main() -> None:
     args = parser.parse_args()
 
     try:
+        if args.command == "run-oap-mom12m-pipeline":
+            market_data = pd.read_csv(args.market_data)
+            pipeline_config = BacktestConfig(
+                initial_capital=args.initial_capital,
+                fee_rate=args.fee_rate,
+                slippage_rate=args.slippage_rate,
+                annualization_factor=args.annualization_factor,
+                execution_semantics=SIGNED_EXECUTION_SEMANTICS,
+            )
+            result = run_oap_mom12m_pipeline_smoke(
+                characteristics_path=args.characteristics,
+                contract_path=args.contract,
+                market_data=market_data,
+                signal_output_path=args.signal_output,
+                symbol=args.symbol,
+                backtest_config=pipeline_config,
+            )
+            summary = {
+                "status": "passed",
+                "characteristics": str(args.characteristics),
+                "contract": str(args.contract),
+                "market_data": str(args.market_data),
+                "signal_output": str(result.signal_output_path),
+                "factor_rows": int(len(result.factor_frame)),
+                "signal_rows": int(len(result.signal_frame)),
+                "signal_contract_version": result.signal_metadata.get("signal_contract_version"),
+                "target_position_source_column": result.signal_metadata.get("target_position_source_column"),
+                "execution_semantics": SIGNED_EXECUTION_SEMANTICS,
+                "equity_curve_rows": int(len(result.equity_curve)),
+                "trade_count": int(len(result.trades)),
+                "final_equity": float(result.equity_curve["equity"].iloc[-1]),
+            }
+            if args.symbol is not None:
+                summary["symbol"] = args.symbol
+            print(json.dumps(summary, indent=2, sort_keys=True))
+            return
+
         if args.command == "smoke-signalforge-package":
             smoke_config = BacktestConfig(
                 initial_capital=args.initial_capital,
@@ -372,16 +412,7 @@ def main() -> None:
                 generate_best_report=args.generate_report,
                 holdout_cutoff_date=args.holdout_cutoff_date,
             )
-            print(
-                json.dumps(
-                    _build_search_summary(
-                        search_execution,
-                        data_output=data_output,
-                    ),
-                    indent=2,
-                    default=str,
-                )
-            )
+            print(json.dumps(_build_search_summary(search_execution, data_output=data_output), indent=2, default=str))
             return
 
         data_spec = DataSpec(path=args.data, symbol=args.symbol)
@@ -538,15 +569,7 @@ def main() -> None:
             generate_best_report=args.generate_report,
             holdout_cutoff_date=args.holdout_cutoff_date,
         )
-        print(
-            json.dumps(
-                _build_search_summary(
-                    search_execution,
-                ),
-                indent=2,
-                default=str,
-            )
-        )
+        print(json.dumps(_build_search_summary(search_execution), indent=2, default=str))
     except ValueError as exc:
         raise SystemExit(str(exc)) from exc
 
@@ -658,10 +681,7 @@ def _build_strategy_family_search_configs_from_args(args: argparse.Namespace) ->
     return configs
 
 
-def _build_search_summary(
-    search_execution,
-    data_output: Path | None = None,
-) -> dict:
+def _build_search_summary(search_execution, data_output: Path | None = None) -> dict:
     payload = _serialize_search_summary(search_execution.summary)
     if data_output is not None:
         payload["data_output"] = str(data_output)
