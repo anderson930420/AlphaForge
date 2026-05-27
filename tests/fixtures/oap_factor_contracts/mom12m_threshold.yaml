@@ -1,0 +1,43 @@
+version: alphaforge_oap_factor_contract_v0.1
+
+dataset:
+  name: open_asset_pricing
+  provider: jkp
+  release: unknown
+  frequency: monthly
+
+factor:
+  name: Mom12m
+  raw_column: Mom12m
+  value_column: factor_value
+  higher_is_better: true
+
+decision_rule:
+  type: threshold
+  long_threshold: 0.0
+  short_threshold: 0.0
+  long_when: greater_than
+  short_when: less_than
+
+weighting:
+  target_weight_mode: signed_unit
+  long_weight: 1.0
+  short_weight: -1.0
+  neutral_weight: 0.0
+
+timing:
+  datetime_col: date
+  available_at_policy: next_month
+  rebalance_frequency: monthly
+
+identity:
+  asset_id_col: permno
+  symbol_col: symbol
+
+validation:
+  require_unique_datetime_symbol: true
+  allow_missing_factor_value: false
+  allow_missing_return: true
+
+output:
+  schema: signal_csv_v0.2
