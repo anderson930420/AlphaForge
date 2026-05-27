@@ -42,6 +42,8 @@ def test_oap_signal_adapter_maps_threshold_factor_values_to_v02_signal_rows() ->
     signal_frame = build_oap_signal_frame_from_factor_frame(_factor_frame(), _contract())
 
     assert signal_frame.columns.tolist() == list(OAP_SIGNAL_COLUMNS)
+    assert signal_frame["datetime"].astype(str).unique().tolist() == ["2024-02-01"]
+    assert signal_frame["available_at"].astype(str).unique().tolist() == ["2024-02-01"]
     assert signal_frame["signal_name"].unique().tolist() == ["oap_Mom12m"]
     assert signal_frame["source"].unique().tolist() == ["open_asset_pricing:jkp"]
 
@@ -124,7 +126,7 @@ def test_oap_signal_adapter_output_can_be_consumed_by_custom_signal_loader(tmp_p
 
     market_data = pd.DataFrame(
         {
-            "datetime": ["2024-01-31"],
+            "datetime": ["2024-02-01"],
             "open": [10.0],
             "high": [10.0],
             "low": [10.0],
