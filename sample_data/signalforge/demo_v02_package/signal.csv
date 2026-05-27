@@ -1,0 +1,5 @@
+datetime,available_at,symbol,signal_name,score,direction,target_weight,source
+2025-01-02,2025-01-02,SFDEMO,sf_v02_demo,0.0,0,0.0,SignalForge
+2025-01-03,2025-01-03,SFDEMO,sf_v02_demo,1.25,1,1.0,SignalForge
+2025-01-06,2025-01-06,SFDEMO,sf_v02_demo,-1.0,-1,-1.0,SignalForge
+2025-01-07,2025-01-07,SFDEMO,sf_v02_demo,0.0,0,0.0,SignalForge
