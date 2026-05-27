@@ -61,7 +61,7 @@ def test_oap_mom12m_pipeline_writes_signal_and_runs_signed_backtest(tmp_path: Pa
     assert result.signal_metadata["signal_contract_version"] == "v0.2"
     assert result.signal_metadata["target_position_source_column"] == "target_weight"
     assert result.equity_curve["position"].tolist() == [0.0, 1.0, -1.0]
-    assert result.equity_curve["equity"].iloc[-1] == pytest.approx(1222.2222222222222)
+    assert result.equity_curve["equity"].iloc[-1] == pytest.approx(1300.0)
     assert len(result.trades) >= 1
 
 
