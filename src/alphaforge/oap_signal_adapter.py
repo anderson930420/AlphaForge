@@ -29,9 +29,10 @@ def build_oap_signal_frame_from_factor_frame(
 
     _validate_factor_frame_matches_contract(frame, contract)
 
+    effective_datetime = frame["available_at"]
     output = pd.DataFrame(
         {
-            "datetime": frame["datetime"],
+            "datetime": effective_datetime,
             "available_at": frame["available_at"],
             "symbol": frame["symbol"],
             "signal_name": signal_name or f"oap_{contract.factor['name']}",
@@ -120,3 +121,5 @@ def _validate_signal_frame(frame: pd.DataFrame) -> None:
         raise OAPSignalAdapterError("target_weight is required")
     if (frame["target_weight"] < -1.0).any() or (frame["target_weight"] > 1.0).any():
         raise OAPSignalAdapterError("target_weight must be within [-1.0, 1.0]")
+    if (frame["available_at"] > frame["datetime"]).any():
+        raise OAPSignalAdapterError("available_at must be less than or equal to datetime")
