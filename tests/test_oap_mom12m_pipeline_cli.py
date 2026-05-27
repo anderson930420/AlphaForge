@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 import pandas as pd
+import pytest
 
 from alphaforge.cli import main
 from alphaforge.open_asset_pricing import OAP_SIGNAL_COLUMNS
@@ -59,6 +60,8 @@ def test_run_oap_mom12m_pipeline_cli_writes_signal_and_prints_summary(tmp_path, 
             str(signal_output_path),
             "--symbol",
             "AAA",
+            "--initial-capital",
+            "1000",
         ],
     )
 
@@ -78,7 +81,7 @@ def test_run_oap_mom12m_pipeline_cli_writes_signal_and_prints_summary(tmp_path, 
     assert summary["execution_semantics"] == "signed_close_to_close_lagged"
     assert summary["equity_curve_rows"] == 3
     assert summary["trade_count"] >= 1
-    assert summary["final_equity"] == 1300.0
+    assert summary["final_equity"] == pytest.approx(1300.0)
 
     output = pd.read_csv(signal_output_path)
     assert output.columns.tolist() == list(OAP_SIGNAL_COLUMNS)
@@ -121,4 +124,4 @@ def test_run_oap_mom12m_pipeline_cli_supports_cost_arguments(tmp_path, monkeypat
 
     summary = json.loads(capsys.readouterr().out)
     assert summary["status"] == "passed"
-    assert summary["final_equity"] == 650.0
+    assert summary["final_equity"] == pytest.approx(650.0)
