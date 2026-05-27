@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -36,6 +37,7 @@ class CommandRunner(Protocol):
         text: bool = True,
         capture_output: bool = True,
         check: bool = False,
+        env: dict[str, str] | None = None,
     ) -> subprocess.CompletedProcess[str]:
         ...
 
@@ -96,7 +98,12 @@ def run_signalforge_e2e_smoke(
         str(package_dir),
         "--overwrite",
     ]
-    signalforge_result = _run_checked(runner, signalforge_command, cwd=signalforge_repo)
+    signalforge_result = _run_checked(
+        runner,
+        signalforge_command,
+        cwd=signalforge_repo,
+        pythonpath_repo=signalforge_repo,
+    )
 
     alphaforge_command = [
         sys.executable,
@@ -106,7 +113,12 @@ def run_signalforge_e2e_smoke(
         "--package",
         str(package_dir),
     ]
-    alphaforge_result = _run_checked(runner, alphaforge_command, cwd=alphaforge_repo)
+    alphaforge_result = _run_checked(
+        runner,
+        alphaforge_command,
+        cwd=alphaforge_repo,
+        pythonpath_repo=alphaforge_repo,
+    )
     alphaforge_summary = _parse_json_stdout(alphaforge_result.stdout, source="AlphaForge smoke CLI")
     _validate_alphaforge_summary(alphaforge_summary)
 
@@ -131,6 +143,7 @@ def _run_checked(
     command: Sequence[str],
     *,
     cwd: Path,
+    pythonpath_repo: Path | None = None,
 ) -> subprocess.CompletedProcess[str]:
     result = runner(
         command,
@@ -138,6 +151,7 @@ def _run_checked(
         text=True,
         capture_output=True,
         check=False,
+        env=_build_subprocess_env(pythonpath_repo),
     )
     if result.returncode != 0:
         raise RuntimeError(
@@ -149,6 +163,18 @@ def _run_checked(
             f"stderr:\n{result.stderr}"
         )
     return result
+
+
+def _build_subprocess_env(pythonpath_repo: Path | None) -> dict[str, str] | None:
+    if pythonpath_repo is None:
+        return None
+    env = os.environ.copy()
+    src_path = str((pythonpath_repo / "src").resolve())
+    existing_pythonpath = env.get("PYTHONPATH")
+    env["PYTHONPATH"] = (
+        src_path if not existing_pythonpath else src_path + os.pathsep + existing_pythonpath
+    )
+    return env
 
 
 def _parse_json_stdout(stdout: str, *, source: str) -> dict[str, object]:

@@ -22,7 +22,7 @@ def test_signalforge_e2e_smoke_calls_signalforge_then_alphaforge_cli(tmp_path: P
     package_dir = tmp_path / "package"
     calls: list[tuple[list[str], Path | None]] = []
 
-    def fake_runner(command, *, cwd=None, text=True, capture_output=True, check=False):
+    def fake_runner(command, *, cwd=None, text=True, capture_output=True, check=False, env=None):
         calls.append((list(command), cwd))
         if "signalforge.cli" in command:
             return subprocess.CompletedProcess(command, 0, stdout='{"status":"exported"}\n', stderr="")
@@ -89,7 +89,7 @@ def test_signalforge_e2e_smoke_rejects_failed_signalforge_command(tmp_path: Path
     signalforge_repo = _make_repo(tmp_path / "SignalForge")
     alphaforge_repo = _make_repo(tmp_path / "AlphaForge")
 
-    def fake_runner(command, *, cwd=None, text=True, capture_output=True, check=False):
+    def fake_runner(command, *, cwd=None, text=True, capture_output=True, check=False, env=None):
         return subprocess.CompletedProcess(command, 3, stdout="", stderr="boom")
 
     with pytest.raises(RuntimeError, match="Command failed"):
@@ -105,7 +105,7 @@ def test_signalforge_e2e_smoke_rejects_bad_alphaforge_summary(tmp_path: Path) ->
     signalforge_repo = _make_repo(tmp_path / "SignalForge")
     alphaforge_repo = _make_repo(tmp_path / "AlphaForge")
 
-    def fake_runner(command, *, cwd=None, text=True, capture_output=True, check=False):
+    def fake_runner(command, *, cwd=None, text=True, capture_output=True, check=False, env=None):
         if "signalforge.cli" in command:
             return subprocess.CompletedProcess(command, 0, stdout='{"status":"exported"}\n', stderr="")
         return subprocess.CompletedProcess(
