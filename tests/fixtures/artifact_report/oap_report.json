@@ -1,0 +1,24 @@
+{
+  "status": "passed",
+  "workflow": "oap_mom12m_real_data_local",
+  "inputs": {
+    "characteristics": "tests/fixtures/oap/mom12m_characteristics.csv",
+    "contract": "tests/fixtures/oap_factor_contracts/mom12m_threshold.yaml",
+    "market_data": "tests/fixtures/oap/market_data.csv",
+    "symbol": "AAA"
+  },
+  "outputs": {
+    "signal_output": "outputs/oap_mom12m_signal.csv"
+  },
+  "contract": {
+    "version": "v0.2",
+    "factor_name": "Mom12m",
+    "decision_rule_type": "threshold"
+  },
+  "backtest": {
+    "execution_semantics": "signed_close_to_close_lagged",
+    "equity_curve_rows": 10,
+    "trade_count": 5,
+    "final_equity": 1050.0
+  }
+}

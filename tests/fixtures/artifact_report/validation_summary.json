@@ -1,0 +1,7 @@
+{
+  "data_spec": {"path": "sample_data/sample_ohlcv.csv", "symbol": "SAMPLE"},
+  "selected_strategy_spec": {"name": "ma_crossover", "parameters": {"short_window": 2, "long_window": 4}},
+  "train_score": 0.8,
+  "test_score": 0.7,
+  "metadata": {}
+}

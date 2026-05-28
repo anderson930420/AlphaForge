@@ -24,6 +24,7 @@ from .policy_types import ParameterGrid
 from .permutation import run_permutation_test_with_details
 from .permutation import DEFAULT_PERMUTATION_TARGET_METRIC_NAME, SUPPORTED_PERMUTATION_TARGET_METRICS
 from .report import render_experiment_report, save_experiment_report
+from .artifact_report import render_artifact_report
 from .schemas import (
     BacktestConfig,
     DataSpec,
@@ -253,6 +254,14 @@ def build_parser() -> argparse.ArgumentParser:
     smoke_signalforge_package.add_argument("--slippage-rate", type=float, default=config.DEFAULT_SLIPPAGE_RATE)
     smoke_signalforge_package.add_argument("--annualization-factor", type=int, default=config.DEFAULT_ANNUALIZATION)
 
+    render_artifact_report_parser = subparsers.add_parser(
+        "render-artifact-report",
+        help="Render a standalone HTML report from AlphaForge artifact files",
+    )
+    render_artifact_report_parser.add_argument("--artifact-dir", required=True, type=Path)
+    render_artifact_report_parser.add_argument("--output", type=Path, default=None)
+    render_artifact_report_parser.add_argument("--report-json", type=Path, default=None)
+
     return parser
 
 
@@ -340,6 +349,15 @@ def main() -> None:
                 "final_equity": float(result.equity_curve["equity"].iloc[-1]),
             }
             print(json.dumps(summary, indent=2, sort_keys=True))
+            return
+
+        if args.command == "render-artifact-report":
+            output_path = render_artifact_report(
+                artifact_dir=args.artifact_dir,
+                output_path=args.output,
+                report_json_path=args.report_json,
+            )
+            print(json.dumps({"status": "ok", "report_path": str(output_path)}, indent=2))
             return
 
         if args.command == "build-oap-signal":

@@ -558,6 +558,32 @@ python3 scripts/run_signalforge_batch_package_smoke.py \
   --summary-output outputs/signalforge_batch_summary.json
 ```
 
+## HTML Artifact Reports
+
+Render a standalone HTML report from any AlphaForge artifact directory or OAP
+report JSON. The renderer reads whatever artifacts are present and produces a
+standalone HTML report file with metric cards, equity/drawdown charts (Plotly),
+trade log tables, and summaries.
+Charts use Plotly from CDN when opened in a browser.
+
+```bash
+PYTHONPATH=src python3 -m alphaforge.cli render-artifact-report \
+  --artifact-dir outputs/some_run \
+  --output outputs/some_run/report.html
+```
+
+For a standalone OAP report JSON (e.g. from ``alphaforge.oap_real_data_cli``):
+
+```bash
+PYTHONPATH=src python3 -m alphaforge.cli render-artifact-report \
+  --artifact-dir outputs/some_run \
+  --output outputs/some_run/oap_report.html \
+  --report-json outputs/oap_mom12m_report.json
+```
+
+The renderer gracefully reports missing optional files. No CRSP/WRDS data, live
+trading, broker execution, external data downloads, or ML training is performed.
+
 ## Local Development Setup
 
 Python `>=3.11` is required.
