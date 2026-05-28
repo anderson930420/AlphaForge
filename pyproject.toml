@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "alphaforge"
 version = "0.1.0"
-description = "Minimum viable strategy research engine for reproducible backtests."
+description = "Research-oriented asset-pricing and strategy-validation toolkit."
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
