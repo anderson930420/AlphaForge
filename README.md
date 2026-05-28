@@ -1,344 +1,596 @@
 # AlphaForge
 
-AlphaForge is a minimal strategy research engine that proves a reproducible MVP pipeline:
+AlphaForge is a research-oriented asset-pricing and strategy-validation project.
+It started as a minimal quantitative backtesting engine and now also contains
+local adapters for external signal packages and Open Source Asset Pricing-style
+firm characteristics.
 
-`strategy spec -> candidate search -> backtest -> metrics -> scoring -> storage/report`
+The current role of AlphaForge is downstream validation: load local market data,
+consume built-in strategies or externally generated signals, run deterministic
+backtest and validation workflows, and write evidence artifacts. It is not a
+live trading system, broker simulator, portfolio optimizer, or complete ML
+training platform.
 
-The canonical contract and boundary details live in `openspec/specs/...`; this README is a practical usage overview, not the source of truth for ownership or workflow semantics.
+## Current Development Status
 
-## Positioning
+Current repository capabilities include:
 
-AlphaForge is a spec-driven quant research validation engine.
+- standardized OHLCV CSV loading and validation
+- moving-average crossover and breakout strategy families
+- single-run backtests, grid search, train/test validation, walk-forward
+  validation, strategy comparison, and permutation diagnostics
+- JSON, CSV, and optional HTML output artifacts under `outputs/`
+- TWSE daily data fetch helpers
+- `custom_signal` consumption for externally generated `signal.csv` files
+- SignalForge v0.2 package validation/smoke testing through file artifacts
+- local OAP/Open Source Asset Pricing characteristic adapters and Mom12m smoke
+  workflows
 
-It is parked as a stable validation layer rather than the long-term alpha-generation platform.
+Recent OAP work has produced local processed feature and signal artifacts from a
+private Open Source Asset Pricing raw dataset. Those files are generated local
+artifacts and must not be committed.
 
-Externally generated signals should enter AlphaForge through `custom_signal` and an external `signal.csv`.
+## Architecture / Pipeline Overview
+
+The main research flow is:
+
+```text
+local data or external signal package
+        -> schema validation / normalization
+        -> strategy or custom_signal target positions
+        -> lagged close-to-close backtest
+        -> metrics, evidence, reports, and stored artifacts
+```
+
+For OAP-style asset-pricing work, the intended flow is:
+
+```text
+raw OAP characteristics
+        -> local processed feature panels
+        -> standardized AlphaForge signal/features
+        -> return or market-data join when available
+        -> backtest, validation, or future supervised ML
+```
+
+OAP characteristics are predictors/features. They are not returns. Full
+supervised learning or full historical backtesting still needs market data or
+return labels such as `asset_id`, `date`, and `return` or `ret_next_month`.
+
+## Data Model
+
+### Market Data
+
+Standard backtest inputs use one-symbol OHLCV data:
+
+```text
+datetime
+open
+high
+low
+close
+volume
+symbol        # optional in some paths, required for custom_signal symbol checks
+```
+
+### Signal Schema
+
+AlphaForge supports two external `custom_signal` file shapes.
+
+The older v0.1 long/flat shape is:
+
+```text
+datetime
+available_at
+symbol
+signal_name
+signal_value
+signal_binary
+source
+```
+
+`signal_binary` maps to target position `1.0` or `0.0`; `signal_value` is
+validated but not used for execution.
+
+The newer v0.2 signed long/flat/short shape is:
+
+```text
+datetime
+available_at
+symbol
+signal_name
+score
+direction
+target_weight
+source
+```
+
+`target_weight` is the execution input and must be within `[-1.0, 1.0]`.
+SignalForge v0.2 package smoke tests require
+`signed_close_to_close_lagged` execution semantics.
+
+### Feature Schema
+
+Standardized AlphaForge feature panels use:
+
+```text
+asset_id
+date
+<feature columns>
+```
+
+For the local OAP monthly files, `date` is the month-end date converted from
+raw `yyyymm`.
+
+### Return / Label Schema
+
+Returns and supervised-learning labels are separate from characteristics:
+
+```text
+asset_id
+date
+return
+ret_next_month    # common supervised target, not present in OAP characteristics
+```
+
+The current OAP characteristic files do not provide future returns. Any ML or
+backtest workflow that requires labels must join these features to a separate
+return or market-data source.
+
+### Backtest Output
+
+Backtest and validation workflows write artifacts such as:
+
+```text
+metrics_summary.json
+equity_curve.csv
+trade_log.csv
+ranked_results.csv
+validation_summary.json
+walk_forward_summary.json
+permutation_test_summary.json
+```
+
+## OAP Data Integration
+
+The local raw dataset currently prepared on this machine is from Open Source
+Asset Pricing:
+
+```text
+data/raw/oap/signed_predictors_dl_wide.zip
+data/raw/oap/signed_predictors_dl_wide.csv
+```
+
+The raw CSV has been verified locally with:
+
+- `211` columns
+- identifier columns `permno` and `yyyymm`
+- `209` firm-level characteristic columns
+- important characteristics present: `Mom12m`, `BM`, `AssetGrowth`, `Beta`,
+  `OperProf`, and `Investment`
+
+These raw files are private/local data and are intentionally ignored by git.
+AlphaForge does not include an OAP downloader.
+
+### Processed Local OAP Files
+
+Current generated files under `data/processed/oap/` include:
+
+```text
+oap_mom12m.csv
+oap_mom12m_signal.csv
+oap_mom12m_signal.parquet
+oap_panel_2010_2012_selected.csv
+oap_panel_2010_2012_features.csv
+oap_panel_2010_2012_features.parquet
+```
+
+`oap_mom12m.csv` contains:
+
+```text
+permno
+yyyymm
+Mom12m
+```
+
+The observed non-null row count is `3,715,128`.
+
+`oap_mom12m_signal.parquet` is the preferred local processed format for the
+standardized single-signal file:
+
+```text
+shape: (3715128, 3)
+asset_id: int64
+date: datetime64[us]
+signal: float64
+```
+
+Sample rows begin with `asset_id=10000`, `date=1986-12-31`, and
+`signal=-0.810714`.
+
+`oap_panel_2010_2012_features.parquet` is the preferred local processed format
+for the selected multi-feature panel:
+
+```text
+shape: (255258, 8)
+asset_id: int64
+date: datetime64[us]
+AssetGrowth: float64
+BM: float64
+Beta: float64
+Investment: float64
+Mom12m: float64
+OperProf: float64
+```
+
+The CSV companion files are useful for inspection, but the Parquet files are the
+preferred local loader format because they preserve the parsed `date` dtype.
+
+### Missingness Caveat
+
+Missing values are expected in firm-level characteristics and should be handled
+by feature engineering or ML code. They are not, by themselves, evidence that the
+OAP files are corrupted.
+
+Observed missingness in the selected 2010-2012 panel:
+
+- `OperProf`: about `72.8%`
+- `BM`: about `52.1%`
+- `Investment`: about `43.5%`
+- `Mom12m`: about `42.1%`
+- `AssetGrowth`: about `34.5%`
+- `Beta`: about `14.4%`
+
+### Manual OAP Preparation
+
+There is no repository-managed OAP download command. If you already have the
+raw file, place it locally under `data/raw/oap/` and keep it out of git.
+
+The conversion from raw `yyyymm` to month-end `date` can be done with standard
+pandas code:
+
+```python
+import pandas as pd
+
+frame = pd.read_csv("data/raw/oap/signed_predictors_dl_wide.csv")
+dates = pd.to_datetime(frame["yyyymm"].astype(str), format="%Y%m")
+frame["date"] = dates + pd.offsets.MonthEnd(0)
+frame["asset_id"] = frame["permno"]
+```
+
+For generated feature panels, keep the convention:
+
+```text
+asset_id,date,<feature columns>
+```
 
 ## SignalForge Integration
 
-AlphaForge can consume SignalForge v0.1 `signal.csv` artifacts through `custom_signal` without importing SignalForge. See [docs/signalforge_integration.md](docs/signalforge_integration.md) for the artifact contract, execution law, and CLI smoke examples.
+AlphaForge consumes SignalForge artifacts through files. It does not import
+SignalForge internals or call SignalForge APIs.
 
-For `custom_signal`, AlphaForge treats the input as a frozen external signal and does not run parameter search or walk-forward folds.
-
-Readiness checkpoint: [docs/releases/signalforge-integration-readiness.md](docs/releases/signalforge-integration-readiness.md).
-
-## MVP Status
-
-The current MVP supports:
-
-- Loading standardized OHLCV CSV data
-- Running a baseline moving average crossover strategy
-- Running a simple breakout strategy
-- Executing a simple single-asset backtest
-- Computing Sharpe, max drawdown, win rate, turnover, trade count, and return metrics
-- Searching multiple MA parameter combinations and ranking them
-- Saving experiment outputs as JSON and CSV
-- Fetching TWSE stock-day data into the same standardized CSV format
-- Running everything from a CLI
-- Running a simple train/test validation workflow for parameter search
-- Running a first-pass walk-forward validation workflow for parameter search
-- Selecting the `ma_crossover` or `breakout` family on `run`, `search`, `validate-search`, and `walk-forward`
-- Running a seed-controlled block-based permutation/null-comparison diagnostic for a fixed MA candidate
-- Comparing strategy results against a buy-and-hold baseline in reports and validation summaries
-
-Deferred capabilities such as paper parsing, formula extraction, genetic algorithms, broker integration, live trading, and web UI remain intentionally out of scope.
-
-AlphaForge is not a live trading system, broker execution simulator, portfolio optimizer, paper-to-factor extraction system, ML pipeline, or full alpha discovery platform.
-
-## Project Layout
+The v0.2 package smoke path expects a package directory containing:
 
 ```text
-src/alphaforge/
-  config.py
-  schemas.py
-  benchmark.py
-  data_loader.py
-  backtest.py
-  metrics.py
-  scoring.py
-  search.py
-  experiment_runner.py
-  storage.py
-  twse_client.py
-  cli.py
-  strategy/
-tests/
-sample_data/
-outputs/
-scripts/
+market_data.csv
+signal.csv
+signal_contract.yaml
+data_quality_report.json
+manifest.json
+README.md
 ```
 
-## Setup
+AlphaForge validates the package manifest, validates compatibility fragments in
+`signal_contract.yaml`, loads `signal.csv` through the `custom_signal` v0.2
+loader, and runs a signed long/short smoke backtest.
 
-Create a virtual environment and install the project in editable mode with dev dependencies:
+SignalForge owns signal generation. AlphaForge is the downstream consumer for
+schema validation, signed lagged backtesting, evidence generation, and
+optimization/validation workflows that operate on AlphaForge-native strategies.
+For `custom_signal`, AlphaForge treats the supplied signal as frozen external
+input and does not perform parameter search over SignalForge internals.
 
-```powershell
-python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -e ".[dev]"
-```
+## ML Roadmap / Current ML Direction
 
-If `.venv` already exists but is broken because its base interpreter path no longer exists, rebuild it with a known-good Python installation:
+The current codebase has OAP feature preparation and signal/backtest plumbing,
+but it does not yet contain a formal supervised ML training pipeline.
 
-```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\rebuild_venv.ps1 -PythonExe "C:\path\to\python.exe"
-```
+The near-term ML direction is:
 
-### Moving To Another Machine
+- treat OAP characteristics as monthly predictors
+- join predictors to future return labels from a separate data source
+- keep features, signals, labels, and backtest outputs as separate schemas
+- add missing-value handling, cross-sectional normalization, train/test splits,
+  and model evaluation before treating any model output as a tradable signal
 
-Keep secrets and machine-local state out of GitHub. This repo already ignores:
-
-- `.env`
-- `.venv/`
-- `outputs/`
-
-Use this workflow when moving the project to another machine such as a MacBook:
-
-1. Push the repo to GitHub without `.env`, `.venv`, or generated outputs.
-2. Clone the repo on the new machine.
-3. Create a fresh virtual environment on that machine.
-4. Copy `.env.example` to `.env`.
-5. Fill the required local secrets back into `.env`.
-
-Current required `.env` values:
-
-- `API_KEY`: used by `src/obsidian_logger.py` and `scripts/read_memory.py` for the local Obsidian REST bridge.
-
-Example on macOS:
-
-```bash
-cd /path/to/AlphaForge
-python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install -e ".[dev]"
-cp .env.example .env
-```
-
-Then edit `.env` and replace the placeholder value with your real local key before running any logger or memory scripts.
+Do not treat `Mom12m`, `BM`, `Beta`, or other OAP characteristics as realized or
+future returns.
 
 ## CLI Usage
 
-Run a single MA crossover experiment from a CSV:
+Install locally first:
 
-```powershell
-.venv\Scripts\python.exe -m alphaforge.cli run --data .\sample_data\sample_ohlcv.csv --symbol SAMPLE --short-window 2 --long-window 4
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -e ".[dev]"
 ```
 
-Run a parameter search from a CSV:
+After installation, commands can be run as either:
 
-```powershell
-.venv\Scripts\python.exe -m alphaforge.cli search --data .\sample_data\sample_ohlcv.csv --symbol SAMPLE --short-windows 2 5 10 --long-windows 20 40 60 --experiment-name sample_search
+```bash
+python -m alphaforge.cli --help
+alphaforge --help
 ```
 
-Run a breakout parameter search from a CSV:
+When running directly from a checkout without installing, use:
 
-```powershell
-.venv\Scripts\python.exe -m alphaforge.cli search --data .\sample_data\sample_ohlcv.csv --symbol SAMPLE --strategy breakout --lookback-windows 5 10 20 --experiment-name sample_breakout_search
+```bash
+PYTHONPATH=src python3 -m alphaforge.cli --help
 ```
 
-Run a train/test validation search from a CSV:
+### Built-In Strategy Examples
 
-```powershell
-.venv\Scripts\python.exe -m alphaforge.cli validate-search --data .\sample_data\sample_ohlcv.csv --symbol SAMPLE --short-windows 2 5 10 --long-windows 20 40 60 --split-ratio 0.7 --experiment-name sample_validation
+Run one moving-average crossover backtest:
+
+```bash
+PYTHONPATH=src python3 -m alphaforge.cli run \
+  --data sample_data/sample_ohlcv.csv \
+  --symbol SAMPLE \
+  --short-window 2 \
+  --long-window 4
 ```
 
-Run a walk-forward validation search from a CSV:
+Run a parameter search:
 
-```powershell
-.venv\Scripts\python.exe -m alphaforge.cli walk-forward --data .\sample_data\sample_ohlcv.csv --symbol SAMPLE --short-windows 2 5 10 --long-windows 20 40 60 --train-size 120 --test-size 20 --step-size 20 --experiment-name sample_walk_forward
+```bash
+PYTHONPATH=src python3 -m alphaforge.cli search \
+  --data sample_data/sample_ohlcv.csv \
+  --symbol SAMPLE \
+  --short-windows 2 3 \
+  --long-windows 4 5 \
+  --experiment-name sample_search
 ```
 
-Run research validation against an externally generated `signal.csv`:
+Run train/test validation:
 
-```powershell
-.venv\Scripts\python.exe -m alphaforge.cli research-validate --strategy custom_signal --data .\sample_data\twse_2330_2018_2025.csv --signal-file .\outputs\signalforge\moskowitz_2330_signal.csv --signal-name moskowitz_2330 --development-start 2018-01-01 --development-end 2024-12-31 --holdout-start 2025-01-01 --holdout-end 2025-12-31
+```bash
+PYTHONPATH=src python3 -m alphaforge.cli validate-search \
+  --data sample_data/sample_ohlcv.csv \
+  --symbol SAMPLE \
+  --split-ratio 0.7 \
+  --short-windows 2 3 \
+  --long-windows 4 5 \
+  --experiment-name sample_validation
 ```
 
-In this path:
+Run walk-forward validation:
 
-- `signal_binary` maps to `target_position`
-- `signal_value` is not computed or used by AlphaForge
-- `custom_signal` uses `legacy_close_to_close_lagged` execution semantics
-- `--signal-name` is required when a `signal.csv` contains multiple `signal_name` values
-- missing signal dates default to flat positions rather than being optimized or inferred
-- AlphaForge validates `signal.csv` but does not generate it
-- AlphaForge does not tune signal parameters or run walk-forward folds for `custom_signal`
-- SignalForge remains outside the AlphaForge runtime unless you explicitly point AlphaForge at a `signal.csv`
-
-Run a permutation/null-comparison diagnostic for a fixed MA candidate:
-
-```powershell
-.venv\Scripts\python.exe -m alphaforge.cli permutation-test --data .\sample_data\sample_ohlcv.csv --symbol SAMPLE --short-window 2 --long-window 4 --permutations 100 --block-size 5 --target-metric score --seed 42 --experiment-name sample_permutation
+```bash
+PYTHONPATH=src python3 -m alphaforge.cli walk-forward \
+  --data sample_data/sample_ohlcv.csv \
+  --symbol SAMPLE \
+  --train-size 6 \
+  --test-size 3 \
+  --step-size 3 \
+  --short-windows 2 3 \
+  --long-windows 4 5 \
+  --experiment-name sample_walk_forward
 ```
 
-Practical baseline from current MA workflow testing: use the block-based null with `block_size=10` and `target_metric=score` first. In the repo's current runs, that setting separated candidates more clearly than `target_metric=sharpe_ratio`; the `30/40` candidate looked less special under the block-10 null, while `10/40` and `15/40` still sat at the p-value floor. This is an empirical observation for the current MA setup, not a universal statistical rule.
+Run a fixed-candidate permutation diagnostic:
 
-Search output now returns a compact summary payload with:
-
-- `strategy_name`
-- `search_parameter_names`
-- `attempted_combinations`
-- `valid_combinations`
-- `invalid_combinations`
-- `result_count`
-- `ranking_score`
-- `best_result`
-- `top_results`
-- `ranked_results_path`
-- `report_path` when `--generate-report` creates `best_report.html`
-- `search_report_path` when `--generate-report` creates `search_report.html`
-
-Validation output now surfaces:
-
-- `candidate_evidence`
-- `candidate_decision`
-- `validation_summary_path`
-- `train_ranked_results_path`
-
-Walk-forward output now surfaces:
-
-- `walk_forward_evidence`
-- `walk_forward_decision`
-- `walk_forward_summary_path`
-- `fold_results_path`
-
-Permutation diagnostic output now surfaces:
-
-- `strategy_name`
-- `strategy_parameters`
-- `target_metric_name`
-- `permutation_mode`
-- `block_size`
-- `real_observed_metric_value`
-- `permutation_metric_values`
-- `permutation_count`
-- `seed`
-- `null_ge_count`
-- `empirical_p_value`
-- `permutation_test_summary_path`
-- `permutation_scores_path`
-
-Report rendering now uses explicit presentation inputs:
-
-- single-experiment HTML reports consume a prepared report input bundle instead of inferring benchmark presentation data internally
-- search comparison reports render relative links from an explicit link context instead of guessing layout from workflow paths
-
-Fetch TWSE daily data to a standardized CSV:
-
-```powershell
-.venv\Scripts\python.exe -m alphaforge.cli fetch-twse --stock-no 2330 --start-month 2024-01 --end-month 2024-03 --output .\sample_data\twse_2330_2024q1.csv
+```bash
+PYTHONPATH=src python3 -m alphaforge.cli permutation-test \
+  --data sample_data/sample_ohlcv.csv \
+  --symbol SAMPLE \
+  --short-window 2 \
+  --long-window 4 \
+  --permutations 100 \
+  --block-size 5 \
+  --target-metric score \
+  --seed 42
 ```
 
-Fetch TWSE data and immediately run parameter search:
+### OAP Commands
 
-```powershell
-.venv\Scripts\python.exe -m alphaforge.cli twse-search --stock-no 2330 --start-month 2024-01 --end-month 2024-03 --data-output .\sample_data\twse_2330_2024q1.csv --output-dir .\outputs --experiment-name twse_2330_search --short-windows 5 10 15 --long-windows 20 40 60
+Convert a local characteristic CSV with `asset_id`, `date`, and one
+non-missing characteristic into v0.2 `signal.csv`. The current CLI rejects
+missing scores, so either impute upstream or pass a filtered file:
+
+```bash
+python3 - <<'PY'
+import pandas as pd
+
+cols = ["asset_id", "date", "BM"]
+frame = pd.read_csv("data/processed/oap/oap_panel_2010_2012_features.csv", usecols=cols)
+frame = frame.dropna(subset=["BM"])
+frame.to_csv("outputs/oap_bm_non_missing.csv", index=False)
+PY
 ```
 
-## Output Structure
+```bash
+PYTHONPATH=src python3 -m alphaforge.cli build-oap-signal \
+  --input outputs/oap_bm_non_missing.csv \
+  --output outputs/oap_bm_signal.csv \
+  --characteristic BM \
+  --date-col date \
+  --asset-id-col asset_id
+```
 
-Single experiment outputs:
+Run the local Mom12m pipeline smoke. This command requires a local market-data
+CSV; the OAP characteristic file alone is not enough for a backtest.
+
+```bash
+PYTHONPATH=src python3 -m alphaforge.cli run-oap-mom12m-pipeline \
+  --characteristics path/to/mom12m_characteristics.csv \
+  --contract tests/fixtures/oap_factor_contracts/mom12m_threshold.yaml \
+  --market-data path/to/market_data.csv \
+  --signal-output outputs/oap_mom12m_signal.csv \
+  --symbol AAA
+```
+
+A verified fixture smoke for this command produced:
 
 ```text
-outputs/<experiment_name>/
-  experiment_config.json
-  metrics_summary.json
-  trade_log.csv
-  equity_curve.csv
+status: passed
+signal_rows: 3
+trade_count: 2
+execution_semantics: signed_close_to_close_lagged
+final_equity: 1299.9999999999998
 ```
 
-Single-experiment HTML reports include strategy-versus-buy-and-hold comparison alongside the existing strategy equity, drawdown, and price/trade views.
+There is also a module CLI for writing a local OAP Mom12m JSON report:
 
-Migration note:
+```bash
+PYTHONPATH=src python3 -m alphaforge.oap_real_data_cli \
+  --characteristics path/to/mom12m_characteristics.csv \
+  --contract tests/fixtures/oap_factor_contracts/mom12m_threshold.yaml \
+  --market-data path/to/market_data.csv \
+  --signal-output outputs/oap_mom12m_signal.csv \
+  --report-output outputs/oap_mom12m_report.json \
+  --symbol AAA
+```
 
-- `ExperimentResult` no longer carries persisted artifact paths.
-- Persisted artifact references now live in storage-owned `ArtifactReceipt` payloads.
-- New callers and integrations should be receipt-first and should not treat runtime result objects as artifact locators.
+### SignalForge Commands
 
-Search outputs:
+Smoke-test the checked-in SignalForge v0.2 sample package:
+
+```bash
+PYTHONPATH=src python3 -m alphaforge.cli smoke-signalforge-package \
+  --package sample_data/signalforge/demo_v02_package
+```
+
+The sample package smoke currently returns `status: passed`,
+`signal_contract_version: v0.2`, `target_position_source_column:
+target_weight`, `execution_semantics: signed_close_to_close_lagged`, and
+`trade_count: 2`.
+
+Run `custom_signal` research validation against a v0.1 SignalForge-style
+fixture:
+
+```bash
+PYTHONPATH=src python3 -m alphaforge.cli research-validate \
+  --strategy custom_signal \
+  --data tests/fixtures/signalforge/market_data.csv \
+  --symbol SFDEMO \
+  --signal-file tests/fixtures/signalforge/signal.csv \
+  --signal-name signalforge_v01_momentum \
+  --development-start 2025-01-02 \
+  --development-end 2025-01-08 \
+  --holdout-start 2025-01-09 \
+  --holdout-end 2025-01-13 \
+  --train-size 3 \
+  --test-size 2 \
+  --step-size 1
+```
+
+For v0.2 signed custom signals, pass signed execution semantics:
+
+```bash
+PYTHONPATH=src python3 -m alphaforge.cli research-validate \
+  --strategy custom_signal \
+  --execution-semantics signed_close_to_close_lagged \
+  --data path/to/market_data.csv \
+  --symbol SFDEMO \
+  --signal-file path/to/signal.csv \
+  --development-start 2025-01-02 \
+  --development-end 2025-01-08 \
+  --holdout-start 2025-01-09 \
+  --holdout-end 2025-01-13 \
+  --train-size 3 \
+  --test-size 2 \
+  --step-size 1
+```
+
+Batch smoke checks for multiple SignalForge v0.2 packages are available as a
+script:
+
+```bash
+python3 scripts/run_signalforge_batch_package_smoke.py \
+  --packages-root path/to/packages \
+  --summary-output outputs/signalforge_batch_summary.json
+```
+
+## Local Development Setup
+
+Python `>=3.11` is required.
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -e ".[dev]"
+```
+
+On Windows, use the local Python launcher that exists on the machine. If
+`python` is unavailable, try `python3`, and vice versa.
+
+The local memory/logger workflow uses `scripts/read_memory.py` and
+`src/obsidian_logger.py`; those files are machine-local and ignored by git.
+
+## Testing / Smoke Tests
+
+Run the full test suite:
+
+```bash
+PYTHONPATH=src python3 -m pytest -q
+```
+
+Focused smoke checks:
+
+```bash
+PYTHONPATH=src python3 -m pytest tests/test_oap_mom12m_pipeline_cli.py -q
+PYTHONPATH=src python3 -m pytest tests/test_signalforge_package_cli.py -q
+PYTHONPATH=src python3 -m pytest tests/test_oap_signal_cli.py -q
+```
+
+There is no README-specific lint configured in this repository.
+
+## Data Privacy And Git Hygiene
+
+Do not commit local datasets or generated research artifacts.
+
+The following patterns must stay ignored:
 
 ```text
-outputs/<search_name>/
-  ranked_results.csv
-  best_report.html          # when --generate-report is used and ranked results exist
-  search_report.html        # when --generate-report is used
-  runs/
-    run_001/
-    run_002/
-    ...
+data/raw/
+data/processed/
+*.csv
+*.zip
+*.parquet
+outputs/
 ```
 
-Validation outputs:
+This is especially important for:
 
 ```text
-outputs/<validation_name>/
-  validation_summary.json
-  train_ranked_results.csv
-  train_best/
-    experiment_config.json
-    metrics_summary.json
-    trade_log.csv
-    equity_curve.csv
-  test_selected/
-    experiment_config.json
-    metrics_summary.json
-    trade_log.csv
-    equity_curve.csv
+data/raw/oap/signed_predictors_dl_wide.zip
+data/raw/oap/signed_predictors_dl_wide.csv
+data/processed/oap/*.csv
+data/processed/oap/*.parquet
 ```
 
-`validation_summary.json` includes the selected strategy test result, the explicit `candidate_decision`, and a test-side `test_benchmark_summary` for buy-and-hold comparison.
+The repository contains small checked-in sample CSVs under `sample_data/` and
+`tests/fixtures/` for deterministic tests. Do not use that as permission to add
+large raw or processed datasets.
 
-Walk-forward outputs:
+## Current Limitations
 
-```text
-outputs/<walk_forward_name>/
-  walk_forward_summary.json
-  fold_results.csv
-  folds/
-    fold_001/
-      train_search/
-      test_selected/
-    fold_002/
-      train_search/
-      test_selected/
-    ...
-```
+- no bundled OAP downloader
+- no committed OAP raw or processed data
+- no formal supervised ML trainer yet
+- no return-label generation from OAP characteristics
+- no claim that OAP characteristics contain future returns
+- current `custom_signal` validation is primarily one-symbol at runtime
+- SignalForge integration is file-based; AlphaForge does not import SignalForge
+- OAP-related code uses some OAP / JKP-style contract language, but the local
+  raw dataset documented here is the Open Source Asset Pricing file above, not a
+  separate committed JKP stock-level dataset
 
-`walk_forward_summary.json` and `fold_results.csv` include buy-and-hold benchmark summaries for each test fold, plus an explicit `walk_forward_decision` in the summary JSON.
+## Near-Term Roadmap
 
-Permutation diagnostic outputs:
-
-```text
-outputs/<permutation_name>/
-  permutation_test_summary.json
-  permutation_scores.csv
-```
-
-`permutation_test_summary.json` records the selected target metric name, the observed metric value, the permutation metric values, and the empirical p-value for the fixed candidate.
-
-## Verification
-
-Run the repo-local verification script:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\run_verification.ps1
-```
-
-This runs `pytest` and one CLI smoke test using `sample_data/sample_ohlcv.csv`.
-
-Focused examples:
-
-```powershell
-.venv\Scripts\python.exe -m pytest tests\test_cli.py -q
-.venv\Scripts\python.exe -m pytest tests\test_runner.py -q
-.venv\Scripts\python.exe -m pytest tests\test_twse_client.py -q
-```
-
-## Current Success Criteria
-
-The MVP is considered successful when it can:
-
-- Load a standardized dataset
-- Run MA crossover backtests
-- Output Sharpe, max drawdown, win rate, and turnover
-- Evaluate and rank multiple parameter sets
-- Save results for later inspection
+- formalize local loaders for the processed OAP Parquet feature and signal files
+- add explicit feature/label joins once return data is available
+- define missing-value and cross-sectional normalization policies for ML inputs
+- keep SignalForge package compatibility checks aligned with the v0.2 contract
+- preserve strict data hygiene so private raw and processed datasets remain out
+  of git
