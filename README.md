@@ -245,16 +245,52 @@ Observed missingness in the selected 2010-2012 panel:
 There is no repository-managed OAP download command. If you already have the
 raw file, place it locally under `data/raw/oap/` and keep it out of git.
 
-The conversion from raw `yyyymm` to month-end `date` can be done with standard
-pandas code:
+The raw OAP CSV is large, so avoid reading the full file into memory with a plain
+`pd.read_csv(...)`. Prefer selecting only the columns you need and processing the
+file in chunks.
+
+Example: build a small 2010-2012 selected feature panel from the raw OAP file:
 
 ```python
 import pandas as pd
 
-frame = pd.read_csv("data/raw/oap/signed_predictors_dl_wide.csv")
-dates = pd.to_datetime(frame["yyyymm"].astype(str), format="%Y%m")
-frame["date"] = dates + pd.offsets.MonthEnd(0)
-frame["asset_id"] = frame["permno"]
+src = "data/raw/oap/signed_predictors_dl_wide.csv"
+out = "data/processed/oap/oap_panel_2010_2012_features.parquet"
+
+usecols = [
+    "permno",
+    "yyyymm",
+    "Mom12m",
+    "BM",
+    "AssetGrowth",
+    "Beta",
+    "OperProf",
+    "Investment",
+]
+
+chunks = []
+
+for chunk in pd.read_csv(src, usecols=usecols, chunksize=500_000):
+    chunk = chunk[(chunk["yyyymm"] >= 201001) & (chunk["yyyymm"] <= 201212)]
+
+    if not chunk.empty:
+        chunks.append(chunk)
+
+frame = pd.concat(chunks, ignore_index=True)
+
+frame = frame.rename(columns={"permno": "asset_id"})
+frame["date"] = (
+    pd.to_datetime(frame["yyyymm"].astype(str), format="%Y%m")
+    + pd.offsets.MonthEnd(0)
+)
+
+frame = frame.drop(columns=["yyyymm"])
+
+frame.to_parquet(out, index=False)
+
+print("saved:", out)
+print("shape:", frame.shape)
+print(frame.dtypes)
 ```
 
 For generated feature panels, keep the convention:
@@ -262,6 +298,17 @@ For generated feature panels, keep the convention:
 ```text
 asset_id,date,<feature columns>
 ```
+
+For generated single-signal files, keep the convention:
+
+```text
+asset_id,date,signal
+```
+
+OAP characteristics are predictors/features. They are not realized returns or
+future returns. Any full backtest or supervised ML workflow must join these
+features to a separate market-data or return-label source.
+
 
 ## SignalForge Integration
 
@@ -552,11 +599,12 @@ Do not commit local datasets or generated research artifacts.
 The following patterns must stay ignored:
 
 ```text
+artifacts/
 data/raw/
 data/processed/
-*.csv
-*.zip
-*.parquet
+data/**/*.csv /
+data/**/*.zip /
+data/**/*.parquet
 outputs/
 ```
 
