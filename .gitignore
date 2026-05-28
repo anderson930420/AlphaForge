@@ -1,13 +1,34 @@
+# Environment / local configuration
 .env
 .venv/
-outputs/
-.pytest_cache/
+
+# Python build / cache artifacts
 __pycache__/
-temp_log.txt
+.pytest_cache/
 src/alphaforge.egg-info/
+
+# Generated outputs / experiment artifacts
+outputs/
+artifacts/
+
+# Temporary local files
+temp_log.txt
 
 # Local AI memory / logging workflow
 AGENTS.md
 PROJECT_BRIEF.md
 scripts/read_memory.py
 src/obsidian_logger.py
+
+# Local large datasets
+data/raw/
+data/processed/
+
+# Local dataset files under data/
+data/**/*.csv
+data/**/*.zip
+data/**/*.parquet
+
+# Keep checked-in sample and test fixture CSV files allowed
+!sample_data/**/*.csv
+!tests/fixtures/**/*.csv
