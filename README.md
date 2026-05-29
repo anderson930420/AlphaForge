@@ -309,6 +309,61 @@ OAP characteristics are predictors/features. They are not realized returns or
 future returns. Any full backtest or supervised ML workflow must join these
 features to a separate market-data or return-label source.
 
+## OAP Multi-Factor Signal Builder
+
+AlphaForge can combine multiple OAP-style feature columns into a single
+`signal.csv` using a YAML configuration. This does not require CRSP or WRDS
+data and does not perform ML training. It is a deterministic cross-sectional
+ranking and weighting step.
+
+The configuration file specifies:
+
+```yaml
+version: alphaforge_oap_multifactor_v0.1
+signal_name: oap_multifactor_score
+date_col: date
+asset_id_col: asset_id
+features:
+  - name: Mom12m
+    weight: 1.0
+    higher_is_better: true
+  - name: BM
+    weight: 1.0
+    higher_is_better: true
+  - name: Investment
+    weight: 1.0
+    higher_is_better: false
+long_quantile: 0.8
+short_quantile: 0.2
+gross_long_weight: 1.0
+gross_short_weight: -1.0
+missing_policy: ignore_feature
+normalization: zscore_by_date
+```
+
+Per date, each feature is z-score normalized across assets. If `higher_is_better:
+false`, the normalized value is inverted. A weighted average is computed and
+assets at or above `long_quantile` receive the long target weight; assets at
+or below `short_quantile` receive the short target weight; others receive
+neutral.
+
+Example CLI usage:
+
+```bash
+PYTHONPATH=src python3 -m alphaforge.cli build-oap-multifactor-signal \
+  --features data/processed/oap/oap_panel_2010_2012_features.parquet \
+  --config tests/fixtures/oap_multifactor/equal_weight.yaml \
+  --output artifacts/phase21/oap_multifactor_signal.csv
+```
+
+The output is compatible with the AlphaForge `custom_signal` v0.2 contract:
+
+```text
+datetime,available_at,symbol,asset_id,signal_name,score,direction,target_weight,source
+```
+
+This step only builds a signal file from local features. It does not require
+CRSP/WRDS data and does not evaluate performance.
 
 ## SignalForge Integration
 

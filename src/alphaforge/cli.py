@@ -10,6 +10,7 @@ import pandas as pd
 from . import config
 from .open_asset_pricing import OAPQuantilePolicy, build_oap_v02_signal_frame
 from .oap_mom12m_pipeline import run_oap_mom12m_pipeline_smoke
+from .oap_multifactor import OAPMultiFactorConfig, build_multifactor_signal, load_feature_panel
 from .signalforge_package import run_signalforge_v02_package_smoke
 from .backtest import LEGACY_EXECUTION_SEMANTICS, SIGNED_EXECUTION_SEMANTICS, SUPPORTED_EXECUTION_SEMANTICS
 from .experiment_runner import (
@@ -230,6 +231,15 @@ def build_parser() -> argparse.ArgumentParser:
     build_oap_signal.add_argument("--gross-short-weight", type=float, default=-1.0)
     build_oap_signal.add_argument("--invert-score", action="store_true")
 
+    build_oap_multifactor = subparsers.add_parser(
+        "build-oap-multifactor-signal",
+        help="Build AlphaForge v0.2 signal.csv from a local OAP multi-factor feature panel",
+    )
+    build_oap_multifactor.add_argument("--features", required=True, type=Path)
+    build_oap_multifactor.add_argument("--config", required=True, type=Path)
+    build_oap_multifactor.add_argument("--output", required=True, type=Path)
+    build_oap_multifactor.add_argument("--source", default="OpenAssetPricing")
+
     run_oap_mom12m = subparsers.add_parser(
         "run-oap-mom12m-pipeline",
         help="Run the local OAP / JKP Mom12m pipeline smoke through AlphaForge",
@@ -379,6 +389,15 @@ def main() -> None:
                 policy=policy,
                 invert_score=args.invert_score,
             )
+            args.output.parent.mkdir(parents=True, exist_ok=True)
+            signal_frame.to_csv(args.output, index=False)
+            print(f"Wrote {len(signal_frame)} v0.2 signal rows to {args.output}")
+            return
+
+        if args.command == "build-oap-multifactor-signal":
+            mf_config = OAPMultiFactorConfig.from_yaml(args.config)
+            features_df = load_feature_panel(args.features, date_col=mf_config.date_col, asset_id_col=mf_config.asset_id_col)
+            signal_frame = build_multifactor_signal(features_df, mf_config, source=args.source)
             args.output.parent.mkdir(parents=True, exist_ok=True)
             signal_frame.to_csv(args.output, index=False)
             print(f"Wrote {len(signal_frame)} v0.2 signal rows to {args.output}")
