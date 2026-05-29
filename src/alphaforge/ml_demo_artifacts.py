@@ -25,7 +25,9 @@ def build_synthetic_prediction_demo(
 
     The data is intentionally artificial. It creates enough cross-sectional
     dispersion per date for IC, Rank IC, quantile returns, and long-short spread
-    diagnostics to be non-empty and visually inspectable.
+    diagnostics to be non-empty and visually inspectable. The deterministic
+    month-varying noise avoids a degenerate demo where every monthly IC is
+    exactly identical.
     """
     if months < 1:
         raise ValueError("months must be at least 1")
@@ -39,17 +41,20 @@ def build_synthetic_prediction_demo(
     for month_index, date in enumerate(dates):
         market_component = ((month_index % 4) - 1.5) * 0.0015
         regime_component = 0.0004 * ((month_index % 3) - 1)
+        month_noise_scale = 0.00025 + 0.00008 * (month_index % 5)
         for asset_index in range(assets):
             asset_id = f"SYN{asset_index + 1:03d}"
             cross_sectional_rank = (asset_index - center) / assets
-            deterministic_noise = ((asset_index % 5) - 2) * 0.0004
+            base_noise = ((asset_index % 5) - 2) * 0.00035
+            rotating_noise = (((asset_index * (month_index + 3)) % 7) - 3) * month_noise_scale
             predicted_return = 0.008 + 0.020 * cross_sectional_rank + market_component
             realized_forward_return = (
                 0.006
                 + 0.015 * cross_sectional_rank
                 + 0.45 * market_component
                 + regime_component
-                + deterministic_noise
+                + base_noise
+                + rotating_noise
             )
             rows.append({
                 "asset_id": asset_id,
