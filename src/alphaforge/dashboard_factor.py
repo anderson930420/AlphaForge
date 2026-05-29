@@ -28,6 +28,7 @@ def render_factor_diagnostics_dashboard(st: Any, bundle: FactorDiagnosticsBundle
     render_factor_summary(st, bundle.summary)
 
     coverage = read_factor_table(bundle, "coverage_by_date")
+    distribution = read_factor_table(bundle, "distribution_by_date")
     ic = read_factor_table(bundle, "ic_timeseries")
     quantile_returns = read_factor_table(bundle, "quantile_returns")
     spread = read_factor_table(bundle, "long_short_spread")
@@ -36,8 +37,9 @@ def render_factor_diagnostics_dashboard(st: Any, bundle: FactorDiagnosticsBundle
     with col1:
         render_coverage(st, coverage)
     with col2:
-        render_ic(st, ic)
+        render_distribution(st, distribution)
 
+    render_ic(st, ic)
     render_quantile_returns(st, quantile_returns)
     render_long_short_spread(st, spread)
 
@@ -83,6 +85,39 @@ def render_coverage(st: Any, frame: pd.DataFrame | None) -> None:
 
     fig = px.line(data, x="date", y="coverage_ratio", markers=True)
     fig.update_layout(xaxis_title="Date", yaxis_title="Coverage ratio", height=330)
+    st.plotly_chart(fig, use_container_width=True)
+    st.dataframe(data, use_container_width=True, hide_index=True)
+
+
+def render_distribution(st: Any, frame: pd.DataFrame | None) -> None:
+    st.markdown("**Factor distribution by date**")
+    if frame is None or frame.empty:
+        st.info("factor_distribution_by_date.csv has no rows.")
+        return
+    required = {"date", "mean", "median", "min", "max"}
+    if not required.issubset(frame.columns):
+        st.info("Distribution table must include date, mean, median, min, and max columns.")
+        return
+
+    data = frame.copy()
+    data["date"] = pd.to_datetime(data["date"], errors="coerce")
+    for column in ["mean", "median", "min", "max", "std", "count"]:
+        if column in data.columns:
+            data[column] = pd.to_numeric(data[column], errors="coerce")
+    data = data.dropna(subset=["date"])
+    if data[["mean", "median", "min", "max"]].dropna(how="all").empty:
+        st.info("Distribution table has dates but no valid distribution values.")
+        st.dataframe(data, use_container_width=True, hide_index=True)
+        return
+
+    long = data.melt(
+        id_vars="date",
+        value_vars=["mean", "median", "min", "max"],
+        var_name="statistic",
+        value_name="value",
+    ).dropna(subset=["value"])
+    fig = px.line(long, x="date", y="value", color="statistic", markers=True)
+    fig.update_layout(xaxis_title="Date", yaxis_title="Factor value", height=330)
     st.plotly_chart(fig, use_container_width=True)
     st.dataframe(data, use_container_width=True, hide_index=True)
 
