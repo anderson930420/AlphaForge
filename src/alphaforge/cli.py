@@ -11,6 +11,7 @@ from . import config
 from .open_asset_pricing import OAPQuantilePolicy, build_oap_v02_signal_frame
 from .oap_mom12m_pipeline import run_oap_mom12m_pipeline_smoke
 from .oap_multifactor import OAPMultiFactorConfig, build_multifactor_signal, load_feature_panel
+from .return_labels import build_forward_return_labels, join_features_with_return_labels, load_return_panel
 from .signalforge_package import run_signalforge_v02_package_smoke
 from .backtest import LEGACY_EXECUTION_SEMANTICS, SIGNED_EXECUTION_SEMANTICS, SUPPORTED_EXECUTION_SEMANTICS
 from .experiment_runner import (
@@ -240,6 +241,30 @@ def build_parser() -> argparse.ArgumentParser:
     build_oap_multifactor.add_argument("--output", required=True, type=Path)
     build_oap_multifactor.add_argument("--source", default="OpenAssetPricing")
 
+    build_return_labels = subparsers.add_parser(
+        "build-return-labels",
+        help="Build forward return labels from a local monthly return panel",
+    )
+    build_return_labels.add_argument("--returns", required=True, type=Path)
+    build_return_labels.add_argument("--output", required=True, type=Path)
+    build_return_labels.add_argument("--asset-id-col", default="asset_id")
+    build_return_labels.add_argument("--date-col", default="date")
+    build_return_labels.add_argument("--return-col", default="ret")
+    build_return_labels.add_argument("--delisting-return-col", default=None)
+    build_return_labels.add_argument("--horizon-months", type=int, default=1)
+    build_return_labels.add_argument("--label-col", default=None)
+    build_return_labels.add_argument("--source", default="local_returns")
+
+    join_feature_labels = subparsers.add_parser(
+        "join-feature-labels",
+        help="Join feature panel with return labels on asset_id and date",
+    )
+    join_feature_labels.add_argument("--features", required=True, type=Path)
+    join_feature_labels.add_argument("--labels", required=True, type=Path)
+    join_feature_labels.add_argument("--output", required=True, type=Path)
+    join_feature_labels.add_argument("--asset-id-col", default="asset_id")
+    join_feature_labels.add_argument("--date-col", default="date")
+
     run_oap_mom12m = subparsers.add_parser(
         "run-oap-mom12m-pipeline",
         help="Run the local OAP / JKP Mom12m pipeline smoke through AlphaForge",
@@ -401,6 +426,49 @@ def main() -> None:
             args.output.parent.mkdir(parents=True, exist_ok=True)
             signal_frame.to_csv(args.output, index=False)
             print(f"Wrote {len(signal_frame)} v0.2 signal rows to {args.output}")
+            return
+
+        if args.command == "build-return-labels":
+            returns_df = load_return_panel(args.returns)
+            label_frame = build_forward_return_labels(
+                returns_df,
+                asset_id_col=args.asset_id_col,
+                date_col=args.date_col,
+                return_col=args.return_col,
+                delisting_return_col=args.delisting_return_col,
+                horizon_months=args.horizon_months,
+                label_col=args.label_col,
+                source=args.source,
+            )
+            args.output.parent.mkdir(parents=True, exist_ok=True)
+            suffix = args.output.suffix.lower()
+            if suffix == ".csv":
+                label_frame.to_csv(args.output, index=False)
+            elif suffix == ".parquet":
+                label_frame.to_parquet(args.output, index=False)
+            else:
+                label_frame.to_csv(args.output, index=False)
+            print(f"Wrote {len(label_frame)} forward-return label rows to {args.output}")
+            return
+
+        if args.command == "join-feature-labels":
+            features_df = load_return_panel(args.features)
+            labels_df = load_return_panel(args.labels)
+            joined = join_features_with_return_labels(
+                features_df,
+                labels_df,
+                asset_id_col=args.asset_id_col,
+                date_col=args.date_col,
+            )
+            args.output.parent.mkdir(parents=True, exist_ok=True)
+            suffix = args.output.suffix.lower()
+            if suffix == ".csv":
+                joined.to_csv(args.output, index=False)
+            elif suffix == ".parquet":
+                joined.to_parquet(args.output, index=False)
+            else:
+                joined.to_csv(args.output, index=False)
+            print(f"Wrote {len(joined)} joined rows to {args.output}")
             return
 
         if args.command == "fetch-twse":
