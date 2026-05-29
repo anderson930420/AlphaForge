@@ -125,7 +125,7 @@ def render_diagnostics(st: Any, bundle: DashboardArtifactBundle) -> None:
 
 
 def render_direction_counts(st: Any, signal: pd.DataFrame | None) -> None:
-    st.markdown("**Signal direction counts**")
+    st.markdown("**Signal direction mix**")
     if signal is None or "direction" not in signal.columns:
         st.info("ml_signal.csv with direction column is required.")
         return
@@ -139,22 +139,31 @@ def render_direction_counts(st: Any, signal: pd.DataFrame | None) -> None:
         .reset_index(name="count")
     )
     counts = counts[counts["count"] > 0]
+    total = int(counts["count"].sum())
 
-    fig = px.bar(
+    fig = px.pie(
         counts,
-        x="direction",
-        y="count",
-        text="count",
+        names="direction",
+        values="count",
+        hole=0.55,
         category_orders={"direction": DIRECTION_ORDER + ["unknown"]},
     )
+    fig.update_traces(textinfo="label+percent+value")
     fig.update_layout(
-        xaxis_title="Direction",
-        yaxis_title="Count",
         height=330,
         margin={"l": 20, "r": 20, "t": 20, "b": 20},
+        annotations=[
+            {
+                "text": f"{total}<br>signals",
+                "x": 0.5,
+                "y": 0.5,
+                "font_size": 16,
+                "showarrow": False,
+            }
+        ],
     )
-    fig.update_traces(textposition="outside", cliponaxis=False)
     st.plotly_chart(fig, use_container_width=True)
+    st.dataframe(counts, use_container_width=True, hide_index=True)
 
     if set(counts["direction"]) == {"neutral"}:
         st.caption(
