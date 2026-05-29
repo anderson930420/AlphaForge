@@ -9,11 +9,14 @@ import plotly.express as px
 from alphaforge.dashboard_artifacts import (
     DashboardArtifactBundle,
     load_dashboard_artifacts,
+    load_factor_diagnostics_artifacts,
     pipeline_step_statuses,
 )
+from alphaforge.dashboard_factor import render_factor_diagnostics_dashboard
 
 
 DEFAULT_ARTIFACT_DIR = "artifacts/phase25/ml_artifact_smoke"
+DEFAULT_FACTOR_DIAGNOSTICS_DIR = "artifacts/phase28/mom12m_diagnostics_q2"
 PIPELINE_ROW_ORDER = [
     "Return labels",
     "Supervised panel",
@@ -37,16 +40,20 @@ def main() -> None:
     st.title("AlphaForge Research Dashboard")
     st.caption(
         "Local-first dashboard for ML research artifacts: labels, datasets, "
-        "predictions, signals, metrics, and reports."
+        "predictions, signals, factor diagnostics, metrics, and reports."
     )
 
-    artifact_dir = st.sidebar.text_input("Artifact directory", DEFAULT_ARTIFACT_DIR)
+    artifact_dir = st.sidebar.text_input("ML artifact directory", DEFAULT_ARTIFACT_DIR)
+    factor_dir = st.sidebar.text_input("Factor diagnostics directory", DEFAULT_FACTOR_DIAGNOSTICS_DIR)
     preview_rows = st.sidebar.slider("Preview rows", min_value=1, max_value=25, value=5)
+
     bundle = load_dashboard_artifacts(Path(artifact_dir), preview_rows=preview_rows)
+    factor_bundle = load_factor_diagnostics_artifacts(Path(factor_dir), preview_rows=preview_rows)
 
     render_overview(st, bundle)
     render_pipeline(st, bundle)
     render_metrics(st, bundle)
+    render_factor_diagnostics_dashboard(st, factor_bundle)
     render_diagnostics(st, bundle)
     render_tables(st, bundle)
     render_report(st, bundle)
@@ -153,13 +160,7 @@ def render_direction_counts(st: Any, signal: pd.DataFrame | None) -> None:
         height=330,
         margin={"l": 20, "r": 20, "t": 20, "b": 20},
         annotations=[
-            {
-                "text": f"{total}<br>signals",
-                "x": 0.5,
-                "y": 0.5,
-                "font_size": 16,
-                "showarrow": False,
-            }
+            {"text": f"{total}<br>signals", "x": 0.5, "y": 0.5, "font_size": 16, "showarrow": False}
         ],
     )
     st.plotly_chart(fig, use_container_width=True)
@@ -182,12 +183,7 @@ def render_target_weights(st: Any, signal: pd.DataFrame | None) -> None:
     weight_frame["asset_id"] = weight_frame["asset_id"].astype(str)
     weight_frame["target_weight"] = pd.to_numeric(weight_frame["target_weight"], errors="coerce").fillna(0.0)
 
-    fig = px.bar(
-        weight_frame,
-        x="asset_id",
-        y="target_weight",
-        text="target_weight",
-    )
+    fig = px.bar(weight_frame, x="asset_id", y="target_weight", text="target_weight")
     fig.update_layout(
         xaxis_title="Asset",
         yaxis_title="Target weight",
@@ -220,12 +216,7 @@ def render_prediction_scatter(st: Any, predictions: pd.DataFrame | None) -> None
     scatter = scatter.dropna(subset=["predicted_return", "ret_fwd_1m"])
 
     hover_cols = [col for col in ["asset_id", "date"] if col in scatter.columns]
-    fig = px.scatter(
-        scatter,
-        x="predicted_return",
-        y="ret_fwd_1m",
-        hover_data=hover_cols,
-    )
+    fig = px.scatter(scatter, x="predicted_return", y="ret_fwd_1m", hover_data=hover_cols)
     fig.update_layout(
         xaxis_title="Predicted return",
         yaxis_title="Realized forward return",
