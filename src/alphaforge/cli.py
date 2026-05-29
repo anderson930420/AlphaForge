@@ -11,6 +11,12 @@ from . import config
 from .open_asset_pricing import OAPQuantilePolicy, build_oap_v02_signal_frame
 from .oap_mom12m_pipeline import run_oap_mom12m_pipeline_smoke
 from .oap_multifactor import OAPMultiFactorConfig, build_multifactor_signal, load_feature_panel
+from .ml_baseline import (
+    evaluate_regression_predictions,
+    fit_baseline_regressor,
+    predict_baseline_regressor,
+)
+from .ml_dataset import build_ml_dataset, time_train_test_split
 from .return_labels import build_forward_return_labels, join_features_with_return_labels, load_return_panel
 from .signalforge_package import run_signalforge_v02_package_smoke
 from .backtest import LEGACY_EXECUTION_SEMANTICS, SIGNED_EXECUTION_SEMANTICS, SUPPORTED_EXECUTION_SEMANTICS
@@ -297,6 +303,21 @@ def build_parser() -> argparse.ArgumentParser:
     render_artifact_report_parser.add_argument("--output", type=Path, default=None)
     render_artifact_report_parser.add_argument("--report-json", type=Path, default=None)
 
+    run_ml_baseline = subparsers.add_parser(
+        "run-ml-baseline",
+        help="Train a lightweight baseline model on a supervised feature-label panel",
+    )
+    run_ml_baseline.add_argument("--panel", required=True, type=Path)
+    run_ml_baseline.add_argument("--output-dir", required=True, type=Path)
+    run_ml_baseline.add_argument("--label-col", default="ret_fwd_1m")
+    run_ml_baseline.add_argument("--feature-cols", default=None)
+    run_ml_baseline.add_argument("--train-end", required=True, type=str)
+    run_ml_baseline.add_argument("--test-start", default=None, type=str)
+    run_ml_baseline.add_argument("--alpha", type=float, default=1.0)
+    run_ml_baseline.add_argument("--prediction-col", default="predicted_return")
+    run_ml_baseline.add_argument("--asset-id-col", default="asset_id")
+    run_ml_baseline.add_argument("--date-col", default="date")
+
     return parser
 
 
@@ -393,6 +414,59 @@ def main() -> None:
                 report_json_path=args.report_json,
             )
             print(json.dumps({"status": "ok", "report_path": str(output_path)}, indent=2))
+            return
+
+        if args.command == "run-ml-baseline":
+            panel_df = pd.read_csv(args.panel)
+            feature_cols = None
+            if args.feature_cols is not None:
+                feature_cols = [c.strip() for c in args.feature_cols.split(",")]
+            dataset = build_ml_dataset(
+                panel_df,
+                asset_id_col=args.asset_id_col,
+                date_col=args.date_col,
+                label_col=args.label_col,
+                feature_cols=feature_cols,
+                drop_missing_label=True,
+                drop_missing_features=False,
+            )
+            if feature_cols is None:
+                feature_cols = [c for c in dataset.columns if c not in (args.asset_id_col, args.date_col, args.label_col)]
+
+            train_df, test_df = time_train_test_split(
+                dataset,
+                date_col=args.date_col,
+                train_end=args.train_end,
+                test_start=args.test_start,
+            )
+            model = fit_baseline_regressor(
+                train_df,
+                feature_cols=feature_cols,
+                label_col=args.label_col,
+                alpha=args.alpha,
+            )
+            predictions = predict_baseline_regressor(
+                model,
+                test_df,
+                feature_cols=feature_cols,
+                prediction_col=args.prediction_col,
+                label_col=args.label_col,
+                asset_id_col=args.asset_id_col,
+                date_col=args.date_col,
+            )
+            metrics = evaluate_regression_predictions(
+                predictions,
+                label_col=args.label_col,
+                prediction_col=args.prediction_col,
+            )
+
+            args.output_dir.mkdir(parents=True, exist_ok=True)
+            dataset.to_csv(args.output_dir / "dataset.csv", index=False)
+            predictions.to_csv(args.output_dir / "predictions.csv", index=False)
+            with open(args.output_dir / "metrics_summary.json", "w") as f:
+                json.dump(metrics, f, indent=2)
+
+            print(json.dumps({"status": "ok", "output_dir": str(args.output_dir), "metrics": metrics}, indent=2, default=str))
             return
 
         if args.command == "build-oap-signal":
