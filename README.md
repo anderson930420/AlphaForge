@@ -36,6 +36,7 @@ execution with configurable semantics.
 - ML dataset builder (feature inference, missing-label drop, date normalization)
 - single-factor diagnostics (coverage, distribution, IC, Rank IC, quantile returns)
 - baseline ML regressor (closed-form OLS ridge, median imputation, no sklearn)
+- sklearn regression model adapters (Ridge, Random Forest, HistGradientBoosting, optional)
 - ML prediction to custom_signal v0.2 converter (quantile-based long/short/neutral)
 - HTML artifact report renderer (metric cards, Plotly equity/drawdown charts)
 - local research dashboard for ML artifact visualization
@@ -283,6 +284,33 @@ PYTHONPATH=src python3 -m alphaforge.cli run-ml-baseline \
 ```
 
 Outputs: `dataset.csv`, `predictions.csv`, `metrics_summary.json`.
+
+## sklearn Regression Model Adapters
+
+Optional sklearn-backed regression models (Ridge, Random Forest,
+HistGradientBoosting) that output `predictions.csv` compatible with the
+Phase 30 ML prediction diagnostics.
+
+Install sklearn support:
+
+```bash
+python3 -m pip install -e ".[sklearn]"
+```
+
+```bash
+PYTHONPATH=src python3 scripts/run_sklearn_ml_model.py \
+  --panel tests/fixtures/ml_baseline/supervised_panel.csv \
+  --output-dir artifacts/phase32/sklearn_ridge_demo \
+  --model ridge_regressor \
+  --label-col ret_fwd_1m \
+  --train-end 2024-03-31 \
+  --feature-cols Mom12m,BM,Investment
+```
+
+Outputs: `predictions.csv`, `metrics.json`, `model_summary.json`,
+`train_config.json`, `feature_importance.csv`.
+
+Classification models are deferred to a later phase.
 
 ## ML Prediction Signal Converter
 
