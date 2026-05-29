@@ -107,8 +107,8 @@ def build_multifactor_signal(
 
 
 def _build_date_score(group: pd.DataFrame, config: OAPMultiFactorConfig, feature_names: list[str]) -> pd.DataFrame:
-    weights: list[float] = []
-    normalized_values: list[pd.Series] = []
+    weighted_sum = pd.Series(0.0, index=group.index)
+    weight_sum = pd.Series(0.0, index=group.index)
 
     for fspec in config.features:
         col = fspec.name
@@ -127,32 +127,26 @@ def _build_date_score(group: pd.DataFrame, config: OAPMultiFactorConfig, feature
         if not fspec.higher_is_better:
             norm = -norm
 
-        weights.append(fspec.weight)
-        normalized_values.append(norm)
+        valid_norm = norm.notna()
+        weighted_sum.loc[valid_norm] = weighted_sum.loc[valid_norm] + fspec.weight * norm.loc[valid_norm]
+        weight_sum.loc[valid_norm] = weight_sum.loc[valid_norm] + fspec.weight
 
-    if not normalized_values:
-        result = group.copy()
-        result["score"] = float("nan")
-        result["signal_name"] = config.signal_name
-        result["direction"] = 0
-        result["target_weight"] = 0.0
-        result["source"] = "OpenAssetPricing"
-        return result
-
-    total_weight = sum(weights)
-    weighted_sum = sum(w * v for w, v in zip(weights, normalized_values)) / total_weight
+    score = pd.Series(float("nan"), index=group.index)
+    has_weight = weight_sum > 0
+    score.loc[has_weight] = weighted_sum.loc[has_weight] / weight_sum.loc[has_weight]
 
     result = group.copy()
-    result["score"] = weighted_sum
+    result["score"] = score
     result["signal_name"] = config.signal_name
 
+    score_valid = result["score"].notna()
     score_series = result["score"].copy()
-    long_thresh = score_series.quantile(config.long_quantile)
-    short_thresh = score_series.quantile(config.short_quantile)
+    long_thresh = score_series.loc[score_valid].quantile(config.long_quantile)
+    short_thresh = score_series.loc[score_valid].quantile(config.short_quantile)
 
     result["direction"] = 0
-    result.loc[score_series >= long_thresh, "direction"] = 1
-    result.loc[score_series <= short_thresh, "direction"] = -1
+    result.loc[score_valid & (score_series >= long_thresh), "direction"] = 1
+    result.loc[score_valid & (score_series <= short_thresh), "direction"] = -1
 
     result["target_weight"] = 0.0
     long_mask = result["direction"].eq(1)

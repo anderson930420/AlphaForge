@@ -173,6 +173,31 @@ class TestMissingValues:
         assert b_row["direction"].iloc[0] == 0
         assert b_row["target_weight"].iloc[0] == 0.0
 
+    def test_partial_missing_row_receives_score(self, tmp_path: Path) -> None:
+        df = pd.DataFrame({
+            "asset_id": list("AB"),
+            "date": ["2024-01-31"] * 2,
+            "Mom12m": [1.0, None],
+            "BM": [None, 2.0],
+        })
+        config = mf.OAPMultiFactorConfig(
+            signal_name="test",
+            features=[
+                mf.FeatureSpec(name="Mom12m", weight=1.0, higher_is_better=True),
+                mf.FeatureSpec(name="BM", weight=1.0, higher_is_better=True),
+            ],
+            missing_policy="ignore_feature",
+        )
+        signal = mf.build_multifactor_signal(df, config)
+        a_row = signal[signal["symbol"] == "A"]
+        b_row = signal[signal["symbol"] == "B"]
+        assert len(a_row) == 1
+        assert len(b_row) == 1
+        assert a_row["score"].notna().iloc[0], "A has one valid feature, should have a score"
+        assert b_row["score"].notna().iloc[0], "B has one valid feature, should have a score"
+        assert a_row["direction"].iloc[0] in [-1, 0, 1]
+        assert b_row["direction"].iloc[0] in [-1, 0, 1]
+
 
 class TestOutputSchema:
     def test_v02_schema(self, tmp_path: Path) -> None:
