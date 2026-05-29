@@ -18,6 +18,7 @@ Data / Features
   → Baseline ML Predictions
   → custom_signal v0.2 Signal
   → Backtest / Artifact Reports
+  → Local Research Dashboard
 ```
 
 Features (OAP characteristics, external signals) and returns are kept as separate
@@ -35,6 +36,7 @@ execution with configurable semantics.
 - baseline ML regressor (closed-form OLS ridge, median imputation, no sklearn)
 - ML prediction to custom_signal v0.2 converter (quantile-based long/short/neutral)
 - HTML artifact report renderer (metric cards, Plotly equity/drawdown charts)
+- local research dashboard for ML artifact visualization
 - end-to-end ML artifact smoke script (features + returns → signal + report)
 - built-in MA crossover and breakout strategy families
 - grid search, train/test validation, walk-forward validation
@@ -54,6 +56,7 @@ features.csv + monthly_returns.csv
   → fit_baseline_regressor + predict  →  predictions.csv + metrics_summary.json
   → build_ml_prediction_signal  →  ml_signal.csv
   → render_artifact_report  →  report.html
+  → local research dashboard
 ```
 
 The baseline regressor is a closed-form ridge regression using only numpy and
@@ -71,6 +74,7 @@ cross-sectional dispersion produce all-neutral positions.
 - smoke metrics are integration/regression metrics, not strategy performance claims
 - SignalForge integration is file-based; AlphaForge does not import SignalForge runtime code
 - OAP characteristics are predictors, not realized returns — labels must come from a separate return source
+- dashboard is local-first and reads generated artifacts; it does not upload private data
 
 ## Portfolio Summary
 
@@ -82,13 +86,13 @@ cross-sectional dispersion produce all-neutral positions.
   file contract with no runtime coupling
 - Implemented a local ML research pipeline — feature/label joining, time-based
   train/test splitting, closed-form ridge regression, quantile-based signal
-  conversion, and HTML artifact reporting — without requiring sklearn, CRSP, or
-  private data
+  conversion, artifact reporting, and local dashboard visualization — without
+  requiring sklearn, CRSP, or private data
 - Maintains strict data hygiene: private datasets and generated artifacts stay
   out of git; all tests use small deterministic fixtures, with a 500+ test suite
 - Designed for extensibility with clear module boundaries across backtesting,
-  signal ingestion, factor building, return labeling, ML scaffolding, and
-  artifact reporting
+  signal ingestion, factor building, return labeling, ML scaffolding, dashboard
+  artifact loading, and artifact reporting
 
 ## Quick Start
 
@@ -125,6 +129,10 @@ PYTHONPATH=src python3 scripts/run_ml_artifact_smoke.py \
   --features tests/fixtures/return_labels/features.csv \
   --returns tests/fixtures/return_labels/monthly_returns.csv \
   --output-dir artifacts/phase25/ml_artifact_smoke
+
+# Local research dashboard
+python -m pip install -e ".[dashboard]"
+PYTHONPATH=src streamlit run src/alphaforge/dashboard_app.py
 ```
 
 ## Data Model
@@ -278,6 +286,26 @@ Generates: `return_labels.csv`, `supervised_panel.csv`, `dataset.csv`,
 `predictions.csv`, `metrics_summary.json`, `ml_signal.csv`, `report.html`,
 `smoke_summary.json`.
 
+## Local Research Dashboard
+
+The dashboard visualizes a generated artifact directory without uploading private
+data. It displays pipeline file status, JSON summaries, table shapes/previews,
+and the generated HTML report.
+
+```bash
+python -m pip install -e ".[dashboard]"
+PYTHONPATH=src streamlit run src/alphaforge/dashboard_app.py
+```
+
+Default artifact directory:
+
+```text
+artifacts/phase25/ml_artifact_smoke
+```
+
+See `docs/phase-27-local-research-dashboard.md` for the full Phase 27 boundary
+and validation commands.
+
 ## SignalForge Integration
 
 AlphaForge consumes SignalForge v0.2 packages through file artifacts — no
@@ -353,10 +381,13 @@ intended for deterministic tests.
 - no committed raw or processed OAP data
 - baseline ML only — no deep learning or advanced model architectures
 - signal quantile-based conversion requires cross-sectional dispersion; thin dates become neutral
+- dashboard is a local artifact viewer, not a hosted multi-user platform
 
 ## Roadmap
 
 - extend ML baseline with cross-validation and regularization paths
+- add single-factor and ML prediction diagnostics to the dashboard
+- add portfolio/exposure diagnostics to the dashboard
 - add multi-symbol custom_signal validation
 - formalize local loaders for processed OAP Parquet files
 - keep SignalForge package compatibility aligned with v0.2 contract
