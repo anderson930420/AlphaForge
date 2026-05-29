@@ -312,6 +312,32 @@ Outputs: `predictions.csv`, `metrics.json`, `model_summary.json`,
 
 Classification models are deferred to a later phase.
 
+## PyTorch MLP Baseline
+
+Optional CPU-friendly PyTorch MLP regression baseline for supervised tabular
+asset-pricing experiments. Two hidden layers with ReLU activation and dropout.
+
+```bash
+python3 -m pip install -e ".[torch]"
+
+PYTHONPATH=src python3 scripts/run_torch_mlp_baseline.py \
+  --panel tests/fixtures/ml_baseline/supervised_panel.csv \
+  --output-dir artifacts/phase34/torch_mlp_demo \
+  --label-col ret_fwd_1m \
+  --train-end 2024-03-31 \
+  --feature-cols Mom12m,BM,Investment \
+  --epochs 5 \
+  --batch-size 4 \
+  --hidden-dim 32
+```
+
+Outputs: `predictions.csv`, `metrics.json`, `model_summary.json`,
+`train_config.json`, `training_history.csv`, `feature_importance.csv`.
+
+Predictions are compatible with Phase 30 ML prediction diagnostics.
+Feature importance is not extracted for torch MLP models.
+See `docs/phase-34-lightweight-torch-mlp.md` for full boundary and validation.
+
 ## ML Prediction Signal Converter
 
 Converts `predictions.csv` into v0.2 `signal.csv` with quantile-based
