@@ -20,7 +20,7 @@ A predictions artifact with at least:
 asset_id, date, predicted_return, ret_fwd_1m
 ```
 
-Example:
+Example smoke command:
 
 ```bash
 PYTHONPATH=src python3 scripts/run_ml_prediction_diagnostics.py \
@@ -30,6 +30,8 @@ PYTHONPATH=src python3 scripts/run_ml_prediction_diagnostics.py \
   --label-col ret_fwd_1m \
   --quantiles 2
 ```
+
+The checked-in ML smoke fixture is intentionally tiny. Its `predictions.csv` can have only one asset per date, so IC, Rank IC, quantile returns, and long-short spread may be empty even with `--quantiles 2`. In that case, error diagnostics still run, but cross-sectional signal diagnostics require a larger prediction artifact with at least two valid assets per date.
 
 Use higher quantile counts such as `--quantiles 5` only when each date has a large enough cross section.
 
