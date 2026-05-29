@@ -5,7 +5,7 @@ from typing import Any
 
 import pandas as pd
 
-from .dashboard_artifacts import (
+from alphaforge.dashboard_artifacts import (
     DashboardArtifactBundle,
     load_dashboard_artifacts,
     pipeline_step_statuses,
@@ -21,7 +21,7 @@ def main() -> None:
     except ModuleNotFoundError as exc:  # pragma: no cover - exercised manually
         raise SystemExit(
             "Streamlit is not installed. Install the dashboard extra with: "
-            "python -m pip install -e '.[dashboard]'"
+            "python3 -m pip install -e '.[dashboard]'"
         ) from exc
 
     st.set_page_config(page_title="AlphaForge Research Dashboard", layout="wide")
