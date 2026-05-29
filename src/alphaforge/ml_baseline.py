@@ -47,6 +47,8 @@ def predict_baseline_regressor(
     feature_cols: list[str],
     prediction_col: str = "predicted_return",
     label_col: str | None = None,
+    asset_id_col: str = "asset_id",
+    date_col: str = "date",
 ) -> pd.DataFrame:
     m = model
     X = dataset_df[feature_cols].copy().astype(float)
@@ -57,8 +59,8 @@ def predict_baseline_regressor(
     predictions = X_design @ m["coef"]
 
     result = pd.DataFrame({
-        "asset_id": dataset_df["asset_id"].values,
-        "date": dataset_df["date"].values,
+        "asset_id": dataset_df[asset_id_col].values,
+        "date": dataset_df[date_col].values,
         prediction_col: predictions,
     })
 

@@ -451,6 +451,8 @@ def main() -> None:
                 feature_cols=feature_cols,
                 prediction_col=args.prediction_col,
                 label_col=args.label_col,
+                asset_id_col=args.asset_id_col,
+                date_col=args.date_col,
             )
             metrics = evaluate_regression_predictions(
                 predictions,

@@ -90,6 +90,24 @@ class TestFitPredict:
         assert len(preds) == len(test)
         assert not preds["predicted_return"].isna().any()
 
+    def test_custom_asset_id_and_date_cols(self):
+        df = pd.DataFrame({
+            "permno": ["A", "A", "A", "A"],
+            "yyyymm": pd.to_datetime(["2024-01-31", "2024-02-29", "2024-03-31", "2024-04-30"]),
+            "Mom12m": [0.10, 0.11, 0.09, 0.12],
+            "ret_fwd_1m": [0.02, -0.01, 0.03, 0.015],
+        })
+        dataset = build_ml_dataset(df, asset_id_col="permno", date_col="yyyymm", feature_cols=["Mom12m"])
+        train, test = time_train_test_split(dataset, date_col="yyyymm", train_end="2024-02-29")
+        model = fit_baseline_regressor(train, feature_cols=["Mom12m"], label_col="ret_fwd_1m")
+        preds = predict_baseline_regressor(
+            model, test, feature_cols=["Mom12m"],
+            asset_id_col="permno", date_col="yyyymm", label_col="ret_fwd_1m",
+        )
+        assert list(preds.columns) == ["asset_id", "date", "predicted_return", "ret_fwd_1m"]
+        assert preds["asset_id"].iloc[0] == "A"
+        assert preds["date"].iloc[0] == pd.Timestamp("2024-03-31")
+
 
 class TestEvaluate:
     def test_metrics_include_mse_mae_correlation(self):
@@ -197,3 +215,36 @@ class TestCLI:
         assert result.returncode == 0, f"CLI failed: {result.stderr}"
         assert output_dir.exists()
         assert (output_dir / "dataset.csv").exists()
+
+    def test_cli_custom_asset_id_and_date_cols(self, tmp_path: Path):
+        panel = tmp_path / "panel.csv"
+        panel.write_text("permno,yyyymm,Mom12m,BM,ret_fwd_1m\n"
+                         "A,2024-01-31,0.10,0.50,0.02\n"
+                         "A,2024-02-29,0.11,0.51,-0.01\n"
+                         "A,2024-03-31,0.09,0.52,0.03\n"
+                         "A,2024-04-30,0.12,0.53,0.015\n"
+                         "B,2024-01-31,0.05,0.30,-0.005\n"
+                         "B,2024-02-29,0.06,0.31,-0.02\n"
+                         "B,2024-03-31,0.04,0.32,0.015\n"
+                         "B,2024-04-30,0.07,0.33,-0.01\n")
+        output_dir = tmp_path / "ml_baseline"
+        result = subprocess.run(
+            [
+                "python3", "-m", "alphaforge.cli", "run-ml-baseline",
+                "--panel", str(panel),
+                "--output-dir", str(output_dir),
+                "--asset-id-col", "permno",
+                "--date-col", "yyyymm",
+                "--label-col", "ret_fwd_1m",
+                "--train-end", "2024-03-31",
+                "--feature-cols", "Mom12m,BM",
+            ],
+            capture_output=True,
+            text=True,
+            env={**__import__("os").environ, "PYTHONPATH": "src"},
+        )
+        assert result.returncode == 0, f"CLI failed: {result.stderr}"
+        predictions = pd.read_csv(output_dir / "predictions.csv")
+        assert "asset_id" in predictions.columns
+        assert "date" in predictions.columns
+        assert "predicted_return" in predictions.columns
