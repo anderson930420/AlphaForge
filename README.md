@@ -543,6 +543,70 @@ PYTHONPATH=src python3 -m alphaforge.cli build-ml-signal \
 - `--gross-long-weight` – total long-side gross weight (default: `1.0`)
 - `--gross-short-weight` – total short-side gross weight (default: `-1.0`)
 
+## End-to-End ML Artifact Smoke
+
+This smoke test runs the local ML research path from fixture features and returns
+to ML signal artifacts. It is intended to prove integration, not strategy
+profitability.
+
+It does **not** download CRSP/WRDS data, does **not** use private data, and does
+**not** perform live trading.
+
+The end-to-end flow:
+
+```text
+feature fixture + monthly return fixture
+→ build forward return labels
+→ join features with labels into supervised panel
+→ build ML dataset
+→ train baseline model
+→ write predictions + metrics
+→ convert predictions into custom_signal v0.2 signal.csv
+→ render an HTML artifact report
+```
+
+### CLI Example
+
+```bash
+PYTHONPATH=src python3 scripts/run_ml_artifact_smoke.py \
+  --features tests/fixtures/return_labels/features.csv \
+  --returns tests/fixtures/return_labels/monthly_returns.csv \
+  --output-dir artifacts/phase25/ml_artifact_smoke
+```
+
+### Generated Artifacts
+
+```text
+return_labels.csv
+supervised_panel.csv
+dataset.csv
+predictions.csv
+metrics_summary.json
+ml_signal.csv
+report.html
+smoke_summary.json
+```
+
+`smoke_summary.json` records row counts for each artifact plus the paths to
+`metrics_summary.json`, `ml_signal.csv`, and `report.html`.
+
+### CLI Options
+
+- `--features` – path to feature CSV/Parquet
+- `--returns` – path to monthly return CSV/Parquet
+- `--output-dir` – output directory for all artifacts
+- `--asset-id-col` (default: `asset_id`)
+- `--date-col` (default: `date`)
+- `--return-col` (default: `ret`)
+- `--label-col` (default: `ret_fwd_1m`)
+- `--horizon-months` (default: `1`)
+- `--feature-cols` (default: `Mom12m,BM`)
+- `--train-end` (default: `2024-02-29`)
+- `--test-start` (default: none)
+- `--prediction-col` (default: `predicted_return`)
+- `--long-quantile` (default: `0.8`)
+- `--short-quantile` (default: `0.2`)
+
 ## CLI Usage
 
 Install locally first:
