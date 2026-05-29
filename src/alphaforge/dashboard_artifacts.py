@@ -32,6 +32,23 @@ JSON_ARTIFACTS = {
     "smoke_summary": "smoke_summary.json",
 }
 
+FACTOR_DIAGNOSTIC_ARTIFACTS: tuple[str, ...] = (
+    "factor_summary.json",
+    "factor_coverage_by_date.csv",
+    "factor_distribution_by_date.csv",
+    "factor_ic_timeseries.csv",
+    "factor_quantile_returns.csv",
+    "factor_long_short_spread.csv",
+)
+
+FACTOR_TABLE_ARTIFACTS = {
+    "coverage_by_date": "factor_coverage_by_date.csv",
+    "distribution_by_date": "factor_distribution_by_date.csv",
+    "ic_timeseries": "factor_ic_timeseries.csv",
+    "quantile_returns": "factor_quantile_returns.csv",
+    "long_short_spread": "factor_long_short_spread.csv",
+}
+
 
 @dataclass(frozen=True)
 class TableSummary:
@@ -59,6 +76,24 @@ class DashboardArtifactBundle:
     @property
     def is_complete(self) -> bool:
         return not self.missing_files
+
+
+@dataclass(frozen=True)
+class FactorDiagnosticsBundle:
+    diagnostics_dir: str
+    expected_files: tuple[str, ...]
+    present_files: tuple[str, ...]
+    missing_files: tuple[str, ...]
+    summary: dict[str, Any] | None
+    table_summaries: dict[str, TableSummary]
+
+    @property
+    def is_complete(self) -> bool:
+        return not self.missing_files
+
+    @property
+    def has_any_artifacts(self) -> bool:
+        return bool(self.present_files)
 
 
 def load_dashboard_artifacts(
@@ -101,6 +136,39 @@ def load_dashboard_artifacts(
         json_summaries=json_summaries,
         report_path=str(report) if report.exists() else None,
         report_exists=report.exists(),
+    )
+
+
+def load_factor_diagnostics_artifacts(
+    diagnostics_dir: Path | str,
+    *,
+    preview_rows: int = 5,
+) -> FactorDiagnosticsBundle:
+    """Load local factor diagnostics artifacts for dashboard display."""
+    root = Path(diagnostics_dir).expanduser()
+    present_files = []
+    missing_files = []
+    for filename in FACTOR_DIAGNOSTIC_ARTIFACTS:
+        path = root / filename
+        if path.exists():
+            present_files.append(filename)
+        else:
+            missing_files.append(filename)
+
+    summary_path = root / "factor_summary.json"
+    summary = load_json_artifact(summary_path) if summary_path.exists() else None
+    table_summaries = {
+        name: summarize_csv_artifact(root / filename, name=name, preview_rows=preview_rows)
+        for name, filename in FACTOR_TABLE_ARTIFACTS.items()
+    }
+
+    return FactorDiagnosticsBundle(
+        diagnostics_dir=str(root),
+        expected_files=FACTOR_DIAGNOSTIC_ARTIFACTS,
+        present_files=tuple(present_files),
+        missing_files=tuple(missing_files),
+        summary=summary,
+        table_summaries=table_summaries,
     )
 
 
@@ -160,4 +228,25 @@ def pipeline_step_statuses(bundle: DashboardArtifactBundle) -> list[dict[str, An
             "status": "present" if filename in present else "missing",
         }
         for filename in PIPELINE_ARTIFACTS
+    ]
+
+
+def factor_diagnostic_step_statuses(bundle: FactorDiagnosticsBundle) -> list[dict[str, Any]]:
+    """Return ordered dashboard rows for factor diagnostic artifacts."""
+    labels = {
+        "factor_summary.json": "Summary statistics",
+        "factor_coverage_by_date.csv": "Coverage / missingness",
+        "factor_distribution_by_date.csv": "Factor distribution",
+        "factor_ic_timeseries.csv": "IC / Rank IC time series",
+        "factor_quantile_returns.csv": "Quantile forward returns",
+        "factor_long_short_spread.csv": "Long-short spread",
+    }
+    present = set(bundle.present_files)
+    return [
+        {
+            "artifact": filename,
+            "stage": labels[filename],
+            "status": "present" if filename in present else "missing",
+        }
+        for filename in FACTOR_DIAGNOSTIC_ARTIFACTS
     ]
