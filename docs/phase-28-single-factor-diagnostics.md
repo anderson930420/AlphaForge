@@ -22,7 +22,7 @@ A supervised panel with at least:
 asset_id, date, <factor column>, ret_fwd_1m
 ```
 
-Example:
+Tiny fixture smoke example:
 
 ```bash
 PYTHONPATH=src python3 scripts/run_factor_diagnostics.py \
@@ -30,8 +30,12 @@ PYTHONPATH=src python3 scripts/run_factor_diagnostics.py \
   --output-dir artifacts/phase28/mom12m_diagnostics \
   --factor-col Mom12m \
   --label-col ret_fwd_1m \
-  --quantiles 5
+  --quantiles 2
 ```
+
+Use higher quantile counts such as `--quantiles 5` only when each date has a
+large enough cross section. The checked-in ML smoke fixture is intentionally tiny
+and has at most two assets per date, so five-quantile buckets are skipped.
 
 ## Outputs
 
@@ -83,6 +87,9 @@ Per-date quantile bucket forward returns:
 ```text
 date, quantile, quantile_number, asset_count, mean_forward_return, median_forward_return
 ```
+
+Thin dates where the valid cross section is smaller than the requested quantile
+count are skipped instead of forcing unstable buckets.
 
 ### Long-short spread
 
