@@ -15,6 +15,7 @@ Data / Features
   → Signal Construction
   → Forward Return Labels
   → Supervised ML Dataset
+  → Single-Factor Diagnostics
   → Baseline ML Predictions
   → custom_signal v0.2 Signal
   → Backtest / Artifact Reports
@@ -33,6 +34,7 @@ execution with configurable semantics.
 - OAP multi-factor signal builder (cross-sectional ranking, YAML configured)
 - forward return label builder (month-end aligned, delisting-aware)
 - ML dataset builder (feature inference, missing-label drop, date normalization)
+- single-factor diagnostics (coverage, distribution, IC, Rank IC, quantile returns)
 - baseline ML regressor (closed-form OLS ridge, median imputation, no sklearn)
 - ML prediction to custom_signal v0.2 converter (quantile-based long/short/neutral)
 - HTML artifact report renderer (metric cards, Plotly equity/drawdown charts)
@@ -52,6 +54,7 @@ complete v0.2 signal file and HTML report:
 features.csv + monthly_returns.csv
   → build_forward_return_labels  →  return_labels.csv
   → join_features_with_return_labels  →  supervised_panel.csv
+  → run_factor_diagnostics  →  factor diagnostic artifacts
   → build_ml_dataset  →  dataset.csv
   → fit_baseline_regressor + predict  →  predictions.csv + metrics_summary.json
   → build_ml_prediction_signal  →  ml_signal.csv
@@ -85,9 +88,9 @@ cross-sectional dispersion produce all-neutral positions.
   SignalForge v0.2 signal packages) through a standardized `custom_signal`
   file contract with no runtime coupling
 - Implemented a local ML research pipeline — feature/label joining, time-based
-  train/test splitting, closed-form ridge regression, quantile-based signal
-  conversion, artifact reporting, and local dashboard visualization — without
-  requiring sklearn, CRSP, or private data
+  train/test splitting, single-factor diagnostics, closed-form ridge regression,
+  quantile-based signal conversion, artifact reporting, and local dashboard
+  visualization — without requiring sklearn, CRSP, or private data
 - Maintains strict data hygiene: private datasets and generated artifacts stay
   out of git; all tests use small deterministic fixtures, with a 500+ test suite
 - Designed for extensibility with clear module boundaries across backtesting,
@@ -129,6 +132,14 @@ PYTHONPATH=src python3 scripts/run_ml_artifact_smoke.py \
   --features tests/fixtures/return_labels/features.csv \
   --returns tests/fixtures/return_labels/monthly_returns.csv \
   --output-dir artifacts/phase25/ml_artifact_smoke
+
+# Single-factor diagnostics
+PYTHONPATH=src python3 scripts/run_factor_diagnostics.py \
+  --panel artifacts/phase25/ml_artifact_smoke/supervised_panel.csv \
+  --output-dir artifacts/phase28/mom12m_diagnostics \
+  --factor-col Mom12m \
+  --label-col ret_fwd_1m \
+  --quantiles 5
 
 # Local research dashboard
 python -m pip install -e ".[dashboard]"
@@ -238,6 +249,25 @@ PYTHONPATH=src python3 -m alphaforge.cli build-return-labels \
 ```
 
 Delisting returns are supported via `--delisting-return-col dlret`.
+
+## Single-Factor Diagnostics
+
+Evaluate one factor against forward returns before treating it as a tradable
+signal or ML feature. Diagnostics include coverage, missingness, distribution,
+IC, Rank IC, quantile forward returns, and top-minus-bottom long-short spread.
+
+```bash
+PYTHONPATH=src python3 scripts/run_factor_diagnostics.py \
+  --panel artifacts/phase25/ml_artifact_smoke/supervised_panel.csv \
+  --output-dir artifacts/phase28/mom12m_diagnostics \
+  --factor-col Mom12m \
+  --label-col ret_fwd_1m \
+  --quantiles 5
+```
+
+Outputs: `factor_summary.json`, `factor_coverage_by_date.csv`,
+`factor_distribution_by_date.csv`, `factor_ic_timeseries.csv`,
+`factor_quantile_returns.csv`, `factor_long_short_spread.csv`.
 
 ## ML Baseline Scaffold
 
@@ -386,7 +416,8 @@ intended for deterministic tests.
 ## Roadmap
 
 - extend ML baseline with cross-validation and regularization paths
-- add single-factor and ML prediction diagnostics to the dashboard
+- add factor diagnostics outputs to the dashboard
+- add ML prediction diagnostics
 - add portfolio/exposure diagnostics to the dashboard
 - add multi-symbol custom_signal validation
 - formalize local loaders for processed OAP Parquet files
