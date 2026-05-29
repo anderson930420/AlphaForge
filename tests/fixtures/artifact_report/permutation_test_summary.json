@@ -1,0 +1,9 @@
+{
+  "strategy_name": "ma_crossover",
+  "strategy_parameters": {"short_window": 2, "long_window": 4},
+  "target_metric_name": "score",
+  "permutation_count": 100,
+  "empirical_p_value": 0.04,
+  "null_ge_count": 4,
+  "metadata": {}
+}

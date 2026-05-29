@@ -1,0 +1,6 @@
+{
+  "walk_forward_config": {"train_size": 6, "test_size": 3, "step_size": 3},
+  "fold_count": 3,
+  "aggregate_test_metrics": {"total_return": 0.10, "sharpe_ratio": 0.9},
+  "metadata": {}
+}
