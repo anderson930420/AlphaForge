@@ -85,7 +85,7 @@ cross-sectional dispersion produce all-neutral positions.
   conversion, and HTML artifact reporting — without requiring sklearn, CRSP, or
   private data
 - Maintains strict data hygiene: private datasets and generated artifacts stay
-  out of git; all tests use small deterministic fixtures with 500+ test suite
+  out of git; all tests use small deterministic fixtures, with a 500+ test suite
 - Designed for extensibility with clear module boundaries across backtesting,
   signal ingestion, factor building, return labeling, ML scaffolding, and
   artifact reporting
@@ -181,9 +181,10 @@ AlphaForge processes OAP firm-level characteristics as monthly predictors. No
 bundled downloader — place raw files locally under `data/raw/oap/` and keep them
 out of git.
 
-Current verified characteristics panel covers 2010–2012 with 209 features
-including Mom12m, BM, AssetGrowth, Beta, OperProf, and Investment. Missingness
-ranges from ~14% (Beta) to ~73% (OperProf) — expected for firm-level data.
+The locally verified raw OAP file contains 209 characteristic columns. Current
+examples focus on a selected 2010–2012 feature subset including Mom12m, BM,
+AssetGrowth, Beta, OperProf, and Investment. Missingness is expected for
+firm-level characteristics, especially accounting-based predictors.
 
 Processed files use the convention:
 
