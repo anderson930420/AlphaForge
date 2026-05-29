@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
+import plotly.express as px
 
 from alphaforge.dashboard_artifacts import (
     DashboardArtifactBundle,
@@ -13,6 +14,14 @@ from alphaforge.dashboard_artifacts import (
 
 
 DEFAULT_ARTIFACT_DIR = "artifacts/phase25/ml_artifact_smoke"
+PIPELINE_ROW_ORDER = [
+    "Return labels",
+    "Supervised panel",
+    "Dataset",
+    "Predictions",
+    "ML signal",
+]
+DIRECTION_ORDER = ["long", "neutral", "short"]
 
 
 def main() -> None:
@@ -60,23 +69,27 @@ def render_overview(st: Any, bundle: DashboardArtifactBundle) -> None:
 def render_pipeline(st: Any, bundle: DashboardArtifactBundle) -> None:
     st.subheader("Pipeline Status")
     steps = pd.DataFrame(pipeline_step_statuses(bundle))
-    st.dataframe(steps, use_container_width=True)
+    st.dataframe(steps, use_container_width=True, hide_index=True)
 
-    row_counts = []
-    labels = {
-        "return_labels": "Return labels",
-        "supervised_panel": "Supervised panel",
-        "dataset": "Dataset",
-        "predictions": "Predictions",
-        "ml_signal": "ML signal",
-    }
-    for name, label in labels.items():
-        summary = bundle.table_summaries.get(name)
-        if summary is not None and summary.exists and summary.row_count is not None:
-            row_counts.append({"stage": label, "rows": summary.row_count})
-    if row_counts:
+    row_counts = build_pipeline_row_counts(bundle)
+    if not row_counts.empty:
         st.caption("Rows carried through each ML artifact stage")
-        st.bar_chart(pd.DataFrame(row_counts).set_index("stage"))
+        fig = px.bar(
+            row_counts,
+            x="rows",
+            y="stage",
+            orientation="h",
+            text="rows",
+            category_orders={"stage": PIPELINE_ROW_ORDER},
+        )
+        fig.update_layout(
+            xaxis_title="Rows",
+            yaxis_title="Stage",
+            height=330,
+            margin={"l": 20, "r": 20, "t": 20, "b": 20},
+        )
+        fig.update_traces(textposition="outside", cliponaxis=False)
+        st.plotly_chart(fig, use_container_width=True)
 
 
 def render_metrics(st: Any, bundle: DashboardArtifactBundle) -> None:
@@ -95,44 +108,123 @@ def render_diagnostics(st: Any, bundle: DashboardArtifactBundle) -> None:
     predictions = read_table(bundle, "predictions")
     signal = read_table(bundle, "ml_signal")
 
+    if predictions is not None and len(predictions) < 10:
+        st.info(
+            "The current smoke fixture is intentionally tiny. Charts verify the dashboard wiring, "
+            "but they are not meaningful research diagnostics yet. Use a larger artifact directory "
+            "for realistic long/short and prediction-quality visuals."
+        )
+
     col1, col2 = st.columns(2)
     with col1:
-        st.markdown("**Signal direction counts**")
-        if signal is None or "direction" not in signal.columns:
-            st.info("ml_signal.csv with direction column is required.")
-        else:
-            counts = (
-                signal["direction"]
-                .map({1: "long", 0: "neutral", -1: "short"})
-                .fillna(signal["direction"].astype(str))
-                .value_counts()
-                .rename_axis("direction")
-                .reset_index(name="count")
-            )
-            st.bar_chart(counts.set_index("direction"))
-
+        render_direction_counts(st, signal)
     with col2:
-        st.markdown("**Target weight by asset**")
-        required = {"asset_id", "target_weight"}
-        if signal is None or not required.issubset(signal.columns):
-            st.info("ml_signal.csv with asset_id and target_weight columns is required.")
-        else:
-            weight_frame = signal[["asset_id", "target_weight"]].copy()
-            weight_frame["target_weight"] = pd.to_numeric(weight_frame["target_weight"], errors="coerce")
-            st.bar_chart(weight_frame.set_index("asset_id"))
+        render_target_weights(st, signal)
 
+    render_prediction_scatter(st, predictions)
+
+
+def render_direction_counts(st: Any, signal: pd.DataFrame | None) -> None:
+    st.markdown("**Signal direction counts**")
+    if signal is None or "direction" not in signal.columns:
+        st.info("ml_signal.csv with direction column is required.")
+        return
+
+    direction = pd.to_numeric(signal["direction"], errors="coerce")
+    direction_labels = direction.map({1: "long", 0: "neutral", -1: "short"}).fillna("unknown")
+    counts = (
+        direction_labels.value_counts()
+        .reindex(DIRECTION_ORDER + ["unknown"], fill_value=0)
+        .rename_axis("direction")
+        .reset_index(name="count")
+    )
+    counts = counts[counts["count"] > 0]
+
+    fig = px.bar(
+        counts,
+        x="direction",
+        y="count",
+        text="count",
+        category_orders={"direction": DIRECTION_ORDER + ["unknown"]},
+    )
+    fig.update_layout(
+        xaxis_title="Direction",
+        yaxis_title="Count",
+        height=330,
+        margin={"l": 20, "r": 20, "t": 20, "b": 20},
+    )
+    fig.update_traces(textposition="outside", cliponaxis=False)
+    st.plotly_chart(fig, use_container_width=True)
+
+    if set(counts["direction"]) == {"neutral"}:
+        st.caption(
+            "All rows are neutral. This is expected for very small or low-dispersion smoke fixtures."
+        )
+
+
+def render_target_weights(st: Any, signal: pd.DataFrame | None) -> None:
+    st.markdown("**Target weight by asset**")
+    required = {"asset_id", "target_weight"}
+    if signal is None or not required.issubset(signal.columns):
+        st.info("ml_signal.csv with asset_id and target_weight columns is required.")
+        return
+
+    weight_frame = signal[["asset_id", "target_weight"]].copy()
+    weight_frame["asset_id"] = weight_frame["asset_id"].astype(str)
+    weight_frame["target_weight"] = pd.to_numeric(weight_frame["target_weight"], errors="coerce").fillna(0.0)
+
+    fig = px.bar(
+        weight_frame,
+        x="asset_id",
+        y="target_weight",
+        text="target_weight",
+    )
+    fig.update_layout(
+        xaxis_title="Asset",
+        yaxis_title="Target weight",
+        height=330,
+        margin={"l": 20, "r": 20, "t": 20, "b": 20},
+    )
+    fig.update_traces(texttemplate="%{text:.3f}", textposition="outside", cliponaxis=False)
+    st.plotly_chart(fig, use_container_width=True)
+    st.dataframe(weight_frame, use_container_width=True, hide_index=True)
+
+    if weight_frame["target_weight"].abs().sum() == 0:
+        st.caption(
+            "All target weights are zero because the generated signal is neutral for this tiny fixture."
+        )
+
+
+def render_prediction_scatter(st: Any, predictions: pd.DataFrame | None) -> None:
     st.markdown("**Predicted vs realized forward return**")
     if predictions is None:
         st.info("predictions.csv is required.")
         return
 
-    if {"predicted_return", "ret_fwd_1m"}.issubset(predictions.columns):
-        scatter = predictions[["predicted_return", "ret_fwd_1m"]].copy()
-        scatter["predicted_return"] = pd.to_numeric(scatter["predicted_return"], errors="coerce")
-        scatter["ret_fwd_1m"] = pd.to_numeric(scatter["ret_fwd_1m"], errors="coerce")
-        st.scatter_chart(scatter, x="predicted_return", y="ret_fwd_1m")
-    else:
+    if not {"predicted_return", "ret_fwd_1m"}.issubset(predictions.columns):
         st.info("predictions.csv must include predicted_return and ret_fwd_1m columns.")
+        return
+
+    scatter = predictions.copy()
+    scatter["predicted_return"] = pd.to_numeric(scatter["predicted_return"], errors="coerce")
+    scatter["ret_fwd_1m"] = pd.to_numeric(scatter["ret_fwd_1m"], errors="coerce")
+    scatter = scatter.dropna(subset=["predicted_return", "ret_fwd_1m"])
+
+    hover_cols = [col for col in ["asset_id", "date"] if col in scatter.columns]
+    fig = px.scatter(
+        scatter,
+        x="predicted_return",
+        y="ret_fwd_1m",
+        hover_data=hover_cols,
+    )
+    fig.update_layout(
+        xaxis_title="Predicted return",
+        yaxis_title="Realized forward return",
+        height=430,
+        margin={"l": 20, "r": 20, "t": 20, "b": 20},
+    )
+    st.plotly_chart(fig, use_container_width=True)
+    st.dataframe(scatter, use_container_width=True, hide_index=True)
 
 
 def render_tables(st: Any, bundle: DashboardArtifactBundle) -> None:
@@ -171,6 +263,26 @@ def render_report(st: Any, bundle: DashboardArtifactBundle) -> None:
     except UnicodeDecodeError:
         html = report_path.read_text(errors="ignore")
     st.components.v1.html(html, height=700, scrolling=True)
+
+
+def build_pipeline_row_counts(bundle: DashboardArtifactBundle) -> pd.DataFrame:
+    labels = {
+        "return_labels": "Return labels",
+        "supervised_panel": "Supervised panel",
+        "dataset": "Dataset",
+        "predictions": "Predictions",
+        "ml_signal": "ML signal",
+    }
+    rows = []
+    for name, label in labels.items():
+        summary = bundle.table_summaries.get(name)
+        if summary is not None and summary.exists and summary.row_count is not None:
+            rows.append({"stage": label, "rows": summary.row_count})
+    frame = pd.DataFrame(rows)
+    if frame.empty:
+        return frame
+    frame["stage"] = pd.Categorical(frame["stage"], categories=PIPELINE_ROW_ORDER, ordered=True)
+    return frame.sort_values("stage")
 
 
 def read_table(bundle: DashboardArtifactBundle, name: str) -> pd.DataFrame | None:
