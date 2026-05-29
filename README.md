@@ -365,6 +365,49 @@ datetime,available_at,symbol,asset_id,signal_name,score,direction,target_weight,
 This step only builds a signal file from local features. It does not require
 CRSP/WRDS data and does not evaluate performance.
 
+## Return Label Builder
+
+AlphaForge can convert a local monthly return panel into forward return labels for
+future supervised learning and OAP/CRSP evaluation. This does not download CRSP
+data, require WRDS access, or implement ML training.
+
+The input panel uses:
+
+```text
+asset_id,date,ret
+```
+
+The output labels use:
+
+```text
+asset_id,date,target_date,horizon_months,ret_fwd_1m,source
+```
+
+`target_date` is computed as `date + MonthEnd(horizon_months)` using calendar
+month-end alignment so that missing months do not silently become multi-month
+forward returns.
+
+Example CLI usage:
+
+```bash
+PYTHONPATH=src python3 -m alphaforge.cli build-return-labels \
+  --returns data/processed/returns/monthly_returns.csv \
+  --output artifacts/phase22/return_labels.csv \
+  --asset-id-col asset_id \
+  --date-col date \
+  --return-col ret \
+  --horizon-months 1
+```
+
+For delisting returns, use `--delisting-return-col dlret` to combine:
+
+```python
+combined_return = (1 + ret) * (1 + dlret) - 1
+```
+
+This step only builds deterministic forward-return labels. It does not train ML
+models, evaluate strategy performance, or connect to WRDS.
+
 ## SignalForge Integration
 
 AlphaForge consumes SignalForge artifacts through files. It does not import
