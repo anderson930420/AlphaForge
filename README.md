@@ -450,6 +450,44 @@ The near-term ML direction is:
 Do not treat `Mom12m`, `BM`, `Beta`, or other OAP characteristics as realized or
 future returns.
 
+## ML Baseline Scaffold
+
+This consumes a supervised feature-label panel produced by Phase 22
+return-label joining. It is a lightweight supervised learning scaffold: it
+builds a deterministic dataset, splits by time, trains a baseline linear
+regression, and evaluates predictions.
+
+It does **not** download CRSP/WRDS data, does **not** require real CRSP data,
+and does **not** implement deep learning or production trading.
+
+### Workflow
+
+1. Produce a supervised panel with `build-return-labels` and
+   `join-feature-labels` (Phase 22).
+2. Run the baseline:
+
+```bash
+PYTHONPATH=src python3 -m alphaforge.cli run-ml-baseline \
+  --panel tests/fixtures/ml_baseline/supervised_panel.csv \
+  --output-dir artifacts/phase23/ml_baseline \
+  --label-col ret_fwd_1m \
+  --train-end 2024-03-31 \
+  --feature-cols Mom12m,BM,Investment
+```
+
+Outputs:
+
+- `dataset.csv` – the prepared feature-label panel
+- `predictions.csv` – out-of-sample predictions with `asset_id`, `date`, and
+  `predicted_return`
+- `metrics_summary.json` – MSE, MAE, correlation, and row count
+
+### Implementation
+
+The baseline uses a closed-form OLS linear regression (ridge-regularized with
+default `alpha=1.0`) implemented with `numpy` and `pandas`. Missing feature
+values are filled with column medians. No scikit-learn dependency is required.
+
 ## CLI Usage
 
 Install locally first:
@@ -749,7 +787,7 @@ large raw or processed datasets.
 
 - no bundled OAP downloader
 - no committed OAP raw or processed data
-- no formal supervised ML trainer yet
+- no formal deep-learning or production ML trainer; baseline only
 - no return-label generation from OAP characteristics
 - no claim that OAP characteristics contain future returns
 - current `custom_signal` validation is primarily one-symbol at runtime
@@ -761,8 +799,7 @@ large raw or processed datasets.
 ## Near-Term Roadmap
 
 - formalize local loaders for the processed OAP Parquet feature and signal files
-- add explicit feature/label joins once return data is available
-- define missing-value and cross-sectional normalization policies for ML inputs
+- extend ML baseline with regularization paths and time-series cross-validation
 - keep SignalForge package compatibility checks aligned with the v0.2 contract
 - preserve strict data hygiene so private raw and processed datasets remain out
   of git
