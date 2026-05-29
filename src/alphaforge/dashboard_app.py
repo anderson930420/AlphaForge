@@ -13,10 +13,15 @@ from alphaforge.dashboard_artifacts import (
     pipeline_step_statuses,
 )
 from alphaforge.dashboard_factor import render_factor_diagnostics_dashboard
+from alphaforge.dashboard_ml_predictions import (
+    load_ml_prediction_diagnostics_artifacts,
+    render_ml_prediction_diagnostics_dashboard,
+)
 
 
 DEFAULT_ARTIFACT_DIR = "artifacts/phase25/ml_artifact_smoke"
 DEFAULT_FACTOR_DIAGNOSTICS_DIR = "artifacts/phase28/mom12m_diagnostics_q2"
+DEFAULT_ML_PREDICTION_DIAGNOSTICS_DIR = "artifacts/phase30b/synthetic_prediction_demo/ml_prediction_diagnostics"
 PIPELINE_ROW_ORDER = [
     "Return labels",
     "Supervised panel",
@@ -40,20 +45,26 @@ def main() -> None:
     st.title("AlphaForge Research Dashboard")
     st.caption(
         "Local-first dashboard for ML research artifacts: labels, datasets, "
-        "predictions, signals, factor diagnostics, metrics, and reports."
+        "predictions, signals, factor diagnostics, ML prediction diagnostics, metrics, and reports."
     )
 
     artifact_dir = st.sidebar.text_input("ML artifact directory", DEFAULT_ARTIFACT_DIR)
     factor_dir = st.sidebar.text_input("Factor diagnostics directory", DEFAULT_FACTOR_DIAGNOSTICS_DIR)
+    prediction_dir = st.sidebar.text_input(
+        "ML prediction diagnostics directory",
+        DEFAULT_ML_PREDICTION_DIAGNOSTICS_DIR,
+    )
     preview_rows = st.sidebar.slider("Preview rows", min_value=1, max_value=25, value=5)
 
     bundle = load_dashboard_artifacts(Path(artifact_dir), preview_rows=preview_rows)
     factor_bundle = load_factor_diagnostics_artifacts(Path(factor_dir), preview_rows=preview_rows)
+    prediction_bundle = load_ml_prediction_diagnostics_artifacts(Path(prediction_dir), preview_rows=preview_rows)
 
     render_overview(st, bundle)
     render_pipeline(st, bundle)
     render_metrics(st, bundle)
     render_factor_diagnostics_dashboard(st, factor_bundle)
+    render_ml_prediction_diagnostics_dashboard(st, prediction_bundle)
     render_diagnostics(st, bundle)
     render_tables(st, bundle)
     render_report(st, bundle)
