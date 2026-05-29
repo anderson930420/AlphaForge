@@ -17,6 +17,7 @@ from .ml_baseline import (
     predict_baseline_regressor,
 )
 from .ml_dataset import build_ml_dataset, time_train_test_split
+from .ml_signal import build_ml_prediction_signal, load_prediction_panel
 from .return_labels import build_forward_return_labels, join_features_with_return_labels, load_return_panel
 from .signalforge_package import run_signalforge_v02_package_smoke
 from .backtest import LEGACY_EXECUTION_SEMANTICS, SIGNED_EXECUTION_SEMANTICS, SUPPORTED_EXECUTION_SEMANTICS
@@ -246,6 +247,24 @@ def build_parser() -> argparse.ArgumentParser:
     build_oap_multifactor.add_argument("--config", required=True, type=Path)
     build_oap_multifactor.add_argument("--output", required=True, type=Path)
     build_oap_multifactor.add_argument("--source", default="OpenAssetPricing")
+
+    build_ml_signal = subparsers.add_parser(
+        "build-ml-signal",
+        help="Convert ML prediction artifacts into AlphaForge v0.2 custom_signal files",
+    )
+    build_ml_signal.add_argument("--predictions", required=True, type=Path)
+    build_ml_signal.add_argument("--output", required=True, type=Path)
+    build_ml_signal.add_argument("--asset-id-col", default="asset_id")
+    build_ml_signal.add_argument("--date-col", default="date")
+    build_ml_signal.add_argument("--prediction-col", default="predicted_return")
+    build_ml_signal.add_argument("--symbol-col", default=None)
+    build_ml_signal.add_argument("--available-at-col", default=None)
+    build_ml_signal.add_argument("--signal-name", default="ml_predicted_return")
+    build_ml_signal.add_argument("--source", default="AlphaForgeML")
+    build_ml_signal.add_argument("--long-quantile", type=float, default=0.8)
+    build_ml_signal.add_argument("--short-quantile", type=float, default=0.2)
+    build_ml_signal.add_argument("--gross-long-weight", type=float, default=1.0)
+    build_ml_signal.add_argument("--gross-short-weight", type=float, default=-1.0)
 
     build_return_labels = subparsers.add_parser(
         "build-return-labels",
@@ -499,6 +518,33 @@ def main() -> None:
             signal_frame = build_multifactor_signal(features_df, mf_config, source=args.source)
             args.output.parent.mkdir(parents=True, exist_ok=True)
             signal_frame.to_csv(args.output, index=False)
+            print(f"Wrote {len(signal_frame)} v0.2 signal rows to {args.output}")
+            return
+
+        if args.command == "build-ml-signal":
+            predictions_df = load_prediction_panel(args.predictions)
+            signal_frame = build_ml_prediction_signal(
+                predictions_df,
+                asset_id_col=args.asset_id_col,
+                date_col=args.date_col,
+                prediction_col=args.prediction_col,
+                symbol_col=args.symbol_col,
+                signal_name=args.signal_name,
+                source=args.source,
+                long_quantile=args.long_quantile,
+                short_quantile=args.short_quantile,
+                gross_long_weight=args.gross_long_weight,
+                gross_short_weight=args.gross_short_weight,
+                available_at_col=args.available_at_col,
+            )
+            args.output.parent.mkdir(parents=True, exist_ok=True)
+            suffix = args.output.suffix.lower()
+            if suffix == ".csv":
+                signal_frame.to_csv(args.output, index=False)
+            elif suffix == ".parquet":
+                signal_frame.to_parquet(args.output, index=False)
+            else:
+                signal_frame.to_csv(args.output, index=False)
             print(f"Wrote {len(signal_frame)} v0.2 signal rows to {args.output}")
             return
 

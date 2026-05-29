@@ -488,6 +488,61 @@ The baseline uses a closed-form OLS linear regression (ridge-regularized with
 default `alpha=1.0`) implemented with `numpy` and `pandas`. Missing feature
 values are filled with column medians. No scikit-learn dependency is required.
 
+## ML Prediction Signal Converter
+
+This consumes Phase 23 ML prediction artifacts (such as `predictions.csv`) and
+converts predicted returns into AlphaForge `custom_signal` v0.2-compatible signal
+files. These signal files can then be consumed by the existing custom
+signal/backtest path.
+
+It does **not** train a model, does **not** evaluate strategy performance, and
+does **not** use realized labels (such as `ret_fwd_1m`) to construct signals.
+It is designed to connect ML predictions to the existing AlphaForge custom signal
+path.
+
+Only `asset_id`, `date`, and `predicted_return` are required. Realized label
+columns such as `ret_fwd_1m` may exist in the prediction file but are ignored
+when constructing the signal.
+
+The output follows the `custom_signal` v0.2 contract:
+
+```text
+datetime,available_at,symbol,asset_id,signal_name,score,direction,target_weight,source
+```
+
+Per date, asset scores in the top quantile receive a positive target weight and
+those in the bottom quantile receive a negative target weight. Middle assets
+receive neutral weight. NaN predictions are neutral.
+
+### CLI Example
+
+```bash
+PYTHONPATH=src python3 -m alphaforge.cli build-ml-signal \
+  --predictions tests/fixtures/ml_signal/predictions.csv \
+  --output artifacts/phase24/ml_signal.csv \
+  --asset-id-col asset_id \
+  --date-col date \
+  --prediction-col predicted_return \
+  --long-quantile 0.8 \
+  --short-quantile 0.2
+```
+
+### CLI Options
+
+- `--predictions` – path to CSV or Parquet prediction file
+- `--output` – output path (`.csv` or `.parquet`)
+- `--asset-id-col` – asset identifier column (default: `asset_id`)
+- `--date-col` – date column (default: `date`)
+- `--prediction-col` – prediction score column (default: `predicted_return`)
+- `--symbol-col` – symbol column (defaults to `asset_id` if not provided)
+- `--available-at-col` – available-at column (defaults to `date` if not provided)
+- `--signal-name` – signal name label (default: `ml_predicted_return`)
+- `--source` – source label (default: `AlphaForgeML`)
+- `--long-quantile` – top quantile threshold for long direction (default: `0.8`)
+- `--short-quantile` – bottom quantile threshold for short direction (default: `0.2`)
+- `--gross-long-weight` – total long-side gross weight (default: `1.0`)
+- `--gross-short-weight` – total short-side gross weight (default: `-1.0`)
+
 ## CLI Usage
 
 Install locally first:
