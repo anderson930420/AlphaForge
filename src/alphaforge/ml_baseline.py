@@ -3,6 +3,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
+from .json_utils import json_safe_float, json_safe_mean
 
 def fit_baseline_regressor(
     train_df: pd.DataFrame,
@@ -80,6 +81,8 @@ def evaluate_regression_predictions(
     label_col: str = "ret_fwd_1m",
     prediction_col: str = "predicted_return",
 ) -> dict:
+    if prediction_col not in predictions_df.columns:
+        raise ValueError(f"Missing required columns: ['{prediction_col}']")
     if label_col not in predictions_df.columns:
         return {"row_count": len(predictions_df), "error": f"label column '{label_col}' not found in predictions"}
 
@@ -90,34 +93,25 @@ def evaluate_regression_predictions(
     y_pred = y_pred[mask].values
     row_count = len(y_true)
 
-    if row_count < 2:
-        result: dict = {
-            "row_count": int(row_count),
-            "mean_prediction": float(np.nanmean(predictions_df[prediction_col]) if len(predictions_df) > 0 else np.nan),
-            "mean_label": float(np.nanmean(predictions_df[label_col]) if len(predictions_df) > 0 else np.nan),
-        }
-        if row_count == 0:
-            return result
-        errors = y_true - y_pred
-        result["mse"] = float(np.mean(errors ** 2))
-        result["mae"] = float(np.mean(np.abs(errors)))
+    result: dict = {
+        "row_count": int(row_count),
+        "mean_prediction": json_safe_mean(predictions_df[prediction_col]),
+        "mean_label": json_safe_mean(predictions_df[label_col]),
+    }
+
+    if row_count == 0:
         return result
 
     errors = y_true - y_pred
-    mse = float(np.mean(errors ** 2))
-    mae = float(np.mean(np.abs(errors)))
+    result["mse"] = json_safe_float(np.mean(errors ** 2))
+    result["mae"] = json_safe_float(np.mean(np.abs(errors)))
 
-    std_pred = np.std(y_pred, ddof=0)
-    std_true = np.std(y_true, ddof=0)
-    correlation = np.nan
-    if std_pred > 0 and std_true > 0:
-        correlation = float(np.corrcoef(y_pred, y_true)[0, 1])
+    if row_count >= 2:
+        std_pred = np.std(y_pred, ddof=0)
+        std_true = np.std(y_true, ddof=0)
+        if std_pred > 0 and std_true > 0:
+            result["correlation"] = json_safe_float(np.corrcoef(y_pred, y_true)[0, 1])
+        else:
+            result["correlation"] = None
 
-    return {
-        "row_count": int(row_count),
-        "mse": mse,
-        "mae": mae,
-        "correlation": correlation,
-        "mean_prediction": float(np.mean(y_pred)),
-        "mean_label": float(np.mean(y_true)),
-    }
+    return result
