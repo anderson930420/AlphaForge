@@ -5,7 +5,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from alphaforge.ml_dataset import build_ml_dataset, time_train_test_split
+from alphaforge.ml_dataset import build_ml_dataset, infer_ml_feature_cols, time_train_test_split
 
 
 FIXTURES = Path(__file__).parent / "fixtures" / "ml_baseline"
@@ -13,6 +13,47 @@ FIXTURES = Path(__file__).parent / "fixtures" / "ml_baseline"
 
 def _load_fixture() -> pd.DataFrame:
     return pd.read_csv(FIXTURES / "supervised_panel.csv")
+
+
+class TestInferMlFeatureCols:
+    def test_infer_ml_feature_cols_excludes_leakage_prefixes(self):
+        df = pd.DataFrame({
+            "asset_id": ["A", "B"],
+            "date": ["2024-01-31", "2024-01-31"],
+            "Mom12m": [0.1, 0.2],
+            "BM": [0.5, 0.6],
+            "ret_fwd_1m": [0.01, 0.02],
+            "ret_fwd_3m": [0.03, 0.04],
+            "predicted_return": [0.01, 0.02],
+            "prediction_score": [0.3, 0.4],
+            "output_score": [0.5, 0.6],
+        })
+
+        features = infer_ml_feature_cols(df)
+
+        assert set(features) == {"Mom12m", "BM"}
+        assert "ret_fwd_3m" not in features
+        assert "predicted_return" not in features
+        assert "prediction_score" not in features
+        assert "output_score" not in features
+
+    def test_infer_ml_feature_cols_excludes_custom_asset_date_label_columns(self):
+        df = pd.DataFrame({
+            "permno": ["A"],
+            "month": ["2024-01-31"],
+            "label": [0.01],
+            "Mom12m": [0.1],
+            "prediction_score": [0.2],
+        })
+
+        features = infer_ml_feature_cols(
+            df,
+            asset_id_col="permno",
+            date_col="month",
+            label_col="label",
+        )
+
+        assert features == ["Mom12m"]
 
 
 class TestBuildMlDataset:
@@ -28,6 +69,21 @@ class TestBuildMlDataset:
         assert "target_date" not in result.columns
         assert "horizon_months" not in result.columns
         assert "source" not in result.columns
+
+    def test_feature_inference_excludes_prediction_output_leakage_columns(self):
+        df = pd.DataFrame({
+            "asset_id": ["A", "B"],
+            "date": ["2024-01-31", "2024-01-31"],
+            "Mom12m": [0.1, 0.2],
+            "ret_fwd_1m": [0.01, 0.02],
+            "predicted_return": [0.01, 0.02],
+            "prediction_score": [0.3, 0.4],
+            "output_score": [0.5, 0.6],
+        })
+
+        result = build_ml_dataset(df)
+
+        assert list(result.columns) == ["asset_id", "date", "Mom12m", "ret_fwd_1m"]
 
     def test_explicit_feature_cols(self):
         df = _load_fixture()
