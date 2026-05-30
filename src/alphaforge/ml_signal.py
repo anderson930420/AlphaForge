@@ -98,6 +98,89 @@ def build_ml_prediction_signal(
     return output.sort_values(["datetime", "symbol"]).reset_index(drop=True)
 
 
+def build_single_asset_threshold_signal(
+    predictions_df: pd.DataFrame,
+    *,
+    asset_id_col: str = "asset_id",
+    date_col: str = "date",
+    prediction_col: str = "predicted_return",
+    asset_id: str | None = None,
+    symbol_col: str | None = None,
+    symbol: str | None = None,
+    signal_name: str = "ml_threshold_return",
+    source: str = "AlphaForgeML",
+    long_threshold: float = 0.0,
+    short_threshold: float = 0.0,
+    long_target_weight: float = 1.0,
+    short_target_weight: float = -1.0,
+    available_at_col: str | None = None,
+) -> pd.DataFrame:
+    """Convert one asset's predictions into a one-symbol threshold custom_signal.
+
+    This is time-series thresholding, not cross-sectional quantile selection:
+    positive scores above ``long_threshold`` become long exposure, negative scores
+    below ``short_threshold`` become short exposure, and middle/NaN scores stay flat.
+    """
+    required = {asset_id_col, date_col, prediction_col}
+    missing = required - set(predictions_df.columns)
+    if missing:
+        raise ValueError(f"Missing required columns: {missing}")
+    if predictions_df.empty:
+        raise ValueError("Prediction panel is empty")
+    if short_threshold > long_threshold:
+        raise ValueError("short_threshold must be less than or equal to long_threshold")
+    _validate_signed_weight(long_target_weight, "long_target_weight")
+    _validate_signed_weight(short_target_weight, "short_target_weight")
+    if long_target_weight < 0:
+        raise ValueError("long_target_weight must be non-negative")
+    if short_target_weight > 0:
+        raise ValueError("short_target_weight must be non-positive")
+
+    frame = predictions_df.copy()
+    selected_asset_id = _resolve_single_asset_id(frame, asset_id_col=asset_id_col, asset_id=asset_id)
+    frame = frame.loc[frame[asset_id_col].astype(str) == selected_asset_id].copy()
+    if frame.empty:
+        raise ValueError(f"No prediction rows found for asset_id {selected_asset_id!r}")
+
+    if symbol is not None:
+        selected_symbol = str(symbol)
+    elif symbol_col is not None and symbol_col in frame.columns:
+        selected_symbol = _require_single_unique_value(frame[symbol_col], "symbol")
+    else:
+        selected_symbol = selected_asset_id
+
+    output = pd.DataFrame()
+    output["datetime"] = _normalize_to_daily_date(frame[date_col])
+    output["score"] = pd.to_numeric(frame[prediction_col], errors="coerce")
+    if available_at_col is not None and available_at_col in frame.columns:
+        output["available_at"] = _normalize_to_daily_date(frame[available_at_col])
+    else:
+        output["available_at"] = output["datetime"].copy()
+
+    output["symbol"] = selected_symbol
+    output["asset_id"] = selected_asset_id
+    output["signal_name"] = signal_name
+    output["direction"] = 0
+    output["target_weight"] = 0.0
+
+    long_mask = output["score"].notna() & (output["score"] > long_threshold)
+    short_mask = output["score"].notna() & (output["score"] < short_threshold)
+    output.loc[long_mask, "direction"] = 1
+    output.loc[long_mask, "target_weight"] = float(long_target_weight)
+    output.loc[short_mask, "direction"] = -1
+    output.loc[short_mask, "target_weight"] = float(short_target_weight)
+    output["source"] = source
+
+    output = output.dropna(subset=["datetime", "available_at"]).reindex(columns=ML_SIGNAL_SIGNAL_COLUMNS)
+    if output.empty:
+        raise ValueError("Prediction panel has no valid dates after parsing")
+    if output.duplicated(subset=["datetime", "symbol", "signal_name"]).any():
+        raise ValueError("duplicate datetime-symbol-signal_name rows are not allowed")
+    if (output["available_at"] > output["datetime"]).any():
+        raise ValueError("available_at must be less than or equal to datetime")
+    return output.sort_values(["datetime", "symbol"]).reset_index(drop=True)
+
+
 def _build_date_signal(
     group: pd.DataFrame,
     long_quantile: float,
@@ -149,3 +232,47 @@ def _normalize_to_month_end(values: pd.Series) -> pd.Series:
             return pd.NaT
         return parsed + pd.offsets.MonthEnd(0)
     return values.map(normalize)
+
+
+def _normalize_to_daily_date(values: pd.Series) -> pd.Series:
+    def normalize(value: object) -> pd.Timestamp:
+        if pd.isna(value):
+            return pd.NaT
+        parsed = pd.to_datetime(value, errors="coerce")
+        if pd.isna(parsed):
+            return pd.NaT
+        return pd.Timestamp(parsed.date())
+
+    return values.map(normalize)
+
+
+def _resolve_single_asset_id(frame: pd.DataFrame, *, asset_id_col: str, asset_id: str | None) -> str:
+    if asset_id is not None:
+        selected_asset_id = str(asset_id)
+        if selected_asset_id not in set(frame[asset_id_col].dropna().astype(str)):
+            raise ValueError(f"No prediction rows found for asset_id {selected_asset_id!r}")
+        return selected_asset_id
+    return _require_single_unique_value(
+        frame[asset_id_col],
+        "asset_id",
+        multiple_message="Prediction panel contains multiple asset_id values. Specify asset_id explicitly.",
+    )
+
+
+def _require_single_unique_value(
+    series: pd.Series,
+    field_name: str,
+    *,
+    multiple_message: str | None = None,
+) -> str:
+    values = series.dropna().astype(str).unique().tolist()
+    if len(values) == 1:
+        return values[0]
+    if len(values) == 0:
+        raise ValueError(f"{field_name} is required")
+    raise ValueError(multiple_message or f"{field_name} must contain exactly one value")
+
+
+def _validate_signed_weight(value: float, field_name: str) -> None:
+    if value < -1.0 or value > 1.0:
+        raise ValueError(f"{field_name} must be within [-1.0, 1.0]")
