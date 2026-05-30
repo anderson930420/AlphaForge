@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import math
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from numbers import Real
 from pathlib import Path
 from typing import Any
@@ -19,6 +19,14 @@ def json_safe_float(value: Any) -> float | None:
     if not math.isfinite(result):
         return None
     return result
+
+
+def json_safe_mean(values: Iterable[Any]) -> float | None:
+    """Return the mean of finite numeric values, or None when no finite value exists."""
+    finite_values = [value for value in (json_safe_float(item) for item in values) if value is not None]
+    if not finite_values:
+        return None
+    return sum(finite_values) / len(finite_values)
 
 
 def json_safe_payload(value: Any) -> Any:
