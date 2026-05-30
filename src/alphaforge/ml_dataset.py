@@ -4,6 +4,33 @@ import pandas as pd
 
 
 _METADATA_EXCLUDE = {"asset_id", "date", "target_date", "horizon_months", "source"}
+_DEFAULT_EXCLUDE_PREFIXES = ("ret_fwd", "prediction", "predicted", "output")
+
+
+def infer_ml_feature_cols(
+    panel_df: pd.DataFrame,
+    *,
+    asset_id_col: str = "asset_id",
+    date_col: str = "date",
+    label_col: str = "ret_fwd_1m",
+    exclude_prefixes: tuple[str, ...] = _DEFAULT_EXCLUDE_PREFIXES,
+) -> list[str]:
+    """Infer numeric ML feature columns while excluding leakage-prone fields.
+
+    This is the shared feature inference contract for AlphaForge ML datasets,
+    sklearn adapters, and torch adapters. It intentionally excludes forward
+    return labels and model-output-like columns so prior predictions cannot
+    silently leak back into a later model fit.
+    """
+    exclude = _METADATA_EXCLUDE | {asset_id_col, date_col, label_col}
+    normalized_prefixes = tuple(prefix.lower() for prefix in exclude_prefixes)
+
+    return [
+        col for col in panel_df.columns
+        if col not in exclude
+        and not col.lower().startswith(normalized_prefixes)
+        and pd.api.types.is_numeric_dtype(panel_df[col])
+    ]
 
 
 def build_ml_dataset(
@@ -29,13 +56,12 @@ def build_ml_dataset(
     df[date_col] = df[date_col] + pd.offsets.MonthEnd(0)
 
     if feature_cols is None:
-        exclude = _METADATA_EXCLUDE | {label_col}
-        feature_cols = [
-            c for c in df.columns
-            if c not in exclude
-            and not c.startswith("ret_fwd")
-            and pd.api.types.is_numeric_dtype(df[c])
-        ]
+        feature_cols = infer_ml_feature_cols(
+            df,
+            asset_id_col=asset_id_col,
+            date_col=date_col,
+            label_col=label_col,
+        )
 
     for col in feature_cols:
         df[col] = pd.to_numeric(df[col], errors="coerce")
