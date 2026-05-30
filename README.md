@@ -79,6 +79,7 @@ cross-sectional dispersion produce all-neutral positions.
 - SignalForge integration is file-based; AlphaForge does not import SignalForge runtime code
 - OAP characteristics are predictors, not realized returns — labels must come from a separate return source
 - dashboard is local-first and reads generated artifacts; it does not upload private data
+- `available_at` is currently a signal/data contract field, not a runtime execution-timing driver
 
 ## Portfolio Summary
 
@@ -175,6 +176,13 @@ datetime, available_at, symbol, asset_id, signal_name, score, direction, target_
 
 `target_weight` must be within `[-1.0, 1.0]`. SignalForge v0.2 requires
 `signed_close_to_close_lagged` execution semantics.
+
+`available_at` is preserved and validated as part of the signal/data contract,
+but current backtest timing is not driven by that column. Current lookahead
+controls are the feature/label contract, time-based train/test splitting,
+forward-label construction, and lagged close-to-close execution semantics.
+Future runtime timing work should make `available_at` an execution-time input
+explicitly rather than relying on its presence alone.
 
 ### Feature Schema
 
@@ -466,6 +474,7 @@ intended for deterministic tests.
 - baseline ML only — no deep learning or advanced model architectures
 - signal quantile-based conversion requires cross-sectional dispersion; thin dates become neutral
 - dashboard is a local artifact viewer, not a hosted multi-user platform
+- `available_at` is retained for contract compatibility but does not yet drive runtime execution timing
 
 ## Roadmap
 

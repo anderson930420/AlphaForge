@@ -64,7 +64,7 @@ def predict_baseline_regressor(
         prediction_col: predictions,
     })
 
-    label_col_names = [c for c in dataset_df.columns if c.startswith("ret_fwd") or c in ("ret_fwd_1m",)]
+    label_col_names = [c for c in dataset_df.columns if c.startswith("ret_fwd")]
     for col in label_col_names:
         if col in dataset_df.columns and col != prediction_col:
             result[col] = dataset_df[col].values
