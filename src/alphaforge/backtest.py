@@ -29,6 +29,21 @@ BACKTEST_EQUITY_CURVE_COLUMNS = (
 )
 
 BACKTEST_TRADE_LOG_COLUMNS = tuple(TradeRecord.__annotations__.keys())
+BACKTEST_EXECUTION_EVENT_COLUMNS = (
+    "datetime",
+    "symbol",
+    "event_type",
+    "previous_position",
+    "target_position",
+    "position_delta",
+    "price",
+    "notional_delta",
+    "turnover",
+    "fee",
+    "slippage",
+    "cost",
+    "source",
+)
 LEGACY_EXECUTION_SEMANTICS = "legacy_close_to_close_lagged"
 SIGNED_EXECUTION_SEMANTICS = "signed_close_to_close_lagged"
 EXECUTION_SEMANTICS = LEGACY_EXECUTION_SEMANTICS
@@ -96,6 +111,70 @@ def run_backtest(
         trades = _extract_trades(frame)
     trade_frame = pd.DataFrame([trade.__dict__ for trade in trades], columns=list(BACKTEST_TRADE_LOG_COLUMNS))
     return frame.reindex(columns=BACKTEST_EQUITY_CURVE_COLUMNS), trade_frame
+
+
+def build_execution_events(
+    equity_curve: pd.DataFrame,
+    config: BacktestConfig,
+    *,
+    symbol: str = "UNKNOWN",
+    source: str = SIGNED_EXECUTION_SEMANTICS,
+) -> pd.DataFrame:
+    """Build a signed execution-event log from realized position transitions.
+
+    ``trade_log.csv`` remains position-segment based. This event frame records
+    each realized rebalance event where ``position`` changes from one bar to the
+    next, including same-side increases/reductions and long/short flips.
+    """
+    if equity_curve.empty:
+        return pd.DataFrame(columns=BACKTEST_EXECUTION_EVENT_COLUMNS)
+    required = {"datetime", "position", "close", "turnover"}
+    missing = required - set(equity_curve.columns)
+    if missing:
+        raise ValueError(f"Missing required execution-event columns: {missing}")
+
+    frame = equity_curve.copy()
+    position = frame["position"].astype(float)
+    previous_position = position.shift(1, fill_value=0.0)
+    position_delta = position - previous_position
+    event_mask = position_delta.ne(0.0)
+    if not bool(event_mask.any()):
+        return pd.DataFrame(columns=BACKTEST_EXECUTION_EVENT_COLUMNS)
+
+    events = frame.loc[event_mask, ["datetime", "close", "turnover"]].copy()
+    events["symbol"] = symbol
+    events["previous_position"] = previous_position.loc[event_mask].astype(float).to_numpy()
+    events["target_position"] = position.loc[event_mask].astype(float).to_numpy()
+    events["position_delta"] = position_delta.loc[event_mask].astype(float).to_numpy()
+    events["event_type"] = [
+        _classify_execution_event(previous, target)
+        for previous, target in zip(events["previous_position"], events["target_position"], strict=True)
+    ]
+    events.rename(columns={"close": "price"}, inplace=True)
+    events["price"] = events["price"].astype(float)
+    events["notional_delta"] = events["position_delta"] * events["price"]
+    events["turnover"] = events["turnover"].astype(float)
+    events["fee"] = events["turnover"] * float(config.fee_rate)
+    events["slippage"] = events["turnover"] * float(config.slippage_rate)
+    events["cost"] = events["fee"] + events["slippage"]
+    events["source"] = source
+    return events.reindex(columns=BACKTEST_EXECUTION_EVENT_COLUMNS).reset_index(drop=True)
+
+
+def _classify_execution_event(previous_position: float, target_position: float) -> str:
+    previous = float(previous_position)
+    target = float(target_position)
+    if previous == target:
+        return "none"
+    if previous == 0.0 and target != 0.0:
+        return "open"
+    if previous != 0.0 and target == 0.0:
+        return "close"
+    if (previous > 0.0 > target) or (previous < 0.0 < target):
+        return "flip"
+    if abs(target) > abs(previous):
+        return "increase"
+    return "reduce"
 
 
 def _normalize_target_positions(target_positions: pd.Series, execution_semantics: str) -> pd.Series:
