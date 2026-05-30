@@ -1,0 +1,16 @@
+{
+  "row_count": 6,
+  "valid_row_count": 6,
+  "date_count": 2,
+  "asset_count": 3,
+  "overall_mse": 0.010,
+  "overall_mae": 0.080,
+  "prediction_ic_observation_count": 2,
+  "prediction_ic_mean": 0.20,
+  "prediction_ic_t_stat": 1.20,
+  "prediction_rank_ic_observation_count": 2,
+  "prediction_rank_ic_mean": 0.40,
+  "prediction_rank_ic_t_stat": 1.50,
+  "long_short_observation_count": 2,
+  "long_short_spread_mean": 0.015
+}
