@@ -18,6 +18,7 @@ from .ml_baseline import (
 )
 from .ml_dataset import build_ml_dataset, time_train_test_split
 from .ml_signal import build_ml_prediction_signal, load_prediction_panel
+from .json_utils import write_json_artifact
 from .return_labels import build_forward_return_labels, join_features_with_return_labels, load_return_panel
 from .signalforge_package import run_signalforge_v02_package_smoke
 from .backtest import LEGACY_EXECUTION_SEMANTICS, SIGNED_EXECUTION_SEMANTICS, SUPPORTED_EXECUTION_SEMANTICS
@@ -482,8 +483,7 @@ def main() -> None:
             args.output_dir.mkdir(parents=True, exist_ok=True)
             dataset.to_csv(args.output_dir / "dataset.csv", index=False)
             predictions.to_csv(args.output_dir / "predictions.csv", index=False)
-            with open(args.output_dir / "metrics_summary.json", "w") as f:
-                json.dump(metrics, f, indent=2)
+            write_json_artifact(args.output_dir / "metrics_summary.json", metrics)
 
             print(json.dumps({"status": "ok", "output_dir": str(args.output_dir), "metrics": metrics}, indent=2, default=str))
             return
