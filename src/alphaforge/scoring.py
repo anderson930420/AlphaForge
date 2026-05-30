@@ -6,6 +6,7 @@ from typing import Any
 from .schemas import ExperimentResult, MetricReport
 
 RANKING_SCORE_FIELD = "score"
+UNDEFINED_ANNUALIZED_RETURN_SCORE_COMPONENT = -1.0
 
 
 def passes_thresholds(
@@ -23,11 +24,16 @@ def passes_thresholds(
 def score_metrics(metrics: MetricReport) -> float:
     if not isinstance(metrics.bar_count, int) or metrics.bar_count <= 0:
         raise ValueError(f"MetricReport.bar_count must be positive for scoring, got {metrics.bar_count}")
+    annualized_return_component = (
+        metrics.annualized_return
+        if metrics.annualized_return is not None
+        else UNDEFINED_ANNUALIZED_RETURN_SCORE_COMPONENT
+    )
     drawdown_penalty = abs(metrics.max_drawdown) * 2.0
     turnover_per_bar = metrics.turnover / metrics.bar_count
     turnover_penalty = turnover_per_bar * 0.01
     return (
-        metrics.annualized_return
+        annualized_return_component
         + (metrics.sharpe_ratio * 0.2)
         + (metrics.win_rate * 0.1)
         - drawdown_penalty
