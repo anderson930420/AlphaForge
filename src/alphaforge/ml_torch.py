@@ -19,6 +19,32 @@ def _require_torch() -> None:
         ) from None
 
 
+def _validate_torch_mlp_config(
+    *,
+    feature_cols: list[str],
+    hidden_dim: int,
+    dropout: float,
+    epochs: int,
+    batch_size: int,
+    learning_rate: float,
+    weight_decay: float,
+) -> None:
+    if not feature_cols:
+        raise ValueError("At least one ML feature column is required")
+    if hidden_dim < 2:
+        raise ValueError("hidden_dim must be >= 2")
+    if not 0 <= dropout < 1:
+        raise ValueError("dropout must be in [0, 1)")
+    if epochs < 1:
+        raise ValueError("epochs must be >= 1")
+    if batch_size < 1:
+        raise ValueError("batch_size must be >= 1")
+    if learning_rate <= 0:
+        raise ValueError("learning_rate must be > 0")
+    if weight_decay < 0:
+        raise ValueError("weight_decay must be >= 0")
+
+
 def _infer_feature_cols(
     panel_df: pd.DataFrame,
     *,
@@ -167,8 +193,15 @@ def fit_torch_mlp(
     weight_decay: float = 0.0001,
     seed: int = 42,
 ) -> dict:
-    if not feature_cols:
-        raise ValueError("At least one ML feature column is required")
+    _validate_torch_mlp_config(
+        feature_cols=feature_cols,
+        hidden_dim=hidden_dim,
+        dropout=dropout,
+        epochs=epochs,
+        batch_size=batch_size,
+        learning_rate=learning_rate,
+        weight_decay=weight_decay,
+    )
 
     _require_torch()
     import torch
@@ -394,8 +427,6 @@ def run_torch_mlp(
     weight_decay: float = 0.0001,
     seed: int = 42,
 ) -> dict[str, Path]:
-    _require_torch()
-
     if feature_cols is None:
         feature_cols = infer_ml_feature_cols(
             panel_df,
@@ -404,8 +435,15 @@ def run_torch_mlp(
             label_col=label_col,
         )
 
-    if not feature_cols:
-        raise ValueError("At least one ML feature column is required")
+    _validate_torch_mlp_config(
+        feature_cols=feature_cols,
+        hidden_dim=hidden_dim,
+        dropout=dropout,
+        epochs=epochs,
+        batch_size=batch_size,
+        learning_rate=learning_rate,
+        weight_decay=weight_decay,
+    )
 
     dataset = build_ml_dataset(
         panel_df,
