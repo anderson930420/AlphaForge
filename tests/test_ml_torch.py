@@ -71,6 +71,7 @@ class TestFeatureInference:
             "label_col": [0.01],
             "Mom12m": [0.05],
             "predicted_return": [0.01],
+            "prediction_score": [0.03],
             "output_score": [0.02],
         })
         features = _infer_feature_cols(
@@ -81,6 +82,7 @@ class TestFeatureInference:
         )
         assert "Mom12m" in features
         assert "predicted_return" not in features
+        assert "prediction_score" not in features
         assert "output_score" not in features
 
 
@@ -264,6 +266,28 @@ class TestFitPredict:
 
 
 class TestRun:
+    def test_run_torch_mlp_raises_when_no_features_are_inferred(self, tmp_path: Path):
+        __import__("pytest").importorskip("torch")
+        from alphaforge.ml_torch import run_torch_mlp
+
+        df = pd.DataFrame({
+            "asset_id": ["A", "A"],
+            "date": ["2024-01-31", "2024-02-29"],
+            "ret_fwd_1m": [0.01, 0.02],
+            "predicted_return": [0.03, 0.04],
+            "prediction_score": [0.05, 0.06],
+            "output_score": [0.07, 0.08],
+        })
+
+        import pytest
+        with pytest.raises(ValueError, match="At least one ML feature column is required"):
+            run_torch_mlp(
+                df,
+                output_dir=tmp_path / "out",
+                label_col="ret_fwd_1m",
+                train_end="2024-01-31",
+            )
+
     def test_run_torch_mlp_writes_artifacts(self, tmp_path: Path):
         __import__("pytest").importorskip("torch")
         from alphaforge.ml_torch import run_torch_mlp

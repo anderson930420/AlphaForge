@@ -6,15 +6,13 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from .ml_dataset import build_ml_dataset, time_train_test_split
+from .ml_dataset import build_ml_dataset, infer_ml_feature_cols, time_train_test_split
 
 SUPPORTED_MODELS = {
     "ridge_regressor",
     "random_forest_regressor",
     "hist_gradient_boosting_regressor",
 }
-
-_METADATA_EXCLUDE = {"asset_id", "date", "target_date", "horizon_months", "source"}
 
 
 def _require_sklearn() -> None:
@@ -25,22 +23,6 @@ def _require_sklearn() -> None:
             "scikit-learn is required for sklearn model adapters.\n"
             'Install with: python3 -m pip install -e ".[sklearn]"'
         ) from None
-
-
-def _infer_feature_cols(
-    panel_df: pd.DataFrame,
-    *,
-    asset_id_col: str,
-    date_col: str,
-    label_col: str,
-) -> list[str]:
-    exclude = _METADATA_EXCLUDE | {label_col, asset_id_col, date_col}
-    return [
-        c for c in panel_df.columns
-        if c not in exclude
-        and not c.startswith("ret_fwd")
-        and pd.api.types.is_numeric_dtype(panel_df[c])
-    ]
 
 
 def _make_model(model_name: str, *, random_state: int = 42):
@@ -150,6 +132,9 @@ def fit_sklearn_model(
             f"Unsupported model name: {model_name}. "
             f"Supported: {', '.join(sorted(SUPPORTED_MODELS))}"
         )
+
+    if not feature_cols:
+        raise ValueError("At least one ML feature column is required")
 
     _require_sklearn()
 
@@ -317,12 +302,15 @@ def run_sklearn_ml_model(
     _require_sklearn()
 
     if feature_cols is None:
-        feature_cols = _infer_feature_cols(
+        feature_cols = infer_ml_feature_cols(
             panel_df,
             asset_id_col=asset_id_col,
             date_col=date_col,
             label_col=label_col,
         )
+
+    if not feature_cols:
+        raise ValueError("At least one ML feature column is required")
 
     dataset = build_ml_dataset(
         panel_df,
@@ -334,14 +322,6 @@ def run_sklearn_ml_model(
         drop_missing_features=False,
     )
 
-    if feature_cols is None or len(feature_cols) == 0:
-        used_feature_cols = [
-            c for c in dataset.columns
-            if c not in (asset_id_col, date_col, label_col)
-        ]
-    else:
-        used_feature_cols = feature_cols
-
     train_df, test_df = time_train_test_split(
         dataset,
         date_col=date_col,
@@ -351,7 +331,7 @@ def run_sklearn_ml_model(
     model_pack = fit_sklearn_model(
         train_df,
         model_name=model_name,
-        feature_cols=used_feature_cols,
+        feature_cols=feature_cols,
         label_col=label_col,
         random_state=random_state,
     )
@@ -372,7 +352,7 @@ def run_sklearn_ml_model(
         "model_name": model_name,
         "label_col": label_col,
         "train_end": train_end,
-        "feature_cols": used_feature_cols,
+        "feature_cols": feature_cols,
         "asset_id_col": asset_id_col,
         "date_col": date_col,
         "random_state": random_state,
