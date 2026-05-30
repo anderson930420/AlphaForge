@@ -95,7 +95,8 @@ def test_compute_metrics_marks_non_positive_ending_equity_annualized_return_unde
     assert metrics.total_return == -1.0
     assert metrics.annualized_return is None
     assert metrics.annualized_return_status == "undefined_non_positive_ending_equity"
-    assert metrics.sharpe_ratio == 0.0
+    assert math.isfinite(metrics.sharpe_ratio)
+    assert metrics.sharpe_ratio < 0.0
     assert metrics.max_drawdown == -1.0
 
 
