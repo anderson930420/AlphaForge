@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import logging
+import os
+import warnings
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-import warnings
 
 import certifi
 import pandas as pd
@@ -12,6 +13,7 @@ import requests
 from urllib3.exceptions import InsecureRequestWarning
 
 TWSE_STOCK_DAY_URL = "https://www.twse.com.tw/exchangeReport/STOCK_DAY"
+TWSE_INSECURE_SSL_ENV = "ALPHAFORGE_TWSE_INSECURE_SSL"
 logger = logging.getLogger(__name__)
 
 
@@ -20,11 +22,19 @@ class TwseFetchRequest:
     stock_no: str
     start_month: str
     end_month: str
+    allow_insecure_ssl: bool = False
 
 
 def fetch_stock_day_history(request: TwseFetchRequest) -> pd.DataFrame:
     months = _iter_month_starts(request.start_month, request.end_month)
-    frames = [_fetch_stock_day_month(request.stock_no, month) for month in months]
+    frames = [
+        _fetch_stock_day_month(
+            request.stock_no,
+            month,
+            allow_insecure_ssl=request.allow_insecure_ssl,
+        )
+        for month in months
+    ]
     combined = pd.concat(frames, ignore_index=True) if frames else _empty_ohlcv_frame()
     combined = combined.sort_values("datetime").drop_duplicates(subset=["datetime"], keep="last")
     return combined.reset_index(drop=True)
@@ -36,7 +46,7 @@ def save_stock_day_history(frame: pd.DataFrame, output_path: Path) -> Path:
     return output_path
 
 
-def _fetch_stock_day_month(stock_no: str, month_start: str) -> pd.DataFrame:
+def _fetch_stock_day_month(stock_no: str, month_start: str, *, allow_insecure_ssl: bool = False) -> pd.DataFrame:
     params = {"response": "json", "date": month_start, "stockNo": stock_no}
     try:
         response = requests.get(
@@ -46,7 +56,15 @@ def _fetch_stock_day_month(stock_no: str, month_start: str) -> pd.DataFrame:
             verify=certifi.where(),
         )
     except requests.exceptions.SSLError:
-        logger.warning("SSL verification failed for TWSE request; retrying with verify=False fallback")
+        if not _allow_insecure_ssl_fallback(allow_insecure_ssl):
+            logger.error(
+                "SSL verification failed for TWSE request; insecure fallback is disabled. "
+                "Set allow_insecure_ssl=True or ALPHAFORGE_TWSE_INSECURE_SSL=1 to opt in."
+            )
+            raise
+        logger.warning(
+            "SSL verification failed for TWSE request; retrying with verify=False because insecure fallback was explicitly enabled"
+        )
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", InsecureRequestWarning)
             response = requests.get(
@@ -58,6 +76,13 @@ def _fetch_stock_day_month(stock_no: str, month_start: str) -> pd.DataFrame:
     response.raise_for_status()
     payload = response.json()
     return _normalize_stock_day_payload(payload)
+
+
+def _allow_insecure_ssl_fallback(allow_insecure_ssl: bool) -> bool:
+    if allow_insecure_ssl:
+        return True
+    value = os.environ.get(TWSE_INSECURE_SSL_ENV, "")
+    return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _normalize_stock_day_payload(payload: dict) -> pd.DataFrame:
