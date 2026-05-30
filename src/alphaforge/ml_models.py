@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
+from .json_utils import json_safe_float, json_safe_mean, write_json_artifact
 from .ml_dataset import build_ml_dataset, infer_ml_feature_cols, time_train_test_split
 
 SUPPORTED_MODELS = {
@@ -187,12 +187,19 @@ def predict_sklearn_model(
     return result
 
 
+def _require_columns(frame: pd.DataFrame, columns: list[str]) -> None:
+    missing = [col for col in columns if col not in frame.columns]
+    if missing:
+        raise ValueError(f"Missing required columns: {missing}")
+
+
 def evaluate_sklearn_predictions(
     predictions_df: pd.DataFrame,
     *,
     label_col: str = "ret_fwd_1m",
     prediction_col: str = "predicted_return",
 ) -> dict:
+    _require_columns(predictions_df, [prediction_col])
     if label_col not in predictions_df.columns:
         return {
             "row_count": len(predictions_df),
@@ -208,22 +215,22 @@ def evaluate_sklearn_predictions(
 
     result: dict = {
         "row_count": int(row_count),
-        "mean_prediction": float(np.nanmean(predictions_df[prediction_col]) if len(predictions_df) > 0 else np.nan),
-        "mean_label": float(np.nanmean(predictions_df[label_col]) if len(predictions_df) > 0 else np.nan),
+        "mean_prediction": json_safe_mean(predictions_df[prediction_col]),
+        "mean_label": json_safe_mean(predictions_df[label_col]),
     }
 
     if row_count == 0:
         return result
 
     errors = y_true - y_pred
-    result["mse"] = float(np.mean(errors ** 2))
-    result["mae"] = float(np.mean(np.abs(errors)))
+    result["mse"] = json_safe_float(np.mean(errors ** 2))
+    result["mae"] = json_safe_float(np.mean(np.abs(errors)))
 
     if row_count >= 2:
         std_pred = np.std(y_pred, ddof=0)
         std_true = np.std(y_true, ddof=0)
         if std_pred > 0 and std_true > 0:
-            result["prediction_label_correlation"] = float(np.corrcoef(y_pred, y_true)[0, 1])
+            result["prediction_label_correlation"] = json_safe_float(np.corrcoef(y_pred, y_true)[0, 1])
 
     return result
 
@@ -249,8 +256,7 @@ def write_artifacts(
         "train_row_count": model_pack["train_row_count"],
         "test_row_count": int(len(test_df)),
     }
-    with open(metrics_path, "w") as f:
-        json.dump(metrics_full, f, indent=2, default=str)
+    write_json_artifact(metrics_path, metrics_full)
 
     fi = _extract_feature_importance(
         model_pack["model"],
@@ -271,12 +277,10 @@ def write_artifacts(
         "sklearn_required": True,
     }
     summary_path = output_dir / "model_summary.json"
-    with open(summary_path, "w") as f:
-        json.dump(summary, f, indent=2, default=str)
+    write_json_artifact(summary_path, summary)
 
     config_path = output_dir / "train_config.json"
-    with open(config_path, "w") as f:
-        json.dump(train_config, f, indent=2, default=str)
+    write_json_artifact(config_path, train_config)
 
     return {
         "predictions": predictions_path,
