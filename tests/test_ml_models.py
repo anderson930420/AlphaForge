@@ -13,7 +13,7 @@ from alphaforge.ml_models import (
     predict_sklearn_model,
     run_sklearn_ml_model,
 )
-from alphaforge.ml_dataset import build_ml_dataset, time_train_test_split
+from alphaforge.ml_dataset import build_ml_dataset, infer_ml_feature_cols, time_train_test_split
 
 
 FIXTURES = Path(__file__).parent / "fixtures" / "ml_baseline"
@@ -32,6 +32,52 @@ def _require_sklearn_test() -> bool:
 
 
 SKLEARN_AVAILABLE = _require_sklearn_test()
+
+
+class TestFeatureInference:
+    def test_sklearn_uses_shared_inference_excluding_prediction_output_columns(self):
+        df = pd.DataFrame({
+            "asset_id": ["A", "B", "A", "B"],
+            "date": ["2024-01-31", "2024-01-31", "2024-02-29", "2024-02-29"],
+            "Mom12m": [0.1, 0.2, 0.3, 0.4],
+            "BM": [0.5, 0.6, 0.7, 0.8],
+            "ret_fwd_1m": [0.01, 0.02, 0.03, 0.04],
+            "ret_fwd_3m": [0.05, 0.06, 0.07, 0.08],
+            "predicted_return": [0.2, 0.3, 0.4, 0.5],
+            "prediction_score": [0.1, 0.2, 0.3, 0.4],
+            "output_score": [0.9, 0.8, 0.7, 0.6],
+        })
+
+        features = infer_ml_feature_cols(df)
+
+        assert set(features) == {"Mom12m", "BM"}
+        assert "predicted_return" not in features
+        assert "prediction_score" not in features
+        assert "output_score" not in features
+        assert "ret_fwd_3m" not in features
+
+    def test_run_sklearn_ml_model_raises_when_no_features_are_inferred(self, tmp_path: Path):
+        if not SKLEARN_AVAILABLE:
+            import pytest
+            pytest.skip("scikit-learn not installed")
+        df = pd.DataFrame({
+            "asset_id": ["A", "A"],
+            "date": ["2024-01-31", "2024-02-29"],
+            "ret_fwd_1m": [0.01, 0.02],
+            "predicted_return": [0.03, 0.04],
+            "prediction_score": [0.05, 0.06],
+            "output_score": [0.07, 0.08],
+        })
+
+        import pytest
+        with pytest.raises(ValueError, match="At least one ML feature column is required"):
+            run_sklearn_ml_model(
+                df,
+                model_name="ridge_regressor",
+                output_dir=tmp_path / "out",
+                label_col="ret_fwd_1m",
+                train_end="2024-01-31",
+            )
 
 
 class TestFitPredict:
