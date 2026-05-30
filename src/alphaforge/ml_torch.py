@@ -5,7 +5,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from .json_utils import json_safe_float, write_json_artifact
+from .json_utils import json_safe_float, json_safe_mean, write_json_artifact
 from .ml_dataset import build_ml_dataset, infer_ml_feature_cols, time_train_test_split
 
 
@@ -289,8 +289,8 @@ def evaluate_torch_predictions(
 
     result: dict = {
         "row_count": int(row_count),
-        "mean_prediction": json_safe_float(np.nanmean(predictions_df[prediction_col]) if len(predictions_df) > 0 else None),
-        "mean_label": json_safe_float(np.nanmean(predictions_df[label_col]) if len(predictions_df) > 0 else None),
+        "mean_prediction": json_safe_mean(predictions_df[prediction_col]),
+        "mean_label": json_safe_mean(predictions_df[label_col]),
     }
 
     if row_count == 0:
