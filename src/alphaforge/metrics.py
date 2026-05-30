@@ -32,7 +32,7 @@ def compute_metrics(
     bar_count = int(len(equity_curve))
     initial_equity = float(equity_curve["equity"].iloc[0])
     ending_equity = float(equity_curve["equity"].iloc[-1])
-    total_return = (ending_equity / initial_equity) - 1.0
+    total_return = _compute_total_return(initial_equity=initial_equity, ending_equity=ending_equity)
     periods = max(len(equity_curve) - 1, 1)
     annualized_return, annualized_return_status = _compute_annualized_return(
         initial_equity=initial_equity,
@@ -57,6 +57,12 @@ def compute_metrics(
         bar_count=bar_count,
         trade_count=trade_count,
     )
+
+
+def _compute_total_return(*, initial_equity: float, ending_equity: float) -> float:
+    if initial_equity == 0:
+        return float("nan")
+    return (ending_equity / initial_equity) - 1.0
 
 
 def _compute_annualized_return(
