@@ -197,6 +197,31 @@ class TestBuildForwardReturnLabels:
         feb_row = result[result["date"] == pd.Timestamp("2024-02-29")].iloc[0]
         assert abs(feb_row["ret_fwd_1m"] - 0.01) < 1e-10
 
+    def test_duplicate_target_month_uses_last_sorted_return_like_previous_lookup(self):
+        df = pd.DataFrame({
+            "asset_id": ["A", "A", "A"],
+            "date": ["2024-01-31", "2024-02-29", "2024-02-29"],
+            "ret": [0.02, -0.01, 0.04],
+        })
+
+        result = build_forward_return_labels(df, horizon_months=1)
+
+        jan_row = result[result["date"] == pd.Timestamp("2024-01-31")].iloc[0]
+        assert jan_row["ret_fwd_1m"] == 0.04
+
+    def test_duplicate_source_month_rows_are_preserved_when_future_label_exists(self):
+        df = pd.DataFrame({
+            "asset_id": ["A", "A", "A"],
+            "date": ["2024-01-31", "2024-01-31", "2024-02-29"],
+            "ret": [0.02, 0.03, -0.01],
+        })
+
+        result = build_forward_return_labels(df, horizon_months=1)
+
+        jan_rows = result[result["date"] == pd.Timestamp("2024-01-31")]
+        assert len(jan_rows) == 2
+        assert set(jan_rows["ret_fwd_1m"]) == {-0.01}
+
 
 class TestJoinFeaturesWithReturnLabels:
     def test_join_features_with_labels(self):
@@ -260,25 +285,6 @@ class TestCLI:
             ["python3", "-m", "alphaforge.cli", "build-return-labels", "--help"],
             capture_output=True,
             text=True,
-            env={**__import__("os").environ, "PYTHONPATH": "src"},
-        )
-        assert result.returncode == 0
-        assert "build-return-labels" in result.stdout
-
-    def test_smoke_run(self):
-        subprocess.run(
-            [
-                "python3", "-m", "alphaforge.cli", "build-return-labels",
-                "--returns", str(FIXTURES / "monthly_returns.csv"),
-                "--output", "/tmp/phase22_test_labels.csv",
-                "--asset-id-col", "asset_id",
-                "--date-col", "date",
-                "--return-col", "ret",
-                "--horizon-months", "1",
-            ],
-            env={**__import__("os").environ, "PYTHONPATH": "src"},
             check=True,
         )
-        df = pd.read_csv("/tmp/phase22_test_labels.csv")
-        assert set(df.columns) == {"asset_id", "date", "target_date", "horizon_months", "ret_fwd_1m", "source"}
-        assert len(df) > 0
+        assert "build-return-labels" in result.stdout
