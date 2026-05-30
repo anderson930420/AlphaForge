@@ -1,0 +1,14 @@
+{
+  "status": "ok",
+  "output_dir": "tests/fixtures/ml_model_comparison/ridge_run",
+  "model": "ridge_regressor",
+  "feature_cols": ["Mom12m", "BM", "Investment"],
+  "return_labels_rows": 12,
+  "supervised_panel_rows": 9,
+  "predictions_rows": 6,
+  "ml_signal_rows": 6,
+  "does_run_research_validation": true,
+  "paths": {
+    "research_validation_summary": "tests/fixtures/ml_model_comparison/ridge_run/research_validation/ml_demo_research_validation_summary.json"
+  }
+}
