@@ -34,6 +34,10 @@ def build_forward_return_labels(
     missing = required - set(returns_df.columns)
     if missing:
         raise ValueError(f"Missing required columns: {missing}")
+
+    if label_col is None:
+        label_col = f"ret_fwd_{horizon_months}m"
+
     df = returns_df.copy()
     df[asset_id_col] = df[asset_id_col].astype(str)
     df["_orig_date"] = pd.to_datetime(df[date_col], errors="coerce")
@@ -58,36 +62,25 @@ def build_forward_return_labels(
     df = df.sort_values([asset_id_col, "date"]).reset_index(drop=True)
     df["_target_date"] = df["date"] + pd.offsets.MonthEnd(horizon_months)
 
-    ret_lookup: dict[tuple[str, pd.Timestamp], float] = {}
-    date_lookup: set[tuple[str, pd.Timestamp]] = set()
-    for _, row in df.iterrows():
-        key = (str(row[asset_id_col]), row["date"])
-        ret_lookup[key] = row["_combined_ret"]
-        date_lookup.add(key)
+    target_returns = (
+        df[[asset_id_col, "date", "_combined_ret"]]
+        .drop_duplicates(subset=[asset_id_col, "date"], keep="last")
+        .rename(columns={"date": "_target_date", "_combined_ret": label_col})
+    )
 
-    rows = []
-    for _, row in df.iterrows():
-        asset_id = str(row[asset_id_col])
-        target = row["_target_date"]
-        date_key = (asset_id, target)
-        ret_fwd = ret_lookup.get(date_key, float("nan"))
-        if pd.notna(ret_fwd):
-            rows.append({
-                "asset_id": asset_id,
-                "date": row["date"],
-                "target_date": target,
-                "horizon_months": horizon_months,
-                "_ret_fwd": ret_fwd,
-            })
-
-    if label_col is None:
-        label_col = f"ret_fwd_{horizon_months}m"
-    if not rows:
+    result_df = df[[asset_id_col, "date", "_target_date"]].merge(
+        target_returns,
+        on=[asset_id_col, "_target_date"],
+        how="left",
+        sort=False,
+    )
+    result_df = result_df.dropna(subset=[label_col]).copy()
+    if result_df.empty:
         columns = ["asset_id", "date", "target_date", "horizon_months", label_col, "source"]
         return pd.DataFrame(columns=columns)
-    result_df = pd.DataFrame(rows)
-    result_df[label_col] = result_df["_ret_fwd"]
-    result_df = result_df.drop(columns=["_ret_fwd"])
+
+    result_df = result_df.rename(columns={asset_id_col: "asset_id", "_target_date": "target_date"})
+    result_df["horizon_months"] = horizon_months
     result_df["source"] = source
     return result_df[["asset_id", "date", "target_date", "horizon_months", label_col, "source"]].reset_index(drop=True)
 
