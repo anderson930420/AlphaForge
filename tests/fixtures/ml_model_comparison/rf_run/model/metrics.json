@@ -1,0 +1,10 @@
+{
+  "row_count": 6,
+  "mean_prediction": 0.02,
+  "mean_label": 0.012,
+  "mse": 0.020,
+  "mae": 0.120,
+  "prediction_label_correlation": 0.10,
+  "train_row_count": 6,
+  "test_row_count": 6
+}
