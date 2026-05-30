@@ -11,10 +11,12 @@ import requests
 from urllib3.exceptions import InsecureRequestWarning
 
 from alphaforge.twse_client import (
+    TWSE_INSECURE_SSL_ENV,
     TwseFetchRequest,
-    fetch_stock_day_history,
+    _allow_insecure_ssl_fallback,
     _iter_month_starts,
     _normalize_stock_day_payload,
+    fetch_stock_day_history,
     save_stock_day_history,
 )
 
@@ -72,7 +74,20 @@ def test_save_stock_day_history_writes_csv(tmp_path: Path) -> None:
     assert loaded.iloc[0]["datetime"] == "2024-03-01"
 
 
-def test_fetch_stock_day_history_falls_back_after_ssl_error() -> None:
+def test_fetch_stock_day_history_raises_ssl_error_by_default() -> None:
+    with patch(
+        "alphaforge.twse_client.requests.get",
+        side_effect=requests.exceptions.SSLError("ssl"),
+    ) as mock_get:
+        with pytest.raises(requests.exceptions.SSLError, match="ssl"):
+            fetch_stock_day_history(TwseFetchRequest(stock_no="2330", start_month="2024-03", end_month="2024-03"))
+
+    assert mock_get.call_count == 1
+    assert mock_get.call_args.kwargs["verify"] == certifi.where()
+    assert mock_get.call_args.kwargs["verify"] is not False
+
+
+def test_fetch_stock_day_history_falls_back_after_ssl_error_when_explicitly_allowed() -> None:
     payload = {
         "stat": "OK",
         "data": [
@@ -87,7 +102,14 @@ def test_fetch_stock_day_history_falls_back_after_ssl_error() -> None:
         "alphaforge.twse_client.requests.get",
         side_effect=[requests.exceptions.SSLError("ssl"), success_response],
     ) as mock_get:
-        frame = fetch_stock_day_history(TwseFetchRequest(stock_no="2330", start_month="2024-03", end_month="2024-03"))
+        frame = fetch_stock_day_history(
+            TwseFetchRequest(
+                stock_no="2330",
+                start_month="2024-03",
+                end_month="2024-03",
+                allow_insecure_ssl=True,
+            )
+        )
 
     assert len(frame) == 1
     assert mock_get.call_count == 2
@@ -114,7 +136,7 @@ def test_fetch_stock_day_history_uses_ssl_verification_on_normal_path() -> None:
     assert mock_get.call_args.kwargs["verify"] is not False
 
 
-def test_fetch_stock_day_history_logs_and_locally_suppresses_insecure_warning_on_ssl_fallback(
+def test_fetch_stock_day_history_logs_and_locally_suppresses_insecure_warning_on_explicit_ssl_fallback(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     payload = {
@@ -142,9 +164,26 @@ def test_fetch_stock_day_history_logs_and_locally_suppresses_insecure_warning_on
         with warnings.catch_warnings(record=True) as recorded:
             warnings.simplefilter("always")
             with caplog.at_level("WARNING"):
-                fetch_stock_day_history(TwseFetchRequest(stock_no="2330", start_month="2024-03", end_month="2024-03"))
+                fetch_stock_day_history(
+                    TwseFetchRequest(
+                        stock_no="2330",
+                        start_month="2024-03",
+                        end_month="2024-03",
+                        allow_insecure_ssl=True,
+                    )
+                )
 
     assert call_count == 2
-    assert any("retrying with verify=False fallback" in message for message in caplog.messages)
+    assert any("retrying with verify=False because insecure fallback was explicitly enabled" in message for message in caplog.messages)
     assert not any(isinstance(record.message, InsecureRequestWarning) for record in recorded)
     assert warnings.filters == original_filters
+
+
+def test_insecure_ssl_fallback_can_be_enabled_by_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(TWSE_INSECURE_SSL_ENV, "1")
+    assert _allow_insecure_ssl_fallback(False) is True
+
+
+def test_insecure_ssl_fallback_is_disabled_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv(TWSE_INSECURE_SSL_ENV, raising=False)
+    assert _allow_insecure_ssl_fallback(False) is False
