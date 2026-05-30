@@ -97,7 +97,7 @@ def _validate_market_data(frame: pd.DataFrame, path: Path) -> None:
     if frame["datetime"].isna().any():
         raise ValueError("datetime column contains missing values")
     if not frame["datetime"].is_monotonic_increasing:
-        raise ValueError("datetime column must be strictly increasing after normalization")
+        raise ValueError("datetime column must be sorted in ascending order after normalization")
     if frame["datetime"].duplicated().any():
         raise ValueError("duplicate datetime values are not allowed in canonical market data")
 
