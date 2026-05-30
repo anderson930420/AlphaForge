@@ -26,12 +26,22 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def parse_feature_cols(raw: str | None) -> list[str] | None:
+    if raw is None:
+        return None
+    feature_cols = [col.strip() for col in raw.split(",") if col.strip()]
+    if not feature_cols:
+        raise ValueError("--feature-cols was provided but no valid feature columns were parsed")
+    return feature_cols
+
+
 def main() -> None:
     args = build_parser().parse_args()
 
-    feature_cols: list[str] | None = None
-    if args.feature_cols is not None:
-        feature_cols = [c.strip() for c in args.feature_cols.split(",")]
+    try:
+        feature_cols = parse_feature_cols(args.feature_cols)
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
 
     panel_df = pd.read_csv(args.panel)
 
