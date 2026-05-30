@@ -1,0 +1,13 @@
+datetime,available_at,symbol,asset_id,signal_name,score,direction,target_weight,source
+2024-01-31,2024-01-31,A,A,ml_predicted_return,0.90,1,1.0,AlphaForgeML
+2024-01-31,2024-01-31,B,B,ml_predicted_return,-0.80,-1,-1.0,AlphaForgeML
+2024-02-29,2024-02-29,A,A,ml_predicted_return,-0.70,-1,-1.0,AlphaForgeML
+2024-02-29,2024-02-29,B,B,ml_predicted_return,0.80,1,1.0,AlphaForgeML
+2024-03-31,2024-03-31,A,A,ml_predicted_return,0.60,1,1.0,AlphaForgeML
+2024-03-31,2024-03-31,B,B,ml_predicted_return,-0.55,-1,-1.0,AlphaForgeML
+2024-04-30,2024-04-30,A,A,ml_predicted_return,-0.65,-1,-1.0,AlphaForgeML
+2024-04-30,2024-04-30,B,B,ml_predicted_return,0.70,1,1.0,AlphaForgeML
+2024-05-31,2024-05-31,A,A,ml_predicted_return,0.75,1,1.0,AlphaForgeML
+2024-05-31,2024-05-31,B,B,ml_predicted_return,-0.72,-1,-1.0,AlphaForgeML
+2024-06-30,2024-06-30,A,A,ml_predicted_return,-0.50,-1,-1.0,AlphaForgeML
+2024-06-30,2024-06-30,B,B,ml_predicted_return,0.55,1,1.0,AlphaForgeML
