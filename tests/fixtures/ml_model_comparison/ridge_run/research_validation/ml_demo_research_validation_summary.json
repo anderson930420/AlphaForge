@@ -1,0 +1,19 @@
+{
+  "status": "ok",
+  "stage": "ml_demo_optional_research_validation",
+  "validation_mode": "single_symbol_projection",
+  "symbol": "A",
+  "signal_name": "ml_predicted_return",
+  "nonzero_target_weight_count": 2,
+  "all_flat_selected_symbol": false,
+  "research_validation_summary": {
+    "final_holdout_metrics": {
+      "total_return": 0.120,
+      "annualized_return": 0.250,
+      "sharpe_ratio": 1.10,
+      "max_drawdown": -0.050,
+      "turnover": 1.50,
+      "trade_count": 2
+    }
+  }
+}
