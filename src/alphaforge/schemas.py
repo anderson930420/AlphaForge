@@ -53,13 +53,14 @@ class TradeRecord:
 @dataclass(frozen=True)
 class MetricReport:
     total_return: float
-    annualized_return: float
+    annualized_return: float | None
     sharpe_ratio: float
     max_drawdown: float
     win_rate: float
     turnover: float
     trade_count: int
     bar_count: int
+    annualized_return_status: str = "ok"
 
     def __post_init__(self) -> None:
         if not isinstance(self.bar_count, int):
@@ -236,138 +237,5 @@ class StrategyComparisonSummary:
     permutation_config: ValidationPermutationConfig | None
     research_policy_config: dict[str, Any]
     comparison_results: list[StrategyComparisonResult]
-    artifact_paths: dict[str, str] = field(default_factory=dict)
-    metadata: dict[str, Any] = field(default_factory=dict)
-
-
-@dataclass(frozen=True)
-class WalkForwardConfig:
-    train_size: int
-    test_size: int
-    step_size: int
-
-
-@dataclass(frozen=True)
-class WalkForwardFoldResult:
-    fold_index: int
-    train_start: str
-    train_end: str
-    test_start: str
-    test_end: str
-    selected_strategy_spec: StrategySpec
-    train_best_result: ExperimentResult
-    test_result: ExperimentResult
-    test_benchmark_summary: dict[str, float] = field(default_factory=dict)
-    candidate_evidence: CandidateEvidenceSummary | None = None
-    candidate_decision: CandidatePolicyDecision | None = None
-
-
-@dataclass(frozen=True)
-class WalkForwardResult:
-    data_spec: DataSpec
-    walk_forward_config: WalkForwardConfig
-    folds: list[WalkForwardFoldResult]
-    aggregate_test_metrics: dict[str, float | int]
-    aggregate_benchmark_metrics: dict[str, float | int] = field(default_factory=dict)
-    walk_forward_evidence: WalkForwardEvidenceSummary | None = None
-    walk_forward_decision: CandidatePolicyDecision | None = None
-    metadata: dict[str, Any] = field(default_factory=dict)
-
-
-@dataclass(frozen=True)
-class PermutationTestSummary:
-    strategy_name: str
-    strategy_parameters: dict[str, Any]
-    target_metric_name: PermutationTargetMetricName
-    permutation_mode: Literal["block"]
-    block_size: int
-    real_observed_metric_value: float
-    permutation_metric_values: list[float]
-    permutation_count: int
-    seed: int
-    null_ge_count: int
-    empirical_p_value: float | None
-    null_model: str = "return_block_reconstruction"
-    artifact_paths: dict[str, str] = field(default_factory=dict)
-    metadata: dict[str, Any] = field(default_factory=dict)
-
-
-@dataclass(frozen=True)
-class PermutationTestArtifactReceipt:
-    permutation_test_summary_path: Path
-    permutation_scores_path: Path
-
-
-@dataclass(frozen=True)
-class PermutationTestExecutionOutput:
-    permutation_test_summary: PermutationTestSummary
-    artifact_receipt: PermutationTestArtifactReceipt | None = None
-
-
-@dataclass(frozen=True)
-class ResearchPeriod:
-    start: str
-    end: str
-
-
-@dataclass(frozen=True)
-class ResearchProtocolPlan:
-    strategy_family: str
-    selected_parameters: dict[str, Any]
-    parameter_selection_rule: str
-    scoring_formula_name: str
-    transaction_cost_assumptions: dict[str, Any]
-    development_period: ResearchPeriod
-    holdout_period: ResearchPeriod
-    search_space_size: int
-    tried_strategy_family_count: int
-    tried_parameter_combination_count: int
-    walk_forward_config: WalkForwardConfig
-    permutation_config: ValidationPermutationConfig | None = None
-
-
-@dataclass(frozen=True)
-class ResearchValidationConfig:
-    data_spec: DataSpec
-    strategy_name: str
-    parameter_grid: ParameterGrid
-    development_period: ResearchPeriod
-    holdout_period: ResearchPeriod
-    walk_forward_config: WalkForwardConfig
-    backtest_config: BacktestConfig
-    permutation_config: ValidationPermutationConfig | None = None
-    max_drawdown_cap: float | None = None
-    min_trade_count: int | None = None
-    output_dir: Path | None = None
-    experiment_name: str = "research_validation"
-    signal_file: Path | None = None
-    signal_name: str | None = None
-
-
-@dataclass(frozen=True)
-class ResearchProtocolSummary:
-    data_spec: DataSpec
-    backtest_config: BacktestConfig
-    development_period: ResearchPeriod
-    holdout_period: ResearchPeriod
-    development_row_count: int
-    holdout_row_count: int
-    selected_strategy: str
-    selected_parameters: dict[str, Any]
-    selection_rule: str
-    scoring_formula_name: str
-    development_search_data_window: dict[str, Any]
-    walk_forward_data_window: dict[str, Any]
-    final_holdout_data_window: dict[str, Any]
-    search_space_size: int
-    tried_strategy_family_count: int
-    tried_parameter_combination_count: int
-    development_search_summary: SearchSummary
-    walk_forward_summary: WalkForwardResult
-    frozen_plan: ResearchProtocolPlan
-    final_holdout_result: ExperimentResult
-    transaction_cost_assumptions: dict[str, Any]
-    candidate_evidence: CandidateEvidenceSummary | None = None
-    permutation_summary: PermutationTestSummary | None = None
     artifact_paths: dict[str, str] = field(default_factory=dict)
     metadata: dict[str, Any] = field(default_factory=dict)
