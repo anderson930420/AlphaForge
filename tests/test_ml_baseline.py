@@ -248,3 +248,34 @@ class TestCLI:
         assert "asset_id" in predictions.columns
         assert "date" in predictions.columns
         assert "predicted_return" in predictions.columns
+
+
+def test_evaluate_regression_predictions_returns_json_safe_none_for_all_nan_values():
+    predictions = pd.DataFrame(
+        {
+            "predicted_return": [float("nan"), float("nan")],
+            "ret_fwd_1m": [float("nan"), float("nan")],
+        }
+    )
+
+    metrics = evaluate_regression_predictions(predictions)
+
+    assert metrics["row_count"] == 0
+    assert metrics["mean_prediction"] is None
+    assert metrics["mean_label"] is None
+    json.dumps(metrics, allow_nan=False)
+
+
+def test_evaluate_regression_predictions_uses_none_for_undefined_correlation():
+    predictions = pd.DataFrame(
+        {
+            "predicted_return": [0.01, 0.01],
+            "ret_fwd_1m": [0.02, 0.03],
+        }
+    )
+
+    metrics = evaluate_regression_predictions(predictions)
+
+    assert metrics["row_count"] == 2
+    assert metrics["correlation"] is None
+    json.dumps(metrics, allow_nan=False)
