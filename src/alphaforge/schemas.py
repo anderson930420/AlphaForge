@@ -53,13 +53,14 @@ class TradeRecord:
 @dataclass(frozen=True)
 class MetricReport:
     total_return: float
-    annualized_return: float
+    annualized_return: float | None
     sharpe_ratio: float
     max_drawdown: float
     win_rate: float
     turnover: float
     trade_count: int
     bar_count: int
+    annualized_return_status: str = "ok"
 
     def __post_init__(self) -> None:
         if not isinstance(self.bar_count, int):
@@ -356,6 +357,7 @@ class ResearchProtocolSummary:
     selected_parameters: dict[str, Any]
     selection_rule: str
     scoring_formula_name: str
+    transaction_cost_assumptions: dict[str, Any]
     development_search_data_window: dict[str, Any]
     walk_forward_data_window: dict[str, Any]
     final_holdout_data_window: dict[str, Any]
