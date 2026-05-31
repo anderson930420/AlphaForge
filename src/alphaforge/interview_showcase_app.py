@@ -8,12 +8,18 @@ import plotly.express as px
 
 from alphaforge.interview_showcase import (
     DEFAULT_INTERVIEW_RUN_DIR,
+    DEFAULT_SHOWCASE_ROOT,
     build_artifact_trace,
     build_health_checks,
+    discover_artifact_run_dirs,
+    extract_artifact_zip,
     extract_overview_metrics,
     load_interview_showcase_artifacts,
     summarize_signal_exposure,
 )
+
+
+UPLOAD_ROOT = Path("artifacts/uploaded_showcase_runs")
 
 
 def main() -> None:
@@ -28,24 +34,83 @@ def main() -> None:
     st.set_page_config(page_title="AlphaForge Interview Showcase", layout="wide")
     st.title("AlphaForge Interview Showcase")
     st.caption(
-        "Read-only artifact viewer for an already-generated ML research run. "
-        "This app does not train models, run backtests, or download data."
+        "Read-only showcase for already-generated ML research artifacts. "
+        "Use it locally or deploy it as a Streamlit app with bundled/uploaded artifact runs."
     )
 
-    run_dir = Path(st.sidebar.text_input("Artifact run directory", DEFAULT_INTERVIEW_RUN_DIR))
+    run_dir = select_run_dir(st)
     preview_rows = st.sidebar.slider("Preview rows", min_value=3, max_value=50, value=10)
     st.sidebar.markdown("---")
-    st.sidebar.caption("Run first: `bash scripts/run_interview_demo.sh` or point this app at a real-data artifact run.")
+    st.sidebar.caption(
+        "Generate a default run with: `bash scripts/run_interview_demo.sh artifacts/demo/interview_ml_demo_C`."
+    )
 
     artifacts = load_interview_showcase_artifacts(run_dir)
+    st.caption(f"Current artifact run: `{run_dir}`")
 
-    render_overview(st, artifacts)
-    render_health_checks(st, artifacts)
-    render_signal(st, artifacts, preview_rows)
-    render_predictions(st, artifacts, preview_rows)
-    render_final_holdout(st, artifacts, preview_rows)
-    render_artifact_trace(st, run_dir)
-    render_boundaries(st)
+    tabs = st.tabs([
+        "Overview",
+        "Health Checks",
+        "Signal / Exposure",
+        "Predictions",
+        "Final Holdout",
+        "HTML Showcase",
+        "Artifact Trace",
+        "Boundaries",
+    ])
+    with tabs[0]:
+        render_overview(st, artifacts)
+    with tabs[1]:
+        render_health_checks(st, artifacts)
+    with tabs[2]:
+        render_signal(st, artifacts, preview_rows)
+    with tabs[3]:
+        render_predictions(st, artifacts, preview_rows)
+    with tabs[4]:
+        render_final_holdout(st, artifacts, preview_rows)
+    with tabs[5]:
+        render_html_showcase(st, artifacts)
+    with tabs[6]:
+        render_artifact_trace(st, run_dir)
+    with tabs[7]:
+        render_boundaries(st)
+
+
+def select_run_dir(st: Any) -> Path:
+    st.sidebar.subheader("Artifact Source")
+    source_mode = st.sidebar.radio(
+        "Source mode",
+        ["Local artifact run", "Upload artifact ZIP"],
+        horizontal=False,
+    )
+
+    if source_mode == "Upload artifact ZIP":
+        uploaded = st.sidebar.file_uploader("Upload artifact run ZIP", type=["zip"])
+        if uploaded is not None:
+            try:
+                extracted = extract_artifact_zip(
+                    uploaded.getvalue(),
+                    target_root=UPLOAD_ROOT,
+                    run_name=uploaded.name,
+                )
+            except Exception as exc:  # pragma: no cover - UI defensive path
+                st.sidebar.error(f"Could not extract uploaded ZIP: {exc}")
+            else:
+                st.sidebar.success(f"Loaded uploaded run: {extracted}")
+                return extracted
+        st.sidebar.info("Upload a ZIP, or switch to Local artifact run.")
+
+    discovered = discover_artifact_run_dirs(DEFAULT_SHOWCASE_ROOT)
+    options = [str(path) for path in discovered]
+    default = str(Path(DEFAULT_INTERVIEW_RUN_DIR))
+    if default not in options:
+        options.insert(0, default)
+    options.append("Custom path")
+
+    selected = st.sidebar.selectbox("Select local run", options, index=0)
+    if selected == "Custom path":
+        return Path(st.sidebar.text_input("Artifact run directory", default))
+    return Path(selected)
 
 
 def render_overview(st: Any, artifacts: Any) -> None:
@@ -99,19 +164,30 @@ def render_signal(st: Any, artifacts: Any, preview_rows: int) -> None:
     if exposure.empty:
         st.info("No signal exposure summary available.")
     else:
-        fig = px.bar(
-            exposure,
-            x="symbol",
-            y="total_abs_weight",
-            text="nonzero_target_weight_count",
-            hover_data=["rows"],
-        )
-        fig.update_layout(
-            height=320,
-            margin={"l": 20, "r": 20, "t": 20, "b": 20},
-            yaxis_title="Total absolute target weight",
-        )
-        st.plotly_chart(fig, use_container_width=True)
+        col1, col2 = st.columns([2, 1])
+        with col1:
+            fig = px.bar(
+                exposure,
+                x="symbol",
+                y="total_abs_weight",
+                text="nonzero_target_weight_count",
+                hover_data=["rows"],
+            )
+            fig.update_layout(
+                height=320,
+                margin={"l": 20, "r": 20, "t": 20, "b": 20},
+                yaxis_title="Total absolute target weight",
+            )
+            st.plotly_chart(fig, use_container_width=True)
+        with col2:
+            fig = px.pie(
+                exposure,
+                names="symbol",
+                values="total_abs_weight",
+                hole=0.55,
+            )
+            fig.update_layout(height=320, margin={"l": 20, "r": 20, "t": 20, "b": 20})
+            st.plotly_chart(fig, use_container_width=True)
         st.dataframe(exposure, use_container_width=True, hide_index=True)
 
     if artifacts.signal is not None:
@@ -164,9 +240,19 @@ def render_final_holdout(st: Any, artifacts: Any, preview_rows: int) -> None:
         eq = equity.copy()
         eq["datetime"] = pd.to_datetime(eq["datetime"], errors="coerce")
         eq["equity"] = pd.to_numeric(eq["equity"], errors="coerce")
-        fig = px.line(eq, x="datetime", y="equity", markers=True)
-        fig.update_layout(height=380, margin={"l": 20, "r": 20, "t": 20, "b": 20})
-        st.plotly_chart(fig, use_container_width=True)
+        eq = eq.dropna(subset=["datetime", "equity"])
+        col1, col2 = st.columns(2)
+        with col1:
+            fig = px.line(eq, x="datetime", y="equity", markers=True)
+            fig.update_layout(height=380, margin={"l": 20, "r": 20, "t": 20, "b": 20})
+            st.plotly_chart(fig, use_container_width=True)
+        with col2:
+            drawdown = eq.copy()
+            drawdown["cummax"] = drawdown["equity"].cummax()
+            drawdown["drawdown"] = drawdown["equity"] / drawdown["cummax"] - 1.0
+            fig = px.area(drawdown, x="datetime", y="drawdown")
+            fig.update_layout(height=380, margin={"l": 20, "r": 20, "t": 20, "b": 20})
+            st.plotly_chart(fig, use_container_width=True)
     else:
         st.info("No final-holdout equity curve found.")
 
@@ -176,6 +262,23 @@ def render_final_holdout(st: Any, artifacts: Any, preview_rows: int) -> None:
         st.dataframe(trade_log.head(preview_rows), use_container_width=True, hide_index=True)
     else:
         st.info("No final-holdout trade log found.")
+
+
+def render_html_showcase(st: Any, artifacts: Any) -> None:
+    st.subheader("Embedded HTML Showcase")
+    report_path = Path(artifacts.html_report_path)
+    if not report_path.exists():
+        st.info(
+            "No HTML report found. Generate one with `bash scripts/run_interview_demo.sh` "
+            "or include `interview_artifact_report.html` in the artifact run."
+        )
+        return
+    st.caption(str(report_path))
+    try:
+        html = report_path.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        html = report_path.read_text(errors="ignore")
+    st.components.v1.html(html, height=850, scrolling=True)
 
 
 def render_artifact_trace(st: Any, run_dir: Path) -> None:
