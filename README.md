@@ -1,5 +1,7 @@
 # AlphaForge
 
+[English](README.md) | [繁體中文](README.zh-TW.md)
+
 AlphaForge is a reproducible, ML-oriented quantitative research framework for
 asset-pricing signals, supervised-learning experiments, custom-signal validation,
 and artifact-backed strategy research.
