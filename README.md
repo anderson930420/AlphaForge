@@ -64,6 +64,39 @@ Data / Features / External Signals
 Features and returns are kept as separate schemas. Signals carry target positions.
 Backtests use lagged close-to-close execution with configurable semantics.
 
+### Architecture Diagram
+
+```mermaid
+flowchart TD
+    A[Market Data / Feature Data / External Signals] --> B[Forward Return Label Builder]
+    A --> C[Signal Package Loader]
+
+    B --> D[Supervised ML Dataset]
+    D --> E[Factor Diagnostics]
+    D --> F[ML Baselines]
+
+    F --> G[Prediction Diagnostics]
+    F --> H[Model Comparison]
+
+    G --> I[ML Prediction Signal Converter]
+    C --> J[custom_signal v0.2 Contract]
+    I --> J
+
+    J --> K[Research Validation]
+    K --> L[Evidence Artifacts]
+
+    L --> M[HTML Report]
+    L --> N[Streamlit Interview Showcase]
+    L --> O[JSON / CSV Artifact Bundle]
+
+    subgraph Boundaries
+        P[No live trading]
+        Q[No broker integration]
+        R[No private raw data in git]
+        S[No profitability guarantee]
+    end
+```
+
 ---
 
 ## Why This Project Matters
