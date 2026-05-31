@@ -512,6 +512,9 @@ input. It validates schema and alignment, then runs development/holdout
 evaluation and walk-forward validation — but does not perform parameter search
 over SignalForge internals.
 
+See `docs/signalforge-alphaforge-e2e-workflow.md` for the full SignalForge →
+AlphaForge package, smoke-test, and research-validation workflow.
+
 ## HTML Artifact Reports
 
 Standalone HTML reports with Plotly equity/drawdown charts, metric cards, and
