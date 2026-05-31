@@ -8,7 +8,7 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from alphaforge.interview_showcase_app import main
+from alphaforge.interview_showcase_app import main  # noqa: E402
 
 
 if __name__ == "__main__":
