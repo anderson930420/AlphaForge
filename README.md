@@ -1,25 +1,31 @@
 # AlphaForge
 
-A Python research framework for asset-pricing signal research, custom signal
-backtesting, and ML-ready artifact generation.
+AlphaForge is a reproducible ML-oriented quantitative research framework for
+asset-pricing signals, supervised-learning experiments, custom-signal validation,
+and artifact-backed strategy research.
 
-AlphaForge is not a live trading system or broker simulator. It is a
-deterministic research toolchain: consume features and signals, run backtests
-with lagged execution, produce evidence artifacts, and export ML-compatible
-datasets and reports.
+It connects feature engineering, forward-return labeling, sklearn / PyTorch
+baselines, prediction diagnostics, signal construction, research validation,
+model comparison, and Streamlit showcase visualization into a traceable research
+pipeline.
+
+AlphaForge is not a live trading system or broker simulator. It is a deterministic
+research toolchain: consume features and signals, run lagged validation, produce
+evidence artifacts, and present those artifacts without committing private or
+licensed market data.
 
 ## Pipeline Overview
 
 ```text
-Data / Features
-  → Signal Construction
+Data / Features / External Signals
   → Forward Return Labels
   → Supervised ML Dataset
-  → Single-Factor Diagnostics
-  → Baseline ML Predictions
-  → custom_signal v0.2 Signal
-  → Backtest / Artifact Reports
-  → Local Research Dashboard
+  → Factor + Prediction Diagnostics
+  → Regression / Classification Baselines
+  → custom_signal v0.2 Signal Construction
+  → Single-Symbol Research Validation
+  → Model Comparison / Final Holdout Artifacts
+  → Streamlit Interview Showcase / HTML Reports
 ```
 
 Features (OAP characteristics, external signals) and returns are kept as separate
@@ -35,21 +41,63 @@ execution with configurable semantics.
 - forward return label builder (month-end aligned, delisting-aware)
 - ML dataset builder (feature inference, missing-label drop, date normalization)
 - single-factor diagnostics (coverage, distribution, IC, Rank IC, quantile returns)
+- ML prediction diagnostics and model comparison reports
 - baseline ML regressor (closed-form OLS ridge, median imputation, no sklearn)
 - sklearn regression model adapters (Ridge, Random Forest, HistGradientBoosting, optional)
+- sklearn classifier baseline with predicted probabilities and classifier metrics
+- PyTorch MLP baseline for lightweight tabular deep-learning experiments
 - ML prediction to custom_signal v0.2 converter (quantile-based long/short/neutral)
+- single-symbol projection research validation for cross-sectional ML signals
+- optional research-validation integration in the ML demo pipeline
 - HTML artifact report renderer (metric cards, Plotly equity/drawdown charts)
-- local research dashboard for ML artifact visualization
-- end-to-end ML artifact smoke script (features + returns → signal + report)
+- Streamlit interview showcase with artifact run selector, ZIP upload, and embedded HTML report
+- artifact bundle workflow for Streamlit Cloud / non-local demos
 - built-in MA crossover and breakout strategy families
 - grid search, train/test validation, walk-forward validation
 - strategy comparison and permutation diagnostics
 - TWSE daily data fetch helpers
 
+## Interview Demo
+
+Generate a deterministic ML research run with built-in health checks:
+
+```bash
+bash scripts/run_interview_demo.sh artifacts/demo/interview_ml_demo_C
+```
+
+The script verifies:
+
+```text
+nonzero_target_weight_count > 0
+extra_signal_dates == []
+```
+
+Launch the Streamlit showcase:
+
+```bash
+python3 -m pip install -e ".[dashboard]"
+streamlit run streamlit_app.py
+```
+
+The showcase displays run overview, health checks, signal exposure, predictions,
+final-holdout metrics, equity curve, drawdown, trade log, embedded HTML report,
+artifact trace, and boundaries.
+
+Package an existing run for upload in Streamlit Cloud or another machine:
+
+```bash
+bash scripts/package_interview_artifacts.sh \
+  artifacts/demo/interview_ml_demo_C \
+  artifacts/demo/interview_ml_demo_C.zip
+```
+
+For real-data demos, keep raw/licensed data local. Package only permission-safe
+derived artifacts and upload the ZIP through the Streamlit showcase.
+
 ## ML Research Workflow
 
 The local ML pipeline runs from fixture features and monthly returns to a
-complete v0.2 signal file and HTML report:
+complete v0.2 signal file, optional research validation, and showcase artifacts:
 
 ```text
 features.csv + monthly_returns.csv
@@ -57,16 +105,17 @@ features.csv + monthly_returns.csv
   → join_features_with_return_labels  →  supervised_panel.csv
   → run_factor_diagnostics  →  factor diagnostic artifacts
   → build_ml_dataset  →  dataset.csv
-  → fit_baseline_regressor + predict  →  predictions.csv + metrics_summary.json
+  → fit model + predict  →  predictions.csv + metrics
   → build_ml_prediction_signal  →  ml_signal.csv
-  → render_artifact_report  →  report.html
-  → local research dashboard
+  → single-symbol projection  →  custom_signal research validation
+  → model comparison / final holdout artifacts
+  → Streamlit showcase / HTML report
 ```
 
 The baseline regressor is a closed-form ridge regression using only numpy and
-pandas. Missing features are imputed with column medians. Predictions are
-converted to quantile-based long/short/neutral signals. Dates with insufficient
-cross-sectional dispersion produce all-neutral positions.
+pandas. Optional sklearn and PyTorch model paths write compatible artifacts.
+Predictions are converted to quantile-based long/short/neutral signals. Dates
+with insufficient cross-sectional dispersion produce all-neutral positions.
 
 ## Important Boundaries
 
@@ -74,27 +123,30 @@ cross-sectional dispersion produce all-neutral positions.
 - no broker integration
 - no profitability guarantee
 - no CRSP/WRDS downloader
-- no private data committed to the repository
-- smoke metrics are integration/regression metrics, not strategy performance claims
+- no private or licensed raw data committed to the repository
+- fixture metrics are integration/regression metrics, not strategy performance claims
+- Streamlit showcase reads generated artifacts; it does not train models or place orders
+- current custom_signal runtime validation is single-symbol; multi-symbol portfolio validation is future work
 - SignalForge integration is file-based; AlphaForge does not import SignalForge runtime code
 - OAP characteristics are predictors, not realized returns — labels must come from a separate return source
-- dashboard is local-first and reads generated artifacts; it does not upload private data
 - `available_at` is currently a signal/data contract field, not a runtime execution-timing driver
 
 ## Portfolio Summary
 
-- Built a deterministic quantitative research framework that loads market data,
-  executes custom-signal and built-in strategies, and writes reproducible
-  backtest evidence artifacts
+- Built a deterministic ML-oriented quantitative research framework that loads
+  market data, constructs labels, trains baseline models, converts predictions
+  into signal contracts, and writes reproducible validation artifacts
 - Integrated external signal sources (OAP asset-pricing characteristics,
   SignalForge v0.2 signal packages) through a standardized `custom_signal`
   file contract with no runtime coupling
-- Implemented a local ML research pipeline — feature/label joining, time-based
-  train/test splitting, single-factor diagnostics, closed-form ridge regression,
-  quantile-based signal conversion, artifact reporting, and local dashboard
-  visualization — without requiring sklearn, CRSP, or private data
+- Implemented regression and classification ML scaffolding — feature/label
+  joining, time-based train/test splitting, single-factor diagnostics, sklearn
+  adapters, PyTorch MLP baseline, probability classification outputs, signal
+  conversion, research validation, and model comparison
+- Added interview-ready visualization: one-click artifact generation, Streamlit
+  showcase, embedded HTML report, artifact ZIP upload, and deployment workflow
 - Maintains strict data hygiene: private datasets and generated artifacts stay
-  out of git; all tests use small deterministic fixtures, with a 500+ test suite
+  out of git; all tests use small deterministic fixtures, with a 700+ test suite
 - Designed for extensibility with clear module boundaries across backtesting,
   signal ingestion, factor building, return labeling, ML scaffolding, dashboard
   artifact loading, and artifact reporting
@@ -116,7 +168,7 @@ PYTHONPATH=src python3 -m alphaforge.cli --help
 ## Reproducible Smoke Commands
 
 ```bash
-# Full test suite (500+ tests)
+# Full test suite
 PYTHONPATH=src python3 -m pytest -q
 
 # Convert ML predictions to custom_signal v0.2
@@ -135,17 +187,17 @@ PYTHONPATH=src python3 scripts/run_ml_artifact_smoke.py \
   --returns tests/fixtures/return_labels/monthly_returns.csv \
   --output-dir artifacts/phase25/ml_artifact_smoke
 
-# Single-factor diagnostics
-PYTHONPATH=src python3 scripts/run_factor_diagnostics.py \
-  --panel artifacts/phase25/ml_artifact_smoke/supervised_panel.csv \
-  --output-dir artifacts/phase28/mom12m_diagnostics \
-  --factor-col Mom12m \
-  --label-col ret_fwd_1m \
-  --quantiles 5
+# Interview ML demo + artifact report
+bash scripts/run_interview_demo.sh artifacts/demo/interview_ml_demo_C
 
-# Local research dashboard
+# Streamlit interview showcase
 python -m pip install -e ".[dashboard]"
-PYTHONPATH=src streamlit run src/alphaforge/dashboard_app.py
+streamlit run streamlit_app.py
+
+# Artifact ZIP for Streamlit upload
+bash scripts/package_interview_artifacts.sh \
+  artifacts/demo/interview_ml_demo_C \
+  artifacts/demo/interview_ml_demo_C.zip
 ```
 
 ## Data Model
@@ -318,7 +370,26 @@ PYTHONPATH=src python3 scripts/run_sklearn_ml_model.py \
 Outputs: `predictions.csv`, `metrics.json`, `model_summary.json`,
 `train_config.json`, `feature_importance.csv`.
 
-Classification models are deferred to a later phase.
+## sklearn Classifier Baseline
+
+Optional sklearn-backed classification models create binary forward-return labels
+and predicted probabilities for meta-labeling style experiments.
+
+```bash
+PYTHONPATH=src python3 scripts/run_sklearn_classifier_baseline.py \
+  --features tests/fixtures/ml_demo_pipeline/features.csv \
+  --returns tests/fixtures/ml_demo_pipeline/monthly_returns.csv \
+  --output-dir artifacts/phase45a/classifier_baseline \
+  --classifier logistic_regression_classifier \
+  --feature-cols Mom12m,BM,Investment \
+  --return-label-col ret_fwd_1m \
+  --classification-label-col ret_fwd_1m_positive \
+  --classification-threshold 0.0 \
+  --train-end 2024-03-31
+```
+
+Outputs: `classification_labels.csv`, `supervised_classifier_panel.csv`,
+`predictions.csv`, `metrics.json`, `feature_importance.csv`, and summary JSON.
 
 ## PyTorch MLP Baseline
 
@@ -378,11 +449,34 @@ Generates: `return_labels.csv`, `supervised_panel.csv`, `dataset.csv`,
 `predictions.csv`, `metrics_summary.json`, `ml_signal.csv`, `report.html`,
 `smoke_summary.json`.
 
+## Interview Streamlit Showcase
+
+The interview showcase visualizes generated artifact directories without
+retraining or rerunning validation. It supports local artifact runs, uploaded ZIP
+bundles, and embedded HTML reports.
+
+```bash
+python -m pip install -e ".[dashboard]"
+bash scripts/run_interview_demo.sh artifacts/demo/interview_ml_demo_C
+streamlit run streamlit_app.py
+```
+
+Package a run for upload:
+
+```bash
+bash scripts/package_interview_artifacts.sh \
+  artifacts/demo/interview_ml_demo_C \
+  artifacts/demo/interview_ml_demo_C.zip
+```
+
+See `docs/phase-56-interview-streamlit-showcase.md` and
+`docs/streamlit-showcase-deployment.md` for the showcase and deployment workflow.
+
 ## Local Research Dashboard
 
-The dashboard visualizes a generated artifact directory without uploading private
-data. It displays pipeline file status, JSON summaries, table shapes/previews,
-and the generated HTML report.
+The local dashboard visualizes a generated artifact directory without uploading
+private data. It displays pipeline file status, JSON summaries, table
+shapes/previews, and the generated HTML report.
 
 ```bash
 python -m pip install -e ".[dashboard]"
@@ -471,17 +565,15 @@ intended for deterministic tests.
 - one-symbol `custom_signal` validation at runtime
 - no CRSP/WRDS downloader or real-time data feeds
 - no committed raw or processed OAP data
-- baseline ML only — no deep learning or advanced model architectures
-- signal quantile-based conversion requires cross-sectional dispersion; thin dates become neutral
-- dashboard is a local artifact viewer, not a hosted multi-user platform
+- current demos use fixtures or local artifacts and should not be interpreted as alpha claims
+- multi-symbol portfolio validation is future work
 - `available_at` is retained for contract compatibility but does not yet drive runtime execution timing
 
 ## Roadmap
 
-- extend ML baseline with cross-validation and regularization paths
-- add factor diagnostics outputs to the dashboard
-- add ML prediction diagnostics
-- add portfolio/exposure diagnostics to the dashboard
-- add multi-symbol custom_signal validation
+- add classifier probability to signal conversion
+- add multi-symbol custom_signal portfolio validation
+- expand real-data artifact workflows after licensed data is available
+- add factor diagnostics outputs to hosted showcase views
 - formalize local loaders for processed OAP Parquet files
 - keep SignalForge package compatibility aligned with v0.2 contract
