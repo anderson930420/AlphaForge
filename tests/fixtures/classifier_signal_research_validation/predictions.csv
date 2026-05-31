@@ -1,0 +1,7 @@
+asset_id,date,predicted_probability,predicted_class,classifier_name,positive_class,ret_fwd_1m_positive
+A,2024-04-30,0.50,0,logistic_regression_classifier,1,1
+B,2024-04-30,0.20,0,logistic_regression_classifier,1,0
+C,2024-04-30,0.80,1,logistic_regression_classifier,1,1
+A,2024-05-31,0.50,0,logistic_regression_classifier,1,1
+B,2024-05-31,0.20,0,logistic_regression_classifier,1,0
+C,2024-05-31,0.80,1,logistic_regression_classifier,1,1
