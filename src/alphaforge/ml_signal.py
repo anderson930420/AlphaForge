@@ -98,6 +98,81 @@ def build_ml_prediction_signal(
     return output.sort_values(["datetime", "symbol"]).reset_index(drop=True)
 
 
+def build_classifier_probability_signal(
+    predictions_df: pd.DataFrame,
+    *,
+    asset_id_col: str = "asset_id",
+    date_col: str = "date",
+    probability_col: str = "predicted_probability",
+    symbol_col: str | None = None,
+    signal_name: str = "ml_predicted_probability",
+    source: str = "AlphaForgeMLClassifier",
+    long_probability_threshold: float = 0.6,
+    short_probability_threshold: float = 0.4,
+    gross_long_weight: float = 1.0,
+    gross_short_weight: float = -1.0,
+    available_at_col: str | None = None,
+) -> pd.DataFrame:
+    """Convert classifier probabilities into a v0.2 custom_signal frame.
+
+    Rows with predicted probability greater than or equal to
+    ``long_probability_threshold`` become long exposure. Rows with probability
+    less than or equal to ``short_probability_threshold`` become short exposure.
+    Middle probabilities and NaN probabilities stay neutral. Weights are
+    normalized by side per date, matching the regression signal converter's
+    gross long/short convention.
+    """
+    required = {asset_id_col, date_col, probability_col}
+    missing = required - set(predictions_df.columns)
+    if missing:
+        raise ValueError(f"Missing required columns: {missing}")
+    if predictions_df.empty:
+        raise ValueError("Prediction panel is empty")
+    _validate_probability_threshold(long_probability_threshold, "long_probability_threshold")
+    _validate_probability_threshold(short_probability_threshold, "short_probability_threshold")
+    if short_probability_threshold >= long_probability_threshold:
+        raise ValueError("short_probability_threshold must be less than long_probability_threshold")
+
+    frame = predictions_df[[asset_id_col, date_col, probability_col]].copy()
+    if symbol_col is not None and symbol_col in predictions_df.columns:
+        frame["symbol"] = predictions_df[symbol_col].copy()
+    else:
+        frame["symbol"] = frame[asset_id_col].astype(str)
+
+    frame[date_col] = _normalize_to_month_end(frame[date_col])
+    frame = frame.dropna(subset=[date_col])
+    if frame.empty:
+        raise ValueError("Prediction panel has no valid dates after parsing")
+
+    frame.rename(columns={date_col: "datetime"}, inplace=True)
+    frame["score"] = pd.to_numeric(frame[probability_col], errors="coerce")
+    if available_at_col is not None and available_at_col in predictions_df.columns:
+        available_raw = predictions_df[available_at_col].copy()
+        frame["available_at"] = _normalize_to_month_end(available_raw)
+    else:
+        frame["available_at"] = frame["datetime"].copy()
+    frame["signal_name"] = signal_name
+    frame["asset_id"] = frame[asset_id_col].astype(str)
+
+    output_parts = []
+    for _date_val, group in frame.groupby("datetime", sort=True, group_keys=False):
+        scored = _build_classifier_date_signal(
+            group,
+            long_probability_threshold,
+            short_probability_threshold,
+            gross_long_weight,
+            gross_short_weight,
+        )
+        output_parts.append(scored)
+    if not output_parts:
+        raise ValueError("No valid dates remain after groupby")
+
+    output = pd.concat(output_parts, ignore_index=True)
+    output["source"] = source
+    output = output.reindex(columns=ML_SIGNAL_SIGNAL_COLUMNS)
+    return output.sort_values(["datetime", "symbol"]).reset_index(drop=True)
+
+
 def build_single_asset_threshold_signal(
     predictions_df: pd.DataFrame,
     *,
@@ -223,6 +298,34 @@ def _build_date_signal(
     return result
 
 
+def _build_classifier_date_signal(
+    group: pd.DataFrame,
+    long_probability_threshold: float,
+    short_probability_threshold: float,
+    gross_long_weight: float,
+    gross_short_weight: float,
+) -> pd.DataFrame:
+    result = group.copy()
+    result["direction"] = 0
+    result["target_weight"] = 0.0
+
+    probability_valid = result["score"].notna()
+    if not probability_valid.any():
+        return result
+
+    long_mask = probability_valid & (result["score"] >= long_probability_threshold)
+    short_mask = probability_valid & (result["score"] <= short_probability_threshold)
+
+    result.loc[long_mask, "direction"] = 1
+    result.loc[short_mask, "direction"] = -1
+
+    if long_mask.any():
+        result.loc[long_mask, "target_weight"] = gross_long_weight / int(long_mask.sum())
+    if short_mask.any():
+        result.loc[short_mask, "target_weight"] = gross_short_weight / int(short_mask.sum())
+    return result
+
+
 def _normalize_to_month_end(values: pd.Series) -> pd.Series:
     def normalize(value: object) -> pd.Timestamp:
         if pd.isna(value):
@@ -276,3 +379,8 @@ def _require_single_unique_value(
 def _validate_signed_weight(value: float, field_name: str) -> None:
     if value < -1.0 or value > 1.0:
         raise ValueError(f"{field_name} must be within [-1.0, 1.0]")
+
+
+def _validate_probability_threshold(value: float, field_name: str) -> None:
+    if value < 0.0 or value > 1.0:
+        raise ValueError(f"{field_name} must be within [0.0, 1.0]")
