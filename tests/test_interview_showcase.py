@@ -1,13 +1,17 @@
 from __future__ import annotations
 
 import json
+import zipfile
 from pathlib import Path
 
 import pandas as pd
+import pytest
 
 from alphaforge.interview_showcase import (
     build_artifact_trace,
     build_health_checks,
+    discover_artifact_run_dirs,
+    extract_artifact_zip,
     extract_overview_metrics,
     load_interview_showcase_artifacts,
     summarize_signal_exposure,
@@ -25,8 +29,7 @@ def _write_csv(path: Path, frame: pd.DataFrame) -> None:
     frame.to_csv(path, index=False)
 
 
-def test_interview_showcase_loads_artifacts_and_health_checks(tmp_path: Path) -> None:
-    run_dir = tmp_path / "run"
+def _write_minimal_run(run_dir: Path) -> None:
     _write_json(run_dir / "ml_demo_summary.json", {
         "model": "ridge_regressor",
         "predictions_rows": 6,
@@ -81,6 +84,11 @@ def test_interview_showcase_loads_artifacts_and_health_checks(tmp_path: Path) ->
         pd.DataFrame({"datetime": ["2024-04-30"], "trade": [1.0]}),
     )
 
+
+def test_interview_showcase_loads_artifacts_and_health_checks(tmp_path: Path) -> None:
+    run_dir = tmp_path / "run"
+    _write_minimal_run(run_dir)
+
     artifacts = load_interview_showcase_artifacts(run_dir)
     checks = build_health_checks(artifacts.research_summary)
     overview = extract_overview_metrics(artifacts)
@@ -100,6 +108,46 @@ def test_interview_showcase_loads_artifacts_and_health_checks(tmp_path: Path) ->
     assert overview["nonzero_target_weight_count"] == 2
     assert exposure.loc[exposure["symbol"] == "C", "nonzero_target_weight_count"].iloc[0] == 1
     assert set(trace["artifact"]) >= {"ML demo summary", "HTML artifact report"}
+
+
+def test_discover_artifact_run_dirs_finds_showcase_runs(tmp_path: Path) -> None:
+    run_a = tmp_path / "run_a"
+    run_b = tmp_path / "run_b"
+    ignored = tmp_path / "not_a_run"
+    _write_minimal_run(run_a)
+    _write_json(run_b / "ml_demo_summary.json", {"status": "ok"})
+    ignored.mkdir()
+
+    discovered = discover_artifact_run_dirs(tmp_path)
+
+    assert discovered == [run_a, run_b]
+
+
+def test_extract_artifact_zip_returns_single_nested_run(tmp_path: Path) -> None:
+    source_run = tmp_path / "source" / "nested_run"
+    _write_minimal_run(source_run)
+    zip_path = tmp_path / "artifact_bundle.zip"
+    with zipfile.ZipFile(zip_path, "w") as archive:
+        for path in source_run.rglob("*"):
+            archive.write(path, path.relative_to(tmp_path / "source"))
+
+    extracted = extract_artifact_zip(
+        zip_path.read_bytes(),
+        target_root=tmp_path / "uploaded",
+        run_name="artifact_bundle.zip",
+    )
+
+    assert extracted.name == "nested_run"
+    assert (extracted / "ml_demo_summary.json").exists()
+
+
+def test_extract_artifact_zip_rejects_unsafe_paths(tmp_path: Path) -> None:
+    zip_path = tmp_path / "bad.zip"
+    with zipfile.ZipFile(zip_path, "w") as archive:
+        archive.writestr("../evil.txt", "bad")
+
+    with pytest.raises(ValueError, match="Unsafe ZIP member path"):
+        extract_artifact_zip(zip_path.read_bytes(), target_root=tmp_path / "uploaded", run_name="bad.zip")
 
 
 def test_interview_showcase_health_checks_fail_without_research_summary() -> None:
