@@ -1,20 +1,53 @@
 # AlphaForge
 
-AlphaForge is a reproducible ML-oriented quantitative research framework for
+AlphaForge is a reproducible, ML-oriented quantitative research framework for
 asset-pricing signals, supervised-learning experiments, custom-signal validation,
 and artifact-backed strategy research.
 
-It connects feature engineering, forward-return labeling, sklearn / PyTorch
-baselines, prediction diagnostics, signal construction, research validation,
-model comparison, and Streamlit showcase visualization into a traceable research
-pipeline.
+It is designed to answer one core question:
 
-AlphaForge is not a live trading system or broker simulator. It is a deterministic
-research toolchain: consume features and signals, run lagged validation, produce
-evidence artifacts, and present those artifacts without committing private or
-licensed market data.
+> Can a candidate signal or ML prediction be transformed into a traceable,
+> validated, and reviewable research artifact without relying on private data,
+> hidden notebooks, or unverifiable backtest claims?
 
-## Pipeline Overview
+AlphaForge is **not** a live trading system, broker simulator, or profitability
+claim. It is a deterministic research toolchain for feature processing, label
+construction, model experimentation, signal generation, validation, and reporting.
+
+---
+
+## Portfolio Snapshot
+
+| Area                 | What AlphaForge Demonstrates                                                           |
+| -------------------- | -------------------------------------------------------------------------------------- |
+| Quant research       | Factor diagnostics, forward-return labels, walk-forward validation, backtest artifacts |
+| Machine learning     | sklearn baselines, PyTorch MLP baseline, prediction diagnostics, model comparison      |
+| Data engineering     | Feature / return schema separation, deterministic fixture data, artifact contracts     |
+| Software engineering | `src/` package layout, CLI workflows, tests, reproducible smoke commands               |
+| Research hygiene     | No private raw data in git, explicit limitations, reproducible reports                 |
+| Presentation         | Streamlit showcase, HTML report, JSON / CSV evidence artifacts                         |
+
+---
+
+## What Problem This Solves
+
+Many trading or quant side projects stop at a single backtest chart.
+
+AlphaForge focuses on the layer before any serious claim can be made:
+
+1. Load feature data and external signals under explicit schemas.
+2. Construct forward-return labels without mixing features and realized outcomes.
+3. Run baseline ML models and prediction diagnostics.
+4. Convert predictions into standardized long / short / neutral signal contracts.
+5. Validate signals through deterministic research workflows.
+6. Export evidence artifacts that can be inspected, packaged, and shown in an interview.
+
+The goal is not to claim that a specific strategy is profitable.
+The goal is to prove that the research process is reproducible, inspectable, and extensible.
+
+---
+
+## System Overview
 
 ```text
 Data / Features / External Signals
@@ -23,39 +56,57 @@ Data / Features / External Signals
   → Factor + Prediction Diagnostics
   → Regression / Classification Baselines
   → custom_signal v0.2 Signal Construction
-  → Single-Symbol Research Validation
+  → Research Validation
   → Model Comparison / Final Holdout Artifacts
   → Streamlit Interview Showcase / HTML Reports
 ```
 
-Features (OAP characteristics, external signals) and returns are kept as separate
-schemas. Signals carry target positions. Backtests use lagged close-to-close
-execution with configurable semantics.
+Features and returns are kept as separate schemas. Signals carry target positions.
+Backtests use lagged close-to-close execution with configurable semantics.
+
+---
+
+## Why This Project Matters
+
+AlphaForge is built as a portfolio project for quantitative research, ML-driven
+signal experimentation, and reproducible engineering practice.
+
+It demonstrates that I can:
+
+* design a research pipeline rather than only a one-off notebook
+* separate raw data, features, labels, predictions, and signals
+* build ML baselines without leaking target information into features
+* evaluate predictions through diagnostics instead of relying on a single metric
+* convert model output into explicit trading signal contracts
+* generate reviewable artifacts for interview and research discussion
+* maintain engineering discipline with tests, fixtures, CLI commands, and boundaries
+
+---
 
 ## Current Capabilities
 
-- custom_signal v0.1 (long/flat) and v0.2 (long/short) file consumption
-- SignalForge v0.2 package validation and smoke testing
-- OAP / Open Source Asset Pricing characteristic processing
-- OAP multi-factor signal builder (cross-sectional ranking, YAML configured)
-- forward return label builder (month-end aligned, delisting-aware)
-- ML dataset builder (feature inference, missing-label drop, date normalization)
-- single-factor diagnostics (coverage, distribution, IC, Rank IC, quantile returns)
-- ML prediction diagnostics and model comparison reports
-- baseline ML regressor (closed-form OLS ridge, median imputation, no sklearn)
-- sklearn regression model adapters (Ridge, Random Forest, HistGradientBoosting, optional)
-- sklearn classifier baseline with predicted probabilities and classifier metrics
-- PyTorch MLP baseline for lightweight tabular deep-learning experiments
-- ML prediction to custom_signal v0.2 converter (quantile-based long/short/neutral)
-- single-symbol projection research validation for cross-sectional ML signals
-- optional research-validation integration in the ML demo pipeline
-- HTML artifact report renderer (metric cards, Plotly equity/drawdown charts)
-- Streamlit interview showcase with artifact run selector, ZIP upload, and embedded HTML report
-- artifact bundle workflow for Streamlit Cloud / non-local demos
-- built-in MA crossover and breakout strategy families
-- grid search, train/test validation, walk-forward validation
-- strategy comparison and permutation diagnostics
-- TWSE daily data fetch helpers
+* `custom_signal` v0.1 long/flat and v0.2 long/short signal consumption
+* SignalForge v0.2 package validation and smoke testing
+* Open Source Asset Pricing characteristic processing
+* OAP multi-factor signal builder with YAML configuration
+* Forward-return label builder with month-end alignment
+* ML dataset builder with feature inference and missing-label handling
+* Single-factor diagnostics: coverage, distribution, IC, Rank IC, quantile returns
+* ML prediction diagnostics and model comparison reports
+* Closed-form baseline regressor using NumPy / pandas only
+* Optional sklearn regression adapters
+* Optional sklearn classifier baseline with predicted probabilities
+* Optional CPU-friendly PyTorch MLP baseline
+* ML prediction to `custom_signal` v0.2 converter
+* Research validation artifacts for signal evaluation
+* HTML artifact report renderer
+* Streamlit interview showcase with artifact ZIP upload workflow
+* Built-in MA crossover and breakout strategy families
+* Grid search, train/test validation, walk-forward validation
+* Strategy comparison and permutation diagnostics
+* TWSE daily data fetch helpers
+
+---
 
 ## Interview Demo
 
@@ -65,13 +116,6 @@ Generate a deterministic ML research run with built-in health checks:
 bash scripts/run_interview_demo.sh artifacts/demo/interview_ml_demo_C
 ```
 
-The script verifies:
-
-```text
-nonzero_target_weight_count > 0
-extra_signal_dates == []
-```
-
 Launch the Streamlit showcase:
 
 ```bash
@@ -79,11 +123,28 @@ python3 -m pip install -e ".[dashboard]"
 streamlit run streamlit_app.py
 ```
 
-The showcase displays run overview, health checks, signal exposure, predictions,
-final-holdout metrics, equity curve, drawdown, trade log, embedded HTML report,
-artifact trace, and boundaries.
+The script verifies key demo health checks, including:
 
-Package an existing run for upload in Streamlit Cloud or another machine:
+```text
+nonzero_target_weight_count > 0
+extra_signal_dates == []
+```
+
+The showcase displays:
+
+* run overview
+* health checks
+* signal exposure
+* prediction diagnostics
+* final-holdout metrics
+* equity curve
+* drawdown
+* trade log
+* embedded HTML report
+* artifact trace
+* project boundaries
+
+Package an existing run for Streamlit Cloud or another machine:
 
 ```bash
 bash scripts/package_interview_artifacts.sh \
@@ -91,65 +152,90 @@ bash scripts/package_interview_artifacts.sh \
   artifacts/demo/interview_ml_demo_C.zip
 ```
 
-For real-data demos, keep raw/licensed data local. Package only permission-safe
-derived artifacts and upload the ZIP through the Streamlit showcase.
+For real-data demos, raw or licensed data should remain local. Only
+permission-safe derived artifacts should be packaged for external review.
 
-## ML Research Workflow
+---
 
-The local ML pipeline runs from fixture features and monthly returns to a
-complete v0.2 signal file, optional research validation, and showcase artifacts:
+## Evidence of Engineering Quality
 
-```text
-features.csv + monthly_returns.csv
-  → build_forward_return_labels  →  return_labels.csv
-  → join_features_with_return_labels  →  supervised_panel.csv
-  → run_factor_diagnostics  →  factor diagnostic artifacts
-  → build_ml_dataset  →  dataset.csv
-  → fit model + predict  →  predictions.csv + metrics
-  → build_ml_prediction_signal  →  ml_signal.csv
-  → single-symbol projection  →  custom_signal research validation
-  → model comparison / final holdout artifacts
-  → Streamlit showcase / HTML report
+AlphaForge is structured to be verifiable rather than merely described.
+
+Recommended validation commands:
+
+```bash
+PYTHONPATH=src python3 -m pytest -q
+ruff check
+git diff --check
 ```
 
-The baseline regressor is a closed-form ridge regression using only numpy and
-pandas. Optional sklearn and PyTorch model paths write compatible artifacts.
-Predictions are converted to quantile-based long/short/neutral signals. Dates
-with insufficient cross-sectional dispersion produce all-neutral positions.
+The repository uses deterministic fixtures and generated artifacts to test the
+research pipeline without committing private or licensed market data.
 
-## Important Boundaries
+Key evidence artifacts include:
 
-- no live trading
-- no broker integration
-- no profitability guarantee
-- no CRSP/WRDS downloader
-- no private or licensed raw data committed to the repository
-- fixture metrics are integration/regression metrics, not strategy performance claims
-- Streamlit showcase reads generated artifacts; it does not train models or place orders
-- current custom_signal runtime validation is single-symbol; multi-symbol portfolio validation is future work
-- SignalForge integration is file-based; AlphaForge does not import SignalForge runtime code
-- OAP characteristics are predictors, not realized returns — labels must come from a separate return source
-- `available_at` is currently a signal/data contract field, not a runtime execution-timing driver
+```text
+metrics_summary.json
+predictions.csv
+ml_signal.csv
+factor_summary.json
+model_comparison.json
+equity_curve.csv
+trade_log.csv
+validation_summary.json
+report.html
+```
 
-## Portfolio Summary
+---
 
-- Built a deterministic ML-oriented quantitative research framework that loads
-  market data, constructs labels, trains baseline models, converts predictions
-  into signal contracts, and writes reproducible validation artifacts
-- Integrated external signal sources (OAP asset-pricing characteristics,
-  SignalForge v0.2 signal packages) through a standardized `custom_signal`
-  file contract with no runtime coupling
-- Implemented regression and classification ML scaffolding — feature/label
-  joining, time-based train/test splitting, single-factor diagnostics, sklearn
-  adapters, PyTorch MLP baseline, probability classification outputs, signal
-  conversion, research validation, and model comparison
-- Added interview-ready visualization: one-click artifact generation, Streamlit
-  showcase, embedded HTML report, artifact ZIP upload, and deployment workflow
-- Maintains strict data hygiene: private datasets and generated artifacts stay
-  out of git; all tests use small deterministic fixtures, with a 700+ test suite
-- Designed for extensibility with clear module boundaries across backtesting,
-  signal ingestion, factor building, return labeling, ML scaffolding, dashboard
-  artifact loading, and artifact reporting
+## Boundaries
+
+AlphaForge intentionally does **not** claim to be:
+
+* a live trading system
+* a broker integration layer
+* a profitability guarantee
+* a CRSP / WRDS downloader
+* a complete portfolio optimizer
+* a replacement for point-in-time institutional data infrastructure
+
+Fixture metrics are integration and regression-test evidence, not investment
+performance claims.
+
+Current technical boundaries:
+
+* Streamlit showcase reads generated artifacts; it does not train models or place orders.
+* Current `custom_signal` runtime validation is single-symbol; multi-symbol portfolio validation is future work.
+* SignalForge integration is file-based; AlphaForge does not import SignalForge runtime code.
+* OAP characteristics are predictors, not realized returns; labels must come from a separate return source.
+* `available_at` is currently a signal/data contract field, not a runtime execution-timing driver.
+
+---
+
+## Portfolio Context
+
+AlphaForge is the core research and validation engine in my portfolio.
+
+It connects with my other projects as follows:
+
+```text
+SignalForge
+  → generates standardized factor / signal artifacts
+
+AlphaForge
+  → validates signals, runs ML experiments, produces research artifacts
+
+bs_pricer
+  → demonstrates financial engineering model implementation
+
+agent-taskflow
+  → demonstrates human-gated automation, validation, and proof-of-work workflows
+```
+
+Together, these projects show a broader direction:
+
+> building reproducible quantitative research tools with strong engineering
+> boundaries, testability, and reviewable evidence.
 
 ## Quick Start
 
