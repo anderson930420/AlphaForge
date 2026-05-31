@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import zipfile
 from dataclasses import dataclass
+from io import BytesIO
 from pathlib import Path
 from typing import Any
 
@@ -9,6 +11,7 @@ import pandas as pd
 
 
 DEFAULT_INTERVIEW_RUN_DIR = "artifacts/demo/interview_ml_demo_C"
+DEFAULT_SHOWCASE_ROOT = "artifacts/demo"
 RESEARCH_SUMMARY_RELATIVE = "research_validation/ml_demo_research_validation_summary.json"
 FINAL_HOLDOUT_RELATIVE = "research_validation/ml_signal_single_symbol_validation/final_holdout"
 
@@ -45,6 +48,50 @@ def load_interview_showcase_artifacts(run_dir: Path | str) -> InterviewShowcaseA
         ),
         html_report_path=run_dir / "interview_artifact_report.html",
     )
+
+
+def discover_artifact_run_dirs(root_dir: Path | str = DEFAULT_SHOWCASE_ROOT) -> list[Path]:
+    """Find local artifact run directories that look showcase-compatible."""
+    root = Path(root_dir)
+    if not root.exists():
+        return []
+    candidates = []
+    for path in sorted(root.iterdir()):
+        if not path.is_dir():
+            continue
+        if _looks_like_artifact_run(path):
+            candidates.append(path)
+    return candidates
+
+
+def extract_artifact_zip(zip_bytes: bytes, *, target_root: Path | str, run_name: str) -> Path:
+    """Extract an uploaded artifact ZIP and return the likely run directory.
+
+    The extraction is path-safe and rejects ZIP members that would escape
+    ``target_root``. If the ZIP contains a single top-level run directory, that
+    directory is returned; otherwise the extraction directory itself is returned.
+    """
+    target_root = Path(target_root)
+    target_root.mkdir(parents=True, exist_ok=True)
+    safe_name = _safe_run_name(run_name)
+    extract_dir = target_root / safe_name
+    extract_dir.mkdir(parents=True, exist_ok=True)
+
+    with zipfile.ZipFile(BytesIO(zip_bytes)) as archive:
+        for member in archive.infolist():
+            destination = (extract_dir / member.filename).resolve()
+            if not _is_relative_to(destination, extract_dir.resolve()):
+                raise ValueError(f"Unsafe ZIP member path: {member.filename}")
+            archive.extract(member, extract_dir)
+
+    if _looks_like_artifact_run(extract_dir):
+        return extract_dir
+
+    children = [child for child in extract_dir.iterdir() if child.is_dir()]
+    matching_children = [child for child in children if _looks_like_artifact_run(child)]
+    if len(matching_children) == 1:
+        return matching_children[0]
+    return extract_dir
 
 
 def build_health_checks(research_summary: dict[str, Any] | None) -> list[dict[str, Any]]:
@@ -132,6 +179,24 @@ def build_artifact_trace(run_dir: Path | str) -> pd.DataFrame:
     return pd.DataFrame(
         [{"artifact": label, "path": str(path), "exists": path.exists()} for label, path in rows]
     )
+
+
+def _looks_like_artifact_run(path: Path) -> bool:
+    return (path / "ml_demo_summary.json").exists() or (path / RESEARCH_SUMMARY_RELATIVE).exists()
+
+
+def _safe_run_name(name: str) -> str:
+    stem = Path(name).stem or "uploaded_artifact_run"
+    safe = "".join(char if char.isalnum() or char in {"-", "_"} else "_" for char in stem)
+    return safe.strip("_") or "uploaded_artifact_run"
+
+
+def _is_relative_to(path: Path, parent: Path) -> bool:
+    try:
+        path.relative_to(parent)
+        return True
+    except ValueError:
+        return False
 
 
 def _research_path(research_summary: dict[str, Any] | None, key: str) -> Path | None:
