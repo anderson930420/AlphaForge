@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -232,7 +233,7 @@ def test_cli_smoke_writes_comparison_json_and_md(tmp_path: Path) -> None:
         ],
         check=True,
         cwd=Path.cwd(),
-        env={"PYTHONPATH": "src"},
+        env={**os.environ, "PYTHONPATH": "src"},
         capture_output=True,
         text=True,
     )
