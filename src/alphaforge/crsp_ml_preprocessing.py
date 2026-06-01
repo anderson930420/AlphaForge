@@ -298,9 +298,9 @@ def _add_rank_features(
     output = frame.copy()
     for feature_col in feature_cols:
         transformed_col = f"{feature_col}{suffix}"
-        output[transformed_col] = output.groupby(date_col, sort=False)[feature_col].transform(
-            lambda series: series.rank(pct=True, method="average") - 0.5
-        )
+        output[transformed_col] = (
+            output.groupby(date_col, sort=False)[feature_col].rank(pct=True, method="average") - 0.5
+            )
     return output
 
 
