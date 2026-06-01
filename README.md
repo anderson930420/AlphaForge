@@ -192,6 +192,19 @@ permission-safe derived artifacts should be packaged for external review.
 
 ---
 
+## Latest Real-Data Research Finding
+
+AlphaForge now includes an external CRSP monthly workflow covering panel
+validation, Mom12m benchmark construction, supervised ML dataset generation,
+walk-forward sklearn baselines, result diagnostics, cross-sectional preprocessing,
+and ML experiment comparison.
+
+The first raw-feature ML baseline did not clearly outperform the Mom12m benchmark.
+Cross-sectional rank preprocessing improved prediction ranking quality directionally,
+but the current evidence is not strong enough to claim robust alpha.
+
+---
+
 ## Evidence of Engineering Quality
 
 AlphaForge is structured to be verifiable rather than merely described.
