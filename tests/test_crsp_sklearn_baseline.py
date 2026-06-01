@@ -19,6 +19,7 @@ from alphaforge.crsp_sklearn_baseline import (
     train_predict_window,
     validate_training_frame,
 )
+from alphaforge.crsp_ml_preprocessing import write_feature_columns_json
 from scripts.run_crsp_sklearn_baseline import parse_feature_cols as parse_cli_feature_cols
 
 
@@ -345,3 +346,44 @@ def test_run_walk_forward_sklearn_baseline_cli_writes_expected_artifacts(tmp_pat
     assert {"window_id", "predicted_return", "forward_1m_total_ret"}.issubset(set(predictions.columns))
     assert {"date", "long_short_ret", "quantile"}.issubset(set(portfolio.columns))
 
+
+def test_run_walk_forward_sklearn_baseline_cli_accepts_feature_columns_json(tmp_path: Path) -> None:
+    _require_sklearn()
+
+    splits_dir = _write_splits_dir(tmp_path)
+    output_dir = tmp_path / "crsp_sklearn_baseline_json"
+    feature_columns_json = tmp_path / "feature_columns.json"
+    selected_feature_cols = ["mom12_1", "mom6_1"]
+    write_feature_columns_json(feature_columns_json, selected_feature_cols)
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT),
+            "--splits-dir",
+            str(splits_dir),
+            "--output-dir",
+            str(output_dir),
+            "--model",
+            "ridge",
+            "--quantile",
+            "0.25",
+            "--random-state",
+            "0",
+            "--feature-columns-json",
+            str(feature_columns_json),
+        ],
+        capture_output=True,
+        text=True,
+        env={**os.environ, "PYTHONPATH": "src"},
+    )
+
+    assert result.returncode == 0, result.stderr
+
+    file_summary = json.loads((output_dir / "summary.json").read_text(encoding="utf-8"))
+    window_metrics = json.loads((output_dir / "window_metrics.json").read_text(encoding="utf-8"))
+
+    assert file_summary["feature_cols"] == selected_feature_cols
+    assert window_metrics["feature_cols"] == selected_feature_cols
+    assert file_summary["windows"] == 2
+    assert window_metrics["window_count"] == 2

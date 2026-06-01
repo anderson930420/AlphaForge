@@ -23,6 +23,10 @@ long-short portfolio.
 - `linear`
 - `random_forest`
 
+The CLI also accepts `--feature-columns-json`, which lets the baseline consume
+the transformed feature manifest written by the cross-sectional preprocessing
+step.
+
 `ridge` and `linear` use a train-fitted preprocessing pipeline with:
 
 - median imputation
@@ -59,7 +63,8 @@ Evaluation includes:
 ## Boundary Notes
 
 - No hyperparameter tuning
-- No cross-sectional normalization
+- No cross-sectional normalization inside the baseline itself
+- Optional feature-column selection is handled by the CLI, not the model code
 - No feature neutralization
 - No transaction costs
 - No dashboard integration
@@ -78,6 +83,19 @@ PYTHONPATH=src python3 scripts/run_crsp_sklearn_baseline.py \
   --random-state 0
 ```
 
+If you preprocessed the dataset with cross-sectional features, pass the
+generated manifest directly:
+
+```bash
+PYTHONPATH=src python3 scripts/run_crsp_sklearn_baseline.py \
+  --splits-dir artifacts/crsp_ml_walkforward_xrank \
+  --output-dir artifacts/crsp_sklearn_baseline_xrank \
+  --model ridge \
+  --quantile 0.1 \
+  --random-state 0 \
+  --feature-columns-json artifacts/crsp_ml_preprocessed_dataset/feature_columns_xrank.json
+```
+
 ## Outputs
 
 - `predictions.parquet`
@@ -88,4 +106,3 @@ PYTHONPATH=src python3 scripts/run_crsp_sklearn_baseline.py \
 The summary JSON includes the model name, walk-forward window count, combined
 prediction row count, prediction date range, average per-window regression and
 IC metrics, and the deterministic portfolio return summary.
-
