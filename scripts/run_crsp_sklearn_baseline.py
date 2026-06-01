@@ -32,6 +32,12 @@ def build_parser() -> argparse.ArgumentParser:
         type=str,
         help="Optional comma-separated feature columns. Defaults to the CRSP baseline feature set.",
     )
+    parser.add_argument(
+        "--feature-columns-json",
+        default=None,
+        type=Path,
+        help="Optional JSON file containing a feature_columns list, typically written by preprocessing.",
+    )
     parser.add_argument("--label-col", default="forward_1m_total_ret", help="Target label column name")
     parser.add_argument("--quantile", type=float, default=0.1, help="Cross-sectional long/short quantile")
     parser.add_argument("--random-state", type=int, default=0, help="Random seed for deterministic models")
@@ -47,12 +53,41 @@ def parse_feature_cols(raw: str | None) -> list[str] | None:
     return feature_cols
 
 
+def load_feature_columns_json(path: Path | None) -> list[str] | None:
+    if path is None:
+        return None
+
+    payload = json.loads(Path(path).read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError("--feature-columns-json must contain a JSON object")
+
+    feature_columns = payload.get("feature_columns")
+    if not isinstance(feature_columns, list) or not feature_columns:
+        raise ValueError("--feature-columns-json must contain a non-empty feature_columns list")
+    if not all(isinstance(column, str) and column for column in feature_columns):
+        raise ValueError("feature_columns entries must be non-empty strings")
+
+    count = payload.get("count")
+    if count is not None:
+        if not isinstance(count, int) or isinstance(count, bool):
+            raise ValueError("feature_columns count must be an integer")
+        if count != len(feature_columns):
+            raise ValueError("feature_columns count does not match the feature_columns list length")
+
+    return list(feature_columns)
+
+
 def main() -> None:
     require_sklearn()
     args = build_parser().parse_args()
 
+    if args.feature_cols is not None and args.feature_columns_json is not None:
+        raise SystemExit("Use either --feature-cols or --feature-columns-json, not both")
+
     try:
-        feature_cols = parse_feature_cols(args.feature_cols)
+        feature_cols = load_feature_columns_json(args.feature_columns_json)
+        if feature_cols is None:
+            feature_cols = parse_feature_cols(args.feature_cols)
     except ValueError as exc:
         raise SystemExit(str(exc)) from exc
 
