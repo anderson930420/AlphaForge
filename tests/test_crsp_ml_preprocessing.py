@@ -106,6 +106,19 @@ def _make_single_feature_frame(values_by_date: dict[str, list[float | None]]) ->
     return pd.DataFrame(rows)
 
 
+def _series_by_month_asset(
+    df: pd.DataFrame,
+    *,
+    date: str,
+    column: str,
+) -> pd.Series:
+    return (
+        df.loc[df["date"] == pd.Timestamp(date)]
+        .sort_values("asset_id")
+        .set_index("asset_id")[column]
+    )
+
+
 def test_validate_preprocessing_frame_rejects_missing_feature_columns() -> None:
     frame = _make_preprocessing_frame().drop(columns=["mom3_1"])
 
@@ -121,7 +134,7 @@ def test_validate_preprocessing_frame_rejects_duplicate_asset_date_rows() -> Non
         validate_preprocessing_frame(duplicated, feature_cols=list(DEFAULT_CRSP_ML_FEATURE_COLUMNS))
 
 
-def test_cross_sectional_rank_features_are_month_specific_and_centered() -> None:
+def test_cross_sectional_rank_features_are_month_specific_and_shifted() -> None:
     frame = _make_single_feature_frame(
         {
             "2021-01-31": [1.0, 2.0, 3.0],
@@ -137,6 +150,39 @@ def test_cross_sectional_rank_features_are_month_specific_and_centered() -> None
     assert jan.tolist() == pytest.approx(expected)
     assert feb.tolist() == pytest.approx(expected)
     assert jan.tolist() == pytest.approx(feb.tolist())
+
+
+def test_rank_preprocessing_does_not_leak_across_months_when_future_order_changes() -> None:
+    base = _make_single_feature_frame(
+        {
+            "2021-01-31": [1.0, 2.0, 3.0],
+            "2021-02-28": [10.0, 20.0, 30.0],
+        }
+    )
+    perturbed = base.copy()
+    perturbed.loc[
+        (perturbed["date"] == "2021-02-28") & (perturbed["asset_id"] == "A"),
+        "signal",
+    ] = 40.0
+
+    base_processed, _ = build_crsp_ml_preprocessed_dataset(
+        base,
+        feature_cols=["signal"],
+        method="rank",
+    )
+    perturbed_processed, _ = build_crsp_ml_preprocessed_dataset(
+        perturbed,
+        feature_cols=["signal"],
+        method="rank",
+    )
+
+    base_jan = _series_by_month_asset(base_processed, date="2021-01-31", column="signal_xrank")
+    perturbed_jan = _series_by_month_asset(perturbed_processed, date="2021-01-31", column="signal_xrank")
+    base_feb = _series_by_month_asset(base_processed, date="2021-02-28", column="signal_xrank")
+    perturbed_feb = _series_by_month_asset(perturbed_processed, date="2021-02-28", column="signal_xrank")
+
+    pd.testing.assert_series_equal(base_jan, perturbed_jan)
+    assert not base_feb.equals(perturbed_feb)
 
 
 def test_cross_sectional_zscore_features_are_month_specific() -> None:
@@ -155,6 +201,49 @@ def test_cross_sectional_zscore_features_are_month_specific() -> None:
     assert jan.tolist() == pytest.approx(expected)
     assert feb.tolist() == pytest.approx(expected)
     assert jan.tolist() == pytest.approx(feb.tolist())
+
+
+@pytest.mark.parametrize(
+    ("method", "column"),
+    [
+        ("zscore", "signal_xz"),
+        ("winsorized_zscore", "signal_xwz"),
+    ],
+)
+def test_zscore_preprocessing_does_not_leak_across_months_when_future_value_changes(
+    method: str,
+    column: str,
+) -> None:
+    base = _make_single_feature_frame(
+        {
+            "2021-01-31": [1.0, 2.0, 3.0],
+            "2021-02-28": [10.0, 20.0, 30.0],
+        }
+    )
+    perturbed = base.copy()
+    perturbed.loc[
+        (perturbed["date"] == "2021-02-28") & (perturbed["asset_id"] == "C"),
+        "signal",
+    ] = 999999999.0
+
+    base_processed, _ = build_crsp_ml_preprocessed_dataset(
+        base,
+        feature_cols=["signal"],
+        method=method,
+    )
+    perturbed_processed, _ = build_crsp_ml_preprocessed_dataset(
+        perturbed,
+        feature_cols=["signal"],
+        method=method,
+    )
+
+    base_jan = _series_by_month_asset(base_processed, date="2021-01-31", column=column)
+    perturbed_jan = _series_by_month_asset(perturbed_processed, date="2021-01-31", column=column)
+    base_feb = _series_by_month_asset(base_processed, date="2021-02-28", column=column)
+    perturbed_feb = _series_by_month_asset(perturbed_processed, date="2021-02-28", column=column)
+
+    pd.testing.assert_series_equal(base_jan, perturbed_jan)
+    assert not base_feb.equals(perturbed_feb)
 
 
 def test_winsorized_zscore_caps_outliers_before_scaling() -> None:
@@ -250,12 +339,27 @@ def test_build_crsp_ml_preprocessing_qc_reports_expected_counts_and_missing_rati
 def test_write_feature_columns_json_writes_expected_schema(tmp_path: Path) -> None:
     output_path = tmp_path / "feature_columns.json"
 
-    write_feature_columns_json(output_path, ["mom12_1_xrank", "mom6_1_xrank"])
+    write_feature_columns_json(
+        output_path,
+        ["mom12_1_xrank", "mom6_1_xrank"],
+        raw_feature_cols=["mom12_1", "mom6_1"],
+        method="rank",
+        label_col="forward_1m_total_ret",
+        keep_original_features=True,
+    )
 
     payload = json.loads(output_path.read_text(encoding="utf-8"))
     assert payload == {
         "feature_columns": ["mom12_1_xrank", "mom6_1_xrank"],
         "count": 2,
+        "raw_feature_columns": ["mom12_1", "mom6_1"],
+        "method": "rank",
+        "label_column": "forward_1m_total_ret",
+        "date_column": "date",
+        "asset_column": "asset_id",
+        "keep_original_features": True,
+        "lower_quantile": None,
+        "upper_quantile": None,
     }
 
 
@@ -308,6 +412,14 @@ def test_preprocessing_cli_writes_dataset_qc_and_feature_columns_json(tmp_path: 
     assert feature_columns_payload == {
         "feature_columns": [f"{column}_xrank" for column in DEFAULT_CRSP_ML_FEATURE_COLUMNS],
         "count": 8,
+        "raw_feature_columns": list(DEFAULT_CRSP_ML_FEATURE_COLUMNS),
+        "method": "rank",
+        "label_column": "forward_1m_total_ret",
+        "date_column": "date",
+        "asset_column": "asset_id",
+        "keep_original_features": True,
+        "lower_quantile": None,
+        "upper_quantile": None,
     }
     assert {"mom12_1", "mom12_1_xrank", "forward_1m_total_ret"}.issubset(set(output_frame.columns))
     assert not output_frame["forward_1m_total_ret"].isna().any()

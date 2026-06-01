@@ -25,7 +25,7 @@ long-short portfolio.
 
 The CLI also accepts `--feature-columns-json`, which lets the baseline consume
 the transformed feature manifest written by the cross-sectional preprocessing
-step.
+step. Use either `--feature-cols` or `--feature-columns-json`, not both.
 
 `ridge` and `linear` use a train-fitted preprocessing pipeline with:
 

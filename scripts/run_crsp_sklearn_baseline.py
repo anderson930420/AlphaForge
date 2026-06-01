@@ -68,8 +68,11 @@ def load_feature_columns_json(path: Path | None) -> list[str] | None:
         raise ValueError("feature_columns entries must be non-empty strings")
 
     count = payload.get("count")
-    if count is not None and int(count) != len(feature_columns):
-        raise ValueError("feature_columns count does not match the feature_columns list length")
+    if count is not None:
+        if not isinstance(count, int) or isinstance(count, bool):
+            raise ValueError("feature_columns count must be an integer")
+        if count != len(feature_columns):
+            raise ValueError("feature_columns count does not match the feature_columns list length")
 
     return list(feature_columns)
 
@@ -77,6 +80,9 @@ def load_feature_columns_json(path: Path | None) -> list[str] | None:
 def main() -> None:
     require_sklearn()
     args = build_parser().parse_args()
+
+    if args.feature_cols is not None and args.feature_columns_json is not None:
+        raise SystemExit("Use either --feature-cols or --feature-columns-json, not both")
 
     try:
         feature_cols = load_feature_columns_json(args.feature_columns_json)

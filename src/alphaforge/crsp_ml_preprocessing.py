@@ -2,7 +2,8 @@
 
 This module turns the existing CRSP ML monthly dataset into month-by-month
 cross-sectional feature variants. The transformations only use contemporaneous
-values from the same month and leave the label column untouched.
+values from the same month, assume the canonical CRSP ML ``date`` / ``asset_id``
+schema, and leave the label column untouched.
 """
 
 from __future__ import annotations
@@ -37,8 +38,6 @@ def validate_preprocessing_frame(
     df: pd.DataFrame,
     *,
     feature_cols: list[str],
-    date_col: str = _DATE_COLUMN,
-    asset_col: str = _ASSET_ID_COLUMN,
 ) -> None:
     """Validate the structural requirements for CRSP preprocessing."""
     if not feature_cols:
@@ -47,8 +46,8 @@ def validate_preprocessing_frame(
     _prepare_preprocessing_frame(
         df,
         feature_cols=feature_cols,
-        date_col=date_col,
-        asset_col=asset_col,
+        date_col=_DATE_COLUMN,
+        asset_col=_ASSET_ID_COLUMN,
         check_duplicates=True,
     )
 
@@ -57,25 +56,23 @@ def cross_sectional_rank_features(
     df: pd.DataFrame,
     *,
     feature_cols: list[str],
-    date_col: str = _DATE_COLUMN,
     suffix: str = "_xrank",
 ) -> pd.DataFrame:
     """Add month-by-month percentile-rank feature transforms."""
     frame = _prepare_preprocessing_frame(
         df,
         feature_cols=feature_cols,
-        date_col=date_col,
+        date_col=_DATE_COLUMN,
         asset_col=_ASSET_ID_COLUMN,
         check_duplicates=True,
     )
-    return _add_rank_features(frame, feature_cols=feature_cols, date_col=date_col, suffix=suffix)
+    return _add_rank_features(frame, feature_cols=feature_cols, date_col=_DATE_COLUMN, suffix=suffix)
 
 
 def cross_sectional_zscore_features(
     df: pd.DataFrame,
     *,
     feature_cols: list[str],
-    date_col: str = _DATE_COLUMN,
     suffix: str = "_xz",
     winsorize: bool = False,
     lower_quantile: float = 0.01,
@@ -87,14 +84,14 @@ def cross_sectional_zscore_features(
     frame = _prepare_preprocessing_frame(
         df,
         feature_cols=feature_cols,
-        date_col=date_col,
+        date_col=_DATE_COLUMN,
         asset_col=_ASSET_ID_COLUMN,
         check_duplicates=True,
     )
     return _add_zscore_features(
         frame,
         feature_cols=feature_cols,
-        date_col=date_col,
+        date_col=_DATE_COLUMN,
         suffix=suffix,
         winsorize=winsorize,
         lower_quantile=lower_quantile,
@@ -107,8 +104,6 @@ def build_crsp_ml_preprocessed_dataset(
     *,
     feature_cols: list[str] | None = None,
     method: str = "rank",
-    date_col: str = _DATE_COLUMN,
-    asset_col: str = _ASSET_ID_COLUMN,
     label_col: str = _LABEL_COLUMN,
     keep_original_features: bool = True,
     lower_quantile: float = 0.01,
@@ -116,6 +111,8 @@ def build_crsp_ml_preprocessed_dataset(
 ) -> tuple[pd.DataFrame, list[str]]:
     """Build a preprocessed CRSP ML dataset and return its transformed feature columns."""
     resolved_feature_cols = list(DEFAULT_CRSP_ML_FEATURE_COLUMNS if feature_cols is None else feature_cols)
+    date_col = _DATE_COLUMN
+    asset_col = _ASSET_ID_COLUMN
     if label_col not in df.columns:
         raise ValueError(f"Missing required label column: {label_col!r}")
     frame = _prepare_preprocessing_frame(
@@ -220,8 +217,15 @@ def build_crsp_ml_preprocessing_qc(
 def write_feature_columns_json(
     path: str | Path,
     feature_cols: list[str],
+    *,
+    raw_feature_cols: list[str] | None = None,
+    method: str | None = None,
+    label_col: str = _LABEL_COLUMN,
+    keep_original_features: bool | None = None,
+    lower_quantile: float | None = None,
+    upper_quantile: float | None = None,
 ) -> None:
-    """Write a compact JSON artifact describing the available feature columns."""
+    """Write a JSON artifact describing transformed feature columns and metadata."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     write_json_artifact(
@@ -229,6 +233,14 @@ def write_feature_columns_json(
         {
             "feature_columns": list(feature_cols),
             "count": int(len(feature_cols)),
+            "raw_feature_columns": list(raw_feature_cols) if raw_feature_cols is not None else None,
+            "method": method,
+            "label_column": label_col,
+            "date_column": _DATE_COLUMN,
+            "asset_column": _ASSET_ID_COLUMN,
+            "keep_original_features": keep_original_features,
+            "lower_quantile": json_safe_float(lower_quantile),
+            "upper_quantile": json_safe_float(upper_quantile),
         },
     )
 

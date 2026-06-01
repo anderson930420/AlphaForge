@@ -20,6 +20,7 @@ only based on contemporaneous asset values from the same date.
 - `rank`
   - percentile rank within each month
   - transformed value is `percentile_rank - 0.5`
+  - percentile rank is shifted by `-0.5`, not a strict zero-mean transform
 - `zscore`
   - month-by-month z-score across assets
 - `winsorized_zscore`
@@ -39,12 +40,21 @@ only based on contemporaneous asset values from the same date.
 - QC JSON
 - Feature columns JSON
 
-The feature columns manifest is a small JSON payload such as:
+The feature columns manifest is a canonical CRSP ML feature-selection payload
+with preprocessing metadata such as:
 
 ```json
 {
   "feature_columns": ["mom12_1_xrank", "mom6_1_xrank"],
-  "count": 2
+  "count": 2,
+  "raw_feature_columns": ["mom12_1", "mom6_1"],
+  "method": "rank",
+  "label_column": "forward_1m_total_ret",
+  "date_column": "date",
+  "asset_column": "asset_id",
+  "keep_original_features": true,
+  "lower_quantile": null,
+  "upper_quantile": null
 }
 ```
 

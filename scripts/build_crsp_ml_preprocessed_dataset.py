@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 
 from alphaforge.crsp_ml_preprocessing import (
+    DEFAULT_CRSP_ML_FEATURE_COLUMNS,
     build_crsp_ml_preprocessed_dataset,
     build_crsp_ml_preprocessing_qc,
     write_feature_columns_json,
@@ -85,7 +86,16 @@ def main() -> None:
         method=args.method,
     )
     write_json_artifact(qc_output_path, qc)
-    write_feature_columns_json(feature_columns_output_path, transformed_feature_cols)
+    write_feature_columns_json(
+        feature_columns_output_path,
+        transformed_feature_cols,
+        raw_feature_cols=list(DEFAULT_CRSP_ML_FEATURE_COLUMNS),
+        method=args.method,
+        label_col="forward_1m_total_ret",
+        keep_original_features=bool(args.keep_original_features),
+        lower_quantile=args.lower_quantile if args.method == "winsorized_zscore" else None,
+        upper_quantile=args.upper_quantile if args.method == "winsorized_zscore" else None,
+    )
 
     print(json.dumps(qc, indent=2, sort_keys=True, default=str))
 

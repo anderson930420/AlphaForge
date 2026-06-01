@@ -106,6 +106,45 @@ def test_cli_feature_cols_parser_rejects_empty_parsed_list() -> None:
         parse_cli_feature_cols(" , , ")
 
 
+def test_run_walk_forward_sklearn_baseline_cli_rejects_conflicting_feature_sources(tmp_path: Path) -> None:
+    _require_sklearn()
+
+    splits_dir = _write_splits_dir(tmp_path)
+    output_dir = tmp_path / "crsp_sklearn_baseline_conflict"
+    feature_columns_json = tmp_path / "feature_columns.json"
+    write_feature_columns_json(
+        feature_columns_json,
+        ["mom12_1", "mom6_1"],
+        raw_feature_cols=["mom12_1", "mom6_1"],
+        method="rank",
+        label_col="forward_1m_total_ret",
+        keep_original_features=True,
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT),
+            "--splits-dir",
+            str(splits_dir),
+            "--output-dir",
+            str(output_dir),
+            "--model",
+            "ridge",
+            "--feature-cols",
+            "mom3_1,ret1_0",
+            "--feature-columns-json",
+            str(feature_columns_json),
+        ],
+        capture_output=True,
+        text=True,
+        env={**os.environ, "PYTHONPATH": "src"},
+    )
+
+    assert result.returncode != 0
+    assert "Use either --feature-cols or --feature-columns-json, not both" in result.stderr
+
+
 def test_make_sklearn_model_rejects_unknown_model_name() -> None:
     with pytest.raises(ValueError, match="Unsupported model name: unknown"):
         make_sklearn_model("unknown")
@@ -354,7 +393,14 @@ def test_run_walk_forward_sklearn_baseline_cli_accepts_feature_columns_json(tmp_
     output_dir = tmp_path / "crsp_sklearn_baseline_json"
     feature_columns_json = tmp_path / "feature_columns.json"
     selected_feature_cols = ["mom12_1", "mom6_1"]
-    write_feature_columns_json(feature_columns_json, selected_feature_cols)
+    write_feature_columns_json(
+        feature_columns_json,
+        selected_feature_cols,
+        raw_feature_cols=selected_feature_cols,
+        method="rank",
+        label_col="forward_1m_total_ret",
+        keep_original_features=True,
+    )
 
     result = subprocess.run(
         [
