@@ -595,9 +595,10 @@ def _build_trade_return_rows() -> str:
         "entry_target_position",
         "exit_target_position",
     ]
+    schema_text = escape("\n".join(schema_fields))
     schema_block = f"""<div class="schema-block">
   <div class="metric-label">Trade Log Schema</div>
-  <code>{escape("\n".join(schema_fields))}</code>
+  <code>{schema_text}</code>
 </div>"""
     labels = [
         ("Gross Return", "trade_gross_return"),
