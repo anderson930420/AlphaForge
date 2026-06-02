@@ -93,6 +93,11 @@ def build_crsp_ml_e2e_report_payload(artifacts: dict[str, object]) -> dict[str, 
     window_metrics_artifact = _require_mapping(artifacts, "window_metrics")
     portfolio_returns = artifacts.get("portfolio_returns")
     artifact_paths = dict(artifacts.get("artifact_paths", {}))
+    window_metrics_summary = _build_window_metrics_summary(window_metrics_artifact)
+    portfolio_summary = _build_portfolio_summary(
+        baseline_summary=baseline_summary,
+        portfolio_returns=portfolio_returns,
+    )
 
     report = {
         "title": REPORT_TITLE,
@@ -107,9 +112,11 @@ def build_crsp_ml_e2e_report_payload(artifacts: dict[str, object]) -> dict[str, 
             walkforward_qc=walkforward_qc,
         ),
         "model_summary": _build_model_summary(baseline_summary=baseline_summary),
-        "window_metrics_summary": _build_window_metrics_summary(window_metrics_artifact),
-        "portfolio_summary": _build_portfolio_summary(
-            baseline_summary=baseline_summary,
+        "window_metrics_summary": window_metrics_summary,
+        "portfolio_summary": portfolio_summary,
+        "visual_summary": _build_visual_summary(
+            window_metrics_artifact=window_metrics_artifact,
+            window_metrics_summary=window_metrics_summary,
             portfolio_returns=portfolio_returns,
         ),
         "limitations": [
@@ -331,6 +338,7 @@ def render_crsp_ml_e2e_report_html(report: dict[str, object]) -> str:
     model_summary = report.get("model_summary", {})
     portfolio_summary = report.get("portfolio_summary", {})
     window_summary = report.get("window_metrics_summary", {})
+    visual_summary = report.get("visual_summary", {})
     artifact_paths = report.get("artifact_paths", {})
     limitations = report.get("limitations", [])
 
@@ -400,6 +408,11 @@ def render_crsp_ml_e2e_report_html(report: dict[str, object]) -> str:
                     "average_prediction_rank_ic",
                 ],
             ),
+        ),
+        _html_visual_summary_section(
+            window_summary=window_summary,
+            portfolio_summary=portfolio_summary,
+            visual_summary=visual_summary,
         ),
         _html_section(
             "Prediction Portfolio",
@@ -567,6 +580,96 @@ def render_crsp_ml_e2e_report_html(report: dict[str, object]) -> str:
       margin: 0 0 12px;
       color: var(--muted);
       font-size: 0.95rem;
+    }}
+    .visual-summary-grid {{
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      gap: 12px;
+      margin-bottom: 16px;
+    }}
+    .visual-card {{
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+      padding: 14px 16px;
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
+    }}
+    .visual-card-label {{
+      color: var(--muted);
+      font-size: 0.82rem;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+      margin-bottom: 6px;
+    }}
+    .visual-card-value {{
+      font-size: 1.55rem;
+      font-weight: 700;
+      line-height: 1.1;
+      color: var(--text);
+      word-break: break-word;
+    }}
+    .visual-charts {{
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 16px;
+    }}
+    .visual-chart {{
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: linear-gradient(180deg, #ffffff 0%, #fbfdff 100%);
+      padding: 16px;
+    }}
+    .visual-chart h3 {{
+      margin: 0 0 10px;
+      font-size: 1rem;
+    }}
+    .svg-scroll {{
+      overflow-x: auto;
+      padding-bottom: 4px;
+    }}
+    .svg-scroll svg {{
+      display: block;
+    }}
+    .chart-caption {{
+      margin: 10px 0 0;
+      color: var(--muted);
+      font-size: 0.94rem;
+      line-height: 1.45;
+    }}
+    .chart-legend {{
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin: 0 0 10px;
+      color: var(--muted);
+      font-size: 0.9rem;
+    }}
+    .chart-legend span {{
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }}
+    .legend-swatch {{
+      width: 12px;
+      height: 12px;
+      border-radius: 999px;
+      display: inline-block;
+      border: 1px solid transparent;
+    }}
+    .legend-positive {{
+      background: #1f8a54;
+    }}
+    .legend-negative {{
+      background: #c63d4f;
+    }}
+    .legend-best {{
+      background: #2457a6;
+      border-color: #0f172a;
+    }}
+    .legend-worst {{
+      background: #c63d4f;
+      border-color: #0f172a;
+      border-style: dashed;
     }}
   </style>
 </head>
@@ -816,6 +919,47 @@ def _build_portfolio_summary(
     return summary
 
 
+def _build_visual_summary(
+    *,
+    window_metrics_artifact: dict[str, Any],
+    window_metrics_summary: dict[str, object],
+    portfolio_returns: object,
+) -> dict[str, object]:
+    window_metrics = window_metrics_artifact.get("window_metrics", [])
+    if not isinstance(window_metrics, list):
+        raise TypeError("window_metrics artifact must contain a list under 'window_metrics'")
+
+    best_prediction_rank_ic_window = window_metrics_summary.get("best_prediction_rank_ic_window") or {}
+    worst_prediction_rank_ic_window = window_metrics_summary.get("worst_prediction_rank_ic_window") or {}
+    best_window_id = best_prediction_rank_ic_window.get("window_id")
+    worst_window_id = worst_prediction_rank_ic_window.get("window_id")
+
+    rank_ic_windows: list[dict[str, object]] = []
+    for row in window_metrics:
+        if not isinstance(row, dict):
+            continue
+        window_id = row.get("window_id")
+        rank_ic_windows.append(
+            {
+                "window_id": window_id,
+                "prediction_rank_ic": _safe_float(row.get("prediction_rank_ic")),
+                "is_best": window_id is not None and window_id == best_window_id,
+                "is_worst": window_id is not None and window_id == worst_window_id,
+            }
+        )
+
+    portfolio_cumulative_return_points = _build_portfolio_cumulative_return_points(portfolio_returns)
+    return {
+        "rank_ic_windows": rank_ic_windows,
+        "portfolio_cumulative_return_points": portfolio_cumulative_return_points,
+        "portfolio_final_cumulative_return": (
+            _safe_float(portfolio_cumulative_return_points[-1]["cumulative_return"])
+            if portfolio_cumulative_return_points
+            else None
+        ),
+    }
+
+
 def _compact_records(
     frame: pd.DataFrame,
     *,
@@ -839,6 +983,23 @@ def _compact_portfolio_records(
     *,
     preview_limit: int,
 ) -> tuple[list[dict[str, object]], bool]:
+    records = _build_portfolio_cumulative_return_points(portfolio_returns)
+    if not records:
+        return [], False
+
+    if len(records) <= preview_limit:
+        return records, False
+
+    head_count = preview_limit // 2
+    tail_count = preview_limit - head_count
+    preview = records[:head_count] + records[-tail_count:]
+    return preview, True
+
+
+def _build_portfolio_cumulative_return_points(portfolio_returns: object) -> list[dict[str, object]]:
+    if not isinstance(portfolio_returns, pd.DataFrame) or portfolio_returns.empty:
+        return []
+
     required_columns = {"date", "long_short_ret"}
     missing = required_columns - set(portfolio_returns.columns)
     if missing:
@@ -851,22 +1012,22 @@ def _compact_portfolio_records(
     frame["long_short_ret"] = pd.to_numeric(frame["long_short_ret"], errors="coerce")
     frame = frame.loc[frame["long_short_ret"].notna()].copy()
     if frame.empty:
-        return [], False
+        return []
 
     frame = frame.sort_values("date", kind="mergesort").reset_index(drop=True)
     frame["cumulative_return"] = (1.0 + frame["long_short_ret"]).cumprod() - 1.0
     frame["date"] = frame["date"].dt.date.astype(str)
 
-    preview, truncated = _compact_records(frame[["date", "long_short_ret", "cumulative_return"]], preview_limit=preview_limit)
-    preview = [
-        {
-            "date": row["date"],
-            "long_short_ret": json_safe_float(row["long_short_ret"]),
-            "cumulative_return": json_safe_float(row["cumulative_return"]),
-        }
-        for row in preview
-    ]
-    return preview, truncated
+    points: list[dict[str, object]] = []
+    for row in frame[["date", "long_short_ret", "cumulative_return"]].to_dict(orient="records"):
+        points.append(
+            {
+                "date": row["date"],
+                "long_short_ret": _safe_float(row["long_short_ret"]),
+                "cumulative_return": _safe_float(row["cumulative_return"]),
+            }
+        )
+    return points
 
 
 def _window_metric_snapshot(
@@ -1022,6 +1183,336 @@ def _html_optional_window_extrema_section(window_summary: dict[str, object]) -> 
         ["window_type", "window_id", "prediction_ic", "prediction_rank_ic", "mse", "mae"],
         [tuple(_format_text(row.get(key)) for key in ["window_type", "window_id", "prediction_ic", "prediction_rank_ic", "mse", "mae"]) for row in rows],
     ) + "</div>"
+
+
+def _html_visual_summary_section(
+    *,
+    window_summary: dict[str, object],
+    portfolio_summary: dict[str, object],
+    visual_summary: dict[str, object],
+) -> str:
+    positive_rank_ic_windows = window_summary.get("positive_prediction_rank_ic_windows")
+    window_count = window_summary.get("window_count")
+    mean_rank_ic = window_summary.get("mean_prediction_rank_ic")
+    cumulative_return = portfolio_summary.get("cumulative_return")
+    sharpe = portfolio_summary.get("sharpe")
+
+    if positive_rank_ic_windows is not None and window_count is not None:
+        positive_rank_ic_text = f"{_format_text(positive_rank_ic_windows)}/{_format_text(window_count)}"
+    else:
+        positive_rank_ic_text = "n/a"
+
+    kpi_cards = "".join(
+        [
+            _html_visual_metric_card("Positive Rank IC Windows", positive_rank_ic_text),
+            _html_visual_metric_card("Mean Rank IC", mean_rank_ic),
+            _html_visual_metric_card("Cumulative Return", cumulative_return),
+            _html_visual_metric_card("Sharpe", sharpe),
+        ]
+    )
+
+    rank_ic_windows = visual_summary.get("rank_ic_windows", [])
+    if not isinstance(rank_ic_windows, list):
+        rank_ic_windows = []
+    rank_ic_svg = _html_rank_ic_bar_svg(rank_ic_windows)
+    rank_ic_panel = _html_visual_chart_panel(
+        "Window-Level Prediction Rank IC",
+        rank_ic_svg,
+        (
+            "Each bar is one out-of-sample walk-forward test window, so the chart makes ranking stability easy to compare "
+            "across time. Positive bars indicate positive Rank IC, negative bars indicate inverse ranking, and the best "
+            "and worst windows are emphasized with stronger outlines and label markers."
+        ),
+        (
+            '<div class="chart-legend">'
+            '<span><span class="legend-swatch legend-positive"></span>Positive Rank IC</span>'
+            '<span><span class="legend-swatch legend-negative"></span>Negative Rank IC</span>'
+            '<span><span class="legend-swatch legend-best"></span>Best window</span>'
+            '<span><span class="legend-swatch legend-worst"></span>Worst window</span>'
+            "</div>"
+        ),
+        (
+            "No window-level prediction Rank IC values were available, so the out-of-sample ranking chart is omitted."
+        ),
+    )
+
+    portfolio_points = visual_summary.get("portfolio_cumulative_return_points", [])
+    if not isinstance(portfolio_points, list):
+        portfolio_points = []
+    portfolio_svg = _html_cumulative_return_svg(
+        portfolio_points,
+        final_cumulative_return=visual_summary.get("portfolio_final_cumulative_return"),
+    )
+    portfolio_panel = _html_visual_chart_panel(
+        "Prediction Portfolio Cumulative Return",
+        portfolio_svg,
+        (
+            "Gross-of-cost cumulative return computed from long_short_ret. Transaction costs are not modeled in this "
+            "E2E report."
+        ),
+        "",
+        "Prediction portfolio returns parquet is unavailable, so the cumulative return chart is omitted.",
+    )
+
+    body = (
+        '<p class="note">Visual diagnostics summarizing the out-of-sample ranking signal and the gross-of-cost '
+        "prediction portfolio are embedded directly in this report as inline SVG.</p>"
+        f'<div class="visual-summary-grid">{kpi_cards}</div>'
+        f'<div class="visual-charts">{rank_ic_panel}{portfolio_panel}</div>'
+    )
+    return _html_section("Visual Summary", body)
+
+
+def _html_visual_metric_card(label: str, value: object) -> str:
+    return (
+        '<div class="visual-card">'
+        f'<div class="visual-card-label">{escape(label)}</div>'
+        f'<div class="visual-card-value">{escape(_format_text(value))}</div>'
+        "</div>"
+    )
+
+
+def _html_visual_chart_panel(
+    title: str,
+    svg_markup: str,
+    caption: str,
+    legend_html: str = "",
+    missing_caption: str = "",
+) -> str:
+    parts = [f"<h3>{escape(title)}</h3>"]
+    if legend_html:
+        parts.append(legend_html)
+    if svg_markup:
+        parts.append(f'<div class="svg-scroll">{svg_markup}</div>')
+        parts.append(f'<p class="chart-caption">{escape(caption)}</p>')
+    else:
+        parts.append(f'<p class="chart-caption">{escape(missing_caption or caption)}</p>')
+    return '<div class="visual-chart">' + "".join(parts) + "</div>"
+
+
+def _html_rank_ic_bar_svg(windows: list[dict[str, object]]) -> str:
+    values = [_safe_float(window.get("prediction_rank_ic")) for window in windows]
+    finite_values = [value for value in values if value is not None]
+    if not windows or not finite_values:
+        return ""
+
+    width = max(860, len(windows) * 48 + 120)
+    height = 332
+    left = 58
+    right = 20
+    top = 36
+    bottom = 74
+    plot_width = width - left - right
+    plot_height = height - top - bottom
+
+    min_value = min(finite_values + [0.0])
+    max_value = max(finite_values + [0.0])
+    if min_value == max_value:
+        pad = 0.1 if max_value == 0 else abs(max_value) * 0.15
+        min_value -= pad
+        max_value += pad
+
+    def _y(value: float) -> float:
+        return top + ((max_value - value) / (max_value - min_value)) * plot_height
+
+    zero_y = _y(0.0)
+    slot_width = plot_width / len(windows)
+    bar_width = max(12.0, min(30.0, slot_width * 0.62))
+
+    pieces = [
+        f'<svg viewBox="0 0 {width} {height}" width="{width}" height="{height}" role="img" aria-labelledby="rank-ic-chart-title rank-ic-chart-desc">',
+        '<title id="rank-ic-chart-title">Window-Level Prediction Rank IC</title>',
+        (
+            '<desc id="rank-ic-chart-desc">Bar chart of out-of-sample prediction Rank IC values for each '
+            "walk-forward test window. Positive bars show stable ranking, negative bars show reversed ranking."
+            "</desc>"
+        ),
+        f'<rect x="0" y="0" width="{width}" height="{height}" fill="#ffffff"/>',
+        f'<line x1="{left}" y1="{zero_y:.2f}" x2="{width - right}" y2="{zero_y:.2f}" stroke="#94a3b8" stroke-width="1.5" stroke-dasharray="6 4"/>',
+        f'<line x1="{left}" y1="{top}" x2="{width - right}" y2="{top}" stroke="#eef3fb" stroke-width="1"/>',
+        f'<line x1="{left}" y1="{height - bottom}" x2="{width - right}" y2="{height - bottom}" stroke="#eef3fb" stroke-width="1"/>',
+    ]
+
+    guide_values: list[float] = []
+    for candidate in (max_value, 0.0, min_value):
+        if all(abs(candidate - existing) > 1e-12 for existing in guide_values):
+            guide_values.append(candidate)
+
+    for label_value in guide_values:
+        line_y = _y(label_value)
+        pieces.append(
+            f'<text x="{left - 10}" y="{line_y + 4:.2f}" text-anchor="end" fill="#5d6878" font-size="11">'
+            f"{escape(_format_text(label_value))}</text>"
+        )
+
+    for index, window in enumerate(windows):
+        window_id = window.get("window_id")
+        original_value = values[index]
+        value = original_value if original_value is not None else 0.0
+        label = _short_window_label(window_id, index=index)
+        if window.get("is_best"):
+            label = f"{label}*"
+        if window.get("is_worst"):
+            label = f"{label}!"
+
+        if value is None:
+            value = 0.0
+        bar_top = _y(value) if value >= 0 else zero_y
+        bar_height = max(1.0, abs(_y(value) - zero_y))
+        bar_left = left + (index * slot_width) + ((slot_width - bar_width) / 2.0)
+        fill = "#1f8a54" if value > 0 else "#c63d4f" if value < 0 else "#94a3b8"
+        stroke = "#2457a6" if window.get("is_best") else "#0f172a" if window.get("is_worst") else "#d7dfea"
+        stroke_width = "2.5" if window.get("is_best") or window.get("is_worst") else "1"
+        stroke_dasharray = ' stroke-dasharray="5 3"' if window.get("is_worst") else ""
+        title_value = _format_text(original_value)
+        title_text = f"{_format_text(window_id)}: rank IC {title_value}"
+        if window.get("is_best"):
+            title_text += " (best window)"
+        if window.get("is_worst"):
+            title_text += " (worst window)"
+        pieces.append(
+            '<g>'
+            f'<title>{escape(title_text)}</title>'
+            f'<rect x="{bar_left:.2f}" y="{bar_top:.2f}" width="{bar_width:.2f}" height="{bar_height:.2f}" '
+            f'fill="{fill}" stroke="{stroke}" stroke-width="{stroke_width}"{stroke_dasharray} rx="4" ry="4"/>'
+            f'<text x="{bar_left + bar_width / 2.0:.2f}" y="{height - 28}" text-anchor="middle" fill="#5d6878" font-size="11">'
+            f"{escape(label)}</text>"
+            "</g>"
+        )
+
+    pieces.append("</svg>")
+    return "".join(pieces)
+
+
+def _html_cumulative_return_svg(
+    portfolio_points: list[dict[str, object]],
+    *,
+    final_cumulative_return: object | None,
+) -> str:
+    values = [_safe_float(point.get("cumulative_return")) for point in portfolio_points]
+    finite_values = [value for value in values if value is not None]
+    if not portfolio_points or not finite_values:
+        return ""
+
+    width = 980
+    height = 320
+    left = 60
+    right = 24
+    top = 28
+    bottom = 58
+    plot_width = width - left - right
+    plot_height = height - top - bottom
+
+    min_value = min(finite_values + [0.0])
+    max_value = max(finite_values + [0.0])
+    if min_value == max_value:
+        pad = 0.1 if max_value == 0 else abs(max_value) * 0.15
+        min_value -= pad
+        max_value += pad
+
+    def _y(value: float) -> float:
+        return top + ((max_value - value) / (max_value - min_value)) * plot_height
+
+    zero_y = _y(0.0)
+    if len(portfolio_points) == 1:
+        x_positions = [left + (plot_width / 2.0)]
+    else:
+        x_positions = [left + (index / (len(portfolio_points) - 1)) * plot_width for index in range(len(portfolio_points))]
+
+    y_positions = [_y(value if value is not None else 0.0) for value in values]
+    line_segments = [f"M {x_positions[0]:.2f} {y_positions[0]:.2f}"]
+    for x_pos, y_pos in zip(x_positions[1:], y_positions[1:]):
+        line_segments.append(f"L {x_pos:.2f} {y_pos:.2f}")
+    line_path = " ".join(line_segments)
+    area_path = (
+        f"{line_path} L {x_positions[-1]:.2f} {zero_y:.2f} L {x_positions[0]:.2f} {zero_y:.2f} Z"
+    )
+
+    final_value = _safe_float(final_cumulative_return)
+    if final_value is None:
+        final_value = finite_values[-1]
+    final_text = _format_text(final_value)
+    annotation_width = 212
+    annotation_x = width - right - annotation_width
+
+    pieces = [
+        f'<svg viewBox="0 0 {width} {height}" width="{width}" height="{height}" role="img" aria-labelledby="portfolio-chart-title portfolio-chart-desc">',
+        '<title id="portfolio-chart-title">Prediction Portfolio Cumulative Return</title>',
+        (
+            '<desc id="portfolio-chart-desc">Line chart of cumulative gross long-short return derived from the prediction '
+            "portfolio over time. The chart shows the zero line and the final cumulative return annotation."
+            "</desc>"
+        ),
+        f'<rect x="0" y="0" width="{width}" height="{height}" fill="#ffffff"/>',
+        f'<line x1="{left}" y1="{zero_y:.2f}" x2="{width - right}" y2="{zero_y:.2f}" stroke="#94a3b8" stroke-width="1.5" stroke-dasharray="6 4"/>',
+        f'<path d="{area_path}" fill="#2457a6" fill-opacity="0.08" stroke="none"/>',
+        f'<path d="{line_path}" fill="none" stroke="#2457a6" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/>',
+        f'<circle cx="{x_positions[-1]:.2f}" cy="{y_positions[-1]:.2f}" r="4.8" fill="#2457a6" stroke="#ffffff" stroke-width="2"/>',
+        f'<rect x="{annotation_x}" y="12" width="{annotation_width}" height="30" rx="15" fill="#eef3fb" stroke="#d7dfea"/>',
+        f'<text x="{annotation_x + annotation_width / 2.0:.2f}" y="31" text-anchor="middle" fill="#1c2430" font-size="11" font-weight="600">'
+        f"Final cumulative return {escape(final_text)}</text>",
+    ]
+
+    guide_values = []
+    for candidate in (max_value, 0.0, min_value):
+        if all(abs(candidate - existing) > 1e-12 for existing in guide_values):
+            guide_values.append(candidate)
+
+    for label_value in guide_values:
+        line_y = _y(label_value)
+        pieces.append(
+            f'<text x="{left - 10}" y="{line_y + 4:.2f}" text-anchor="end" fill="#5d6878" font-size="11">'
+            f"{escape(_format_text(label_value))}</text>"
+        )
+
+    tick_indices = sorted({0, len(portfolio_points) - 1, len(portfolio_points) // 4, len(portfolio_points) // 2, (len(portfolio_points) * 3) // 4})
+    for index in tick_indices:
+        x_pos = x_positions[index]
+        date_label = _format_text(portfolio_points[index].get("date"))
+        if len(date_label) >= 7:
+            date_label = date_label[:7]
+        pieces.append(
+            f'<line x1="{x_pos:.2f}" y1="{height - bottom}" x2="{x_pos:.2f}" y2="{height - bottom + 7}" stroke="#d7dfea" stroke-width="1"/>'
+        )
+        pieces.append(
+            f'<text x="{x_pos:.2f}" y="{height - 10}" text-anchor="middle" fill="#5d6878" font-size="11">'
+            f"{escape(date_label)}</text>"
+        )
+
+    pieces.append("</svg>")
+    return "".join(pieces)
+
+
+def _safe_float(value: object) -> float | None:
+    if value is None or value is pd.NA:
+        return None
+    if isinstance(value, np.generic):
+        value = value.item()
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        return None
+    if pd.isna(numeric):
+        return None
+    return json_safe_float(numeric)
+
+
+def _short_window_label(window_id: object, index: int | None = None) -> str:
+    text = _format_text(window_id)
+    if text == "n/a":
+        return f"W{index + 1}" if index is not None else text
+    if "_test_" in text:
+        candidate = text.rsplit("_test_", 1)[-1]
+    elif "test_" in text:
+        candidate = text.rsplit("test_", 1)[-1]
+    else:
+        candidate = text
+    candidate = candidate.strip("_- ")
+    if not candidate:
+        return f"W{index + 1}" if index is not None else text
+    if len(candidate) > 12 and index is not None:
+        return f"W{index + 1}"
+    return candidate
 
 
 def _html_preview_block(records: list[dict[str, object]], keys: list[str]) -> str:
