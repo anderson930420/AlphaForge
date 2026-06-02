@@ -1214,21 +1214,37 @@ def _html_visual_summary_section(
     rank_ic_windows = visual_summary.get("rank_ic_windows", [])
     if not isinstance(rank_ic_windows, list):
         rank_ic_windows = []
+    all_finite_negative_rank_ic = _rank_ic_all_finite_negative(rank_ic_windows)
+    positive_rank_ic_label = (
+        "Positive Rank IC (0 in this run)"
+        if positive_rank_ic_windows == 0
+        else "Positive Rank IC"
+    )
+    best_rank_ic_label = (
+        "Least-negative Rank IC window" if all_finite_negative_rank_ic else "Best window"
+    )
     rank_ic_svg = _html_rank_ic_bar_svg(rank_ic_windows)
+    rank_ic_caption = (
+        "Each bar is one out-of-sample walk-forward test window, so the chart makes ranking stability easy to compare "
+        "across time. Positive bars indicate positive Rank IC, negative bars indicate inverse ranking, and the "
+        f"{'least-negative and worst windows' if all_finite_negative_rank_ic else 'best and worst windows'} are "
+        "emphasized with stronger outlines and legend labels."
+    )
+    if all_finite_negative_rank_ic:
+        rank_ic_caption += (
+            " In this run, even the least-negative Rank IC window remains below zero, so this chart should be read as "
+            "a negative ranking-stability diagnostic rather than a profitable ranking signal."
+        )
     rank_ic_panel = _html_visual_chart_panel(
         "Window-Level Prediction Rank IC",
         rank_ic_svg,
-        (
-            "Each bar is one out-of-sample walk-forward test window, so the chart makes ranking stability easy to compare "
-            "across time. Positive bars indicate positive Rank IC, negative bars indicate inverse ranking, and the best "
-            "and worst windows are emphasized with stronger outlines and label markers."
-        ),
+        rank_ic_caption,
         (
             '<div class="chart-legend">'
-            '<span><span class="legend-swatch legend-positive"></span>Positive Rank IC</span>'
+            f'<span><span class="legend-swatch legend-positive"></span>{escape(positive_rank_ic_label)}</span>'
             '<span><span class="legend-swatch legend-negative"></span>Negative Rank IC</span>'
-            '<span><span class="legend-swatch legend-best"></span>Best window</span>'
-            '<span><span class="legend-swatch legend-worst"></span>Worst window</span>'
+            f'<span><span class="legend-swatch legend-best"></span>{escape(best_rank_ic_label)}</span>'
+            '<span><span class="legend-swatch legend-worst"></span>Worst Rank IC window</span>'
             "</div>"
         ),
         (
@@ -1318,6 +1334,11 @@ def _html_rank_ic_bar_svg(windows: list[dict[str, object]]) -> str:
     zero_y = _y(0.0)
     slot_width = plot_width / len(windows)
     bar_width = max(12.0, min(30.0, slot_width * 0.62))
+    all_finite_negative_rank_ic = _rank_ic_all_finite_negative(windows)
+    best_rank_ic_label = (
+        "Least-negative Rank IC window" if all_finite_negative_rank_ic else "Best window"
+    )
+    worst_rank_ic_label = "Worst Rank IC window"
 
     pieces = [
         f'<svg viewBox="0 0 {width} {height}" width="{width}" height="{height}" role="img" aria-labelledby="rank-ic-chart-title rank-ic-chart-desc">',
@@ -1350,10 +1371,6 @@ def _html_rank_ic_bar_svg(windows: list[dict[str, object]]) -> str:
         original_value = values[index]
         value = original_value if original_value is not None else 0.0
         label = _short_window_label(window_id, index=index)
-        if window.get("is_best"):
-            label = f"{label}*"
-        if window.get("is_worst"):
-            label = f"{label}!"
 
         if value is None:
             value = 0.0
@@ -1367,9 +1384,9 @@ def _html_rank_ic_bar_svg(windows: list[dict[str, object]]) -> str:
         title_value = _format_text(original_value)
         title_text = f"{_format_text(window_id)}: rank IC {title_value}"
         if window.get("is_best"):
-            title_text += " (best window)"
+            title_text += f" ({best_rank_ic_label})"
         if window.get("is_worst"):
-            title_text += " (worst window)"
+            title_text += f" ({worst_rank_ic_label})"
         pieces.append(
             '<g>'
             f'<title>{escape(title_text)}</title>'
@@ -1382,6 +1399,15 @@ def _html_rank_ic_bar_svg(windows: list[dict[str, object]]) -> str:
 
     pieces.append("</svg>")
     return "".join(pieces)
+
+
+def _rank_ic_all_finite_negative(windows: list[dict[str, object]]) -> bool:
+    finite_values = [
+        value
+        for value in (_safe_float(window.get("prediction_rank_ic")) for window in windows)
+        if value is not None
+    ]
+    return bool(finite_values) and all(value < 0 for value in finite_values)
 
 
 def _html_cumulative_return_svg(
