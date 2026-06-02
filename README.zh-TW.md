@@ -47,7 +47,7 @@ CRSP monthly panel
 - portfolio path 是 gross-of-cost，尚未納入 transaction costs；
 - report 保留 limitations 與 artifact provenance，而不是把結果包裝成 alpha。
 
-一個重要診斷是：portfolio return 與 ranking quality 不能混為一談。2020 是最不差的 Rank IC window，卻是很差的 portfolio year；2009 的 ranking quality 不好，但 portfolio return 很高。這正是為什麼 AlphaForge 同時呈現 Rank IC、portfolio path、window diagnostics 與 limitations，而不是只看單一 equity curve。
+比較「排序品質」與「年度組合報酬」時，會浮現一個很有用的診斷對比：rank IC 最不負的視窗（2020）反而是這次跑出來年度組合報酬最差的一年（-45.64%）；而 2009 的排序品質同樣為負，卻產生了最強的年度組合報酬（+39.30%）。這正是為什麼這份報表把 Rank IC、組合淨值路徑、各視窗診斷與 limitations 並列呈現——光看組合報酬，並不能證明模型有排序能力。
 
 #### Route A 資料規模與 walk-forward 設計
 
@@ -93,7 +93,7 @@ Route B 使用真實 TWSE OHLCV 資料展示 AlphaForge 的單一實驗 backtest
 - 顯示 benchmark comparison，而不是只看策略本身報酬；
 - 輸出可讀的 HTML cards、tables、equity/drawdown views 與 trade diagnostics。
 
-目前 TWSE report 可以呈現策略 total return 為正，但相對 buy-and-hold 的 excess return 仍然為負。這正是 AlphaForge 的價值：它不是只問 equity curve 有沒有上升，而是檢查主動擇時是否真的增加價值。
+在這份 TWSE 報表中，策略的總報酬為 +90.56%，而 benchmark 為 +155.05%，超額報酬因此是 -64.50%。這正是重點所在：AlphaForge 的設計目的，是揭露主動擇時是否真的創造價值，而不只是看一條淨值曲線有沒有往上走。
 
 ---
 
