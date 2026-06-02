@@ -47,7 +47,7 @@ This is intentional. AlphaForge does not hide the result behind an equity curve.
 - the portfolio path is gross-of-cost and not transaction-cost adjusted;
 - the report preserves limitations and artifact provenance instead of presenting the result as alpha.
 
-A useful diagnostic split appears when comparing ranking quality with annual portfolio returns: the least-negative ranking window in 2020 was also a very poor portfolio year, while 2009 had weak ranking quality but strong portfolio return. This is why the report shows Rank IC, portfolio path, window diagnostics, and limitations together — portfolio return alone is not evidence of ranking skill.
+A useful diagnostic split appears when comparing ranking quality with annual portfolio returns: the least-negative Rank IC window (2020) was the worst annual portfolio year in this run (-45.64%), while 2009 still had negative ranking quality but produced the strongest annual portfolio return (+39.30%). This is why the report shows Rank IC, portfolio path, window diagnostics, and limitations together — portfolio return alone is not evidence of ranking skill.
 
 #### Route A data scale and walk-forward setup
 
@@ -93,7 +93,7 @@ This route is not presented as an alpha discovery. It is a reporting and executi
 - benchmark comparison rather than isolated strategy return;
 - readable HTML cards, tables, equity/drawdown views, and trade diagnostics.
 
-In the current TWSE report, the strategy can show positive total return while still underperforming buy-and-hold on excess return. That is the point: AlphaForge is designed to expose whether active timing actually adds value, not just whether an equity curve goes up.
+In this TWSE report, the strategy returned +90.56% in total return, while the benchmark returned +155.05%, producing -64.50% excess return. That is the point: AlphaForge is designed to expose whether active timing actually adds value, not just whether an equity curve goes up.
 
 ---
 
