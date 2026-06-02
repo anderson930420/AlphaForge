@@ -286,6 +286,7 @@ def test_build_crsp_ml_e2e_report_payload_contains_expected_sections_and_summari
         "model_summary",
         "window_metrics_summary",
         "portfolio_summary",
+        "visual_summary",
         "limitations",
         "artifact_paths",
     }
@@ -350,6 +351,16 @@ def test_build_crsp_ml_e2e_report_payload_contains_expected_sections_and_summari
     assert portfolio_summary["cumulative_return_preview"][0]["date"] == "2021-01-31"
     assert len(portfolio_summary["cumulative_return_preview"]) == 3
 
+    visual_summary = report["visual_summary"]
+    assert len(visual_summary["rank_ic_windows"]) == 2
+    assert visual_summary["rank_ic_windows"][0]["window_id"] == "train_2020_test_2021"
+    assert visual_summary["rank_ic_windows"][0]["prediction_rank_ic"] == 0.4
+    assert visual_summary["rank_ic_windows"][0]["is_best"] is True
+    assert visual_summary["rank_ic_windows"][1]["is_worst"] is True
+    assert len(visual_summary["portfolio_cumulative_return_points"]) == 3
+    assert visual_summary["portfolio_cumulative_return_points"][-1]["cumulative_return"] == pytest.approx(0.019494)
+    assert visual_summary["portfolio_final_cumulative_return"] == pytest.approx(0.019494)
+
 
 def test_render_crsp_ml_e2e_report_markdown_contains_expected_headings(tmp_path: Path) -> None:
     e2e_dir = _make_e2e_artifacts(tmp_path)
@@ -379,10 +390,18 @@ def test_render_crsp_ml_e2e_report_html_contains_expected_sections(tmp_path: Pat
     assert "<h2>Dataset</h2>" in html
     assert "<h2>Walk-Forward Splits</h2>" in html
     assert "<h2>Sklearn Baseline</h2>" in html
+    assert "<h2>Visual Summary</h2>" in html
     assert "<h2>Prediction Portfolio</h2>" in html
     assert "<h2>Window Diagnostics</h2>" in html
     assert "<h2>Limitations</h2>" in html
     assert "<h2>Artifact Layout</h2>" in html
+    assert "Positive Rank IC Windows" in html
+    assert "Window-Level Prediction Rank IC" in html
+    assert "Prediction Portfolio Cumulative Return" in html
+    assert "gross-of-cost" in html
+    assert "<svg" in html
+    assert html.count("<svg") >= 2
+    assert html.index("<h2>Sklearn Baseline</h2>") < html.index("<h2>Visual Summary</h2>") < html.index("<h2>Prediction Portfolio</h2>")
 
 
 def test_write_crsp_ml_e2e_report_writes_default_artifacts(tmp_path: Path) -> None:
