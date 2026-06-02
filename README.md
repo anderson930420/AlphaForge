@@ -2,47 +2,125 @@
 
 [English](README.md) | [繁體中文](README.zh-TW.md)
 
-AlphaForge is a reproducible, ML-oriented quantitative research framework for
-asset-pricing signals, supervised-learning experiments, custom-signal validation,
-and artifact-backed strategy research.
+AlphaForge is a reproducible quantitative research framework for turning ML predictions, factor signals, and backtest experiments into inspectable evidence artifacts.
 
-It is designed to answer one core question:
-
-> Can a candidate signal or ML prediction be transformed into a traceable,
-> validated, and reviewable research artifact without relying on private data,
-> hidden notebooks, or unverifiable backtest claims?
-
-AlphaForge is **not** a live trading system, broker simulator, or profitability
-claim. It is a deterministic research toolchain for feature processing, label
-construction, model experimentation, signal generation, validation, and reporting.
+It is **not** a live trading system or a profitability claim. The project is designed to show how a trading idea or ML prediction can be tested through explicit data contracts, walk-forward validation, diagnostics, visual reports, and reviewable artifacts.
 
 ---
 
-## Portfolio Snapshot
+## Real-Data Research Showcase
 
-| Area                 | What AlphaForge Demonstrates                                                           |
-| -------------------- | -------------------------------------------------------------------------------------- |
-| Quant research       | Factor diagnostics, forward-return labels, walk-forward validation, backtest artifacts |
-| Machine learning     | sklearn baselines, PyTorch MLP baseline, prediction diagnostics, model comparison      |
-| Data engineering     | Feature / return schema separation, deterministic fixture data, artifact contracts     |
-| Software engineering | `src/` package layout, CLI workflows, tests, reproducible smoke commands               |
-| Research hygiene     | No private raw data in git, explicit limitations, reproducible reports                 |
-| Presentation         | Streamlit showcase, HTML report, JSON / CSV evidence artifacts                         |
+AlphaForge currently demonstrates two real-data report routes:
+
+| Route | Purpose | What it demonstrates |
+| --- | --- | --- |
+| **Route A — CRSP ML E2E Report** | Cross-sectional ML research pipeline | Dataset QC, walk-forward validation, Rank IC diagnostics, gross-of-cost portfolio path, limitations, artifact provenance |
+| **Route B — TWSE Single-Experiment Report** | Single-name backtest/report engine | Real OHLCV ingestion, lagged execution semantics, fee/slippage assumptions, benchmark comparison, readable HTML report |
+
+The main point is not that the baseline strategy is profitable. The main point is that AlphaForge can produce a complete, reproducible, and inspectable research workflow — including negative results.
 
 ---
 
-## What Problem This Solves
+### Route A — CRSP ML E2E: negative result shown explicitly
 
-Many trading or quant side projects stop at a single backtest chart.
+The CRSP ML E2E report runs a real CRSP monthly panel through a supervised-learning research pipeline:
+
+```text
+CRSP monthly panel
+  → dataset QC
+  → 10-year train / 1-year test walk-forward splits
+  → sklearn ridge baseline
+  → prediction IC / Rank IC diagnostics
+  → gross-of-cost long-short prediction portfolio
+  → HTML / JSON / parquet evidence artifacts
+```
+
+![CRSP ML E2E Visual Summary](docs/assets/readme/crsp-ml-e2e-visual-summary.png)
+
+Interpretation:
+
+The ridge baseline produced 0 / 17 positive Rank IC windows. Even the least-negative Rank IC window remained below zero, so this should be read as a negative ranking-stability diagnostic rather than a profitable ranking signal.
+
+This is intentional. AlphaForge does not hide the result behind an equity curve. It surfaces the failure mode directly:
+
+- the model has no stable cross-sectional ranking edge;
+- the portfolio path is gross-of-cost and not transaction-cost adjusted;
+- the report preserves limitations and artifact provenance instead of presenting the result as alpha.
+
+A useful diagnostic split appears when comparing ranking quality with annual portfolio returns: the least-negative ranking window in 2020 was also a very poor portfolio year, while 2009 had weak ranking quality but strong portfolio return. This is why the report shows Rank IC, portfolio path, window diagnostics, and limitations together — portfolio return alone is not evidence of ranking skill.
+
+#### Route A data scale and walk-forward setup
+
+![CRSP ML E2E Dataset and Walk-Forward Overview](docs/assets/readme/crsp-ml-e2e-dataset-walkforward.png)
+
+The current real-data CRSP run uses:
+
+```text
+Rows:         1,382,055
+Assets:       14,281
+Months:       335
+Test windows: 17
+Dataset:      1996-01-31 to 2023-11-30
+Predictions:  2006-01-31 to 2022-12-31
+```
+
+The prediction period starts in 2006 because the first model uses 1996–2005 as the initial 10-year training window:
+
+```text
+train_1996-2005_test_2006
+train_1997-2006_test_2007
+...
+train_2012-2021_test_2022
+```
+
+This means the early CRSP data are not missing; they are used as training data before the first out-of-sample test window.
+
+---
+
+### Route B — TWSE single-experiment report
+
+Route B demonstrates AlphaForge’s single-experiment backtest/report engine using real TWSE OHLCV data.
+
+![TWSE Single-Experiment Metrics Summary](docs/assets/readme/twse-single-experiment-metrics-summary.png)
+
+![TWSE Single-Experiment Strategy vs Buy-and-Hold](docs/assets/readme/twse-single-experiment-strategy-vs-buyhold.png)
+
+This route is not presented as an alpha discovery. It is a reporting and execution-semantics demonstration:
+
+- real OHLCV data ingestion;
+- lagged close-to-close execution semantics;
+- explicit fee/slippage assumptions;
+- benchmark comparison rather than isolated strategy return;
+- readable HTML cards, tables, equity/drawdown views, and trade diagnostics.
+
+In the current TWSE report, the strategy can show positive total return while still underperforming buy-and-hold on excess return. That is the point: AlphaForge is designed to expose whether active timing actually adds value, not just whether an equity curve goes up.
+
+---
+
+## What AlphaForge Demonstrates
+
+| Area | Evidence |
+| --- | --- |
+| Quant research | Forward-return labels, factor diagnostics, IC / Rank IC, walk-forward validation |
+| Machine learning | sklearn baselines, PyTorch MLP baseline, prediction diagnostics, model comparison |
+| Data engineering | Feature / label separation, CRSP / OAP / TWSE workflows, artifact contracts |
+| Research hygiene | Explicit limitations, gross-of-cost labels, no private raw data in git |
+| Reporting | HTML reports, visual diagnostics, JSON / parquet / CSV evidence artifacts |
+| Software engineering | `src/` package layout, CLI workflows, tests, reproducible smoke commands |
+
+---
+
+## Core Principle
+
+Many quant side projects stop at one backtest chart.
 
 AlphaForge focuses on the layer before any serious claim can be made:
 
-1. Load feature data and external signals under explicit schemas.
-2. Construct forward-return labels without mixing features and realized outcomes.
-3. Run baseline ML models and prediction diagnostics.
-4. Convert predictions into standardized long / short / neutral signal contracts.
-5. Validate signals through deterministic research workflows.
-6. Export evidence artifacts that can be inspected, packaged, and shown in an interview.
+- build explicit feature and label contracts;
+- run deterministic model / signal workflows;
+- evaluate predictions with diagnostics rather than a single PnL line;
+- expose negative results and limitations;
+- export artifacts that can be inspected, reproduced, and discussed in an interview.
 
 The goal is not to claim that a specific strategy is profitable.
 The goal is to prove that the research process is reproducible, inspectable, and extensible.
