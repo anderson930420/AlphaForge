@@ -37,7 +37,11 @@ def _make_portfolio_returns() -> pd.DataFrame:
     )
 
 
-def _make_e2e_artifacts(root: Path) -> Path:
+def _make_e2e_artifacts(
+    root: Path,
+    *,
+    window_rank_ic_values: tuple[float, float] = (0.4, -0.1),
+) -> Path:
     e2e_dir = root / "crsp_ml_e2e"
     dataset_dir = e2e_dir / "dataset"
     walkforward_dir = e2e_dir / "walkforward"
@@ -222,7 +226,7 @@ def _make_e2e_artifacts(root: Path) -> Path:
                     "mse": 0.1,
                     "mae": 0.12,
                     "prediction_ic": 0.5,
-                    "prediction_rank_ic": 0.4,
+                    "prediction_rank_ic": window_rank_ic_values[0],
                     "prediction_ic_observation_count": 1,
                     "prediction_rank_ic_observation_count": 1,
                 },
@@ -248,7 +252,7 @@ def _make_e2e_artifacts(root: Path) -> Path:
                     "mse": 0.15,
                     "mae": 0.18,
                     "prediction_ic": -0.2,
-                    "prediction_rank_ic": -0.1,
+                    "prediction_rank_ic": window_rank_ic_values[1],
                     "prediction_ic_observation_count": 1,
                     "prediction_rank_ic_observation_count": 1,
                 },
@@ -396,12 +400,35 @@ def test_render_crsp_ml_e2e_report_html_contains_expected_sections(tmp_path: Pat
     assert "<h2>Limitations</h2>" in html
     assert "<h2>Artifact Layout</h2>" in html
     assert "Positive Rank IC Windows" in html
+    assert "Worst Rank IC window" in html
     assert "Window-Level Prediction Rank IC" in html
     assert "Prediction Portfolio Cumulative Return" in html
     assert "gross-of-cost" in html
     assert "<svg" in html
     assert html.count("<svg") >= 2
     assert html.index("<h2>Sklearn Baseline</h2>") < html.index("<h2>Visual Summary</h2>") < html.index("<h2>Prediction Portfolio</h2>")
+
+
+def test_render_crsp_ml_e2e_report_html_uses_least_negative_rank_ic_labels_when_all_windows_are_negative(
+    tmp_path: Path,
+) -> None:
+    e2e_dir = _make_e2e_artifacts(tmp_path, window_rank_ic_values=(-0.4, -0.1))
+    report = build_crsp_ml_e2e_report_payload(load_crsp_ml_e2e_artifacts(e2e_dir))
+
+    html = render_crsp_ml_e2e_report_html(report)
+
+    assert report["window_metrics_summary"]["positive_prediction_rank_ic_windows"] == 0
+    assert "Positive Rank IC (0 in this run)" in html
+    assert "Least-negative Rank IC window" in html
+    assert "Worst Rank IC window" in html
+    assert (
+        "In this run, even the least-negative Rank IC window remains below zero, so this chart should be read as a "
+        "negative ranking-stability diagnostic rather than a profitable ranking signal."
+    ) in html
+    assert "Best window" not in html
+    assert "Best Rank IC window" not in html
+    assert "2021*" not in html
+    assert "2022!" not in html
 
 
 def test_write_crsp_ml_e2e_report_writes_default_artifacts(tmp_path: Path) -> None:
