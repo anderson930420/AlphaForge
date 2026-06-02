@@ -271,8 +271,8 @@ def _base_styles(*, max_width: int) -> str:
       padding: 14px;
       background: #fafafa;
       min-width: 0;
-      overflow-wrap: anywhere;
-      word-break: break-word;
+      overflow-wrap: break-word;
+      word-break: normal;
     }}
     .metric-label {{
       font-size: 0.9rem;
@@ -284,8 +284,8 @@ def _base_styles(*, max_width: int) -> str:
       font-size: clamp(0.95rem, 1.4vw, 1.2rem);
       font-weight: 600;
       line-height: 1.25;
-      overflow-wrap: anywhere;
-      word-break: break-word;
+      overflow-wrap: break-word;
+      word-break: normal;
     }}
     .schema-block {{
       border: 1px solid #e6e6e6;
@@ -297,8 +297,8 @@ def _base_styles(*, max_width: int) -> str:
     .schema-block code {{
       display: block;
       white-space: pre-wrap;
-      overflow-wrap: anywhere;
-      word-break: break-word;
+      overflow-wrap: break-word;
+      word-break: normal;
       line-height: 1.45;
       font-size: 0.95rem;
     }}
@@ -312,8 +312,8 @@ def _base_styles(*, max_width: int) -> str:
       border-bottom: 1px solid #e6e6e6;
       text-align: left;
       vertical-align: top;
-      overflow-wrap: anywhere;
-      word-break: break-word;
+      overflow-wrap: break-word;
+      word-break: normal;
     }}
     th {{
       background: #fafafa;
@@ -440,10 +440,16 @@ def _build_best_report_link(
 
 
 def _metric_card(label: str, value: object) -> str:
+    value_text = str(value)
     return f"""<div class="metric-card">
   <div class="metric-label">{escape(label)}</div>
-  <div class="metric-value">{escape(str(value))}</div>
+  <div class="metric-value" title="{escape(value_text)}">{_metric_value_html(value_text)}</div>
 </div>"""
+
+
+def _metric_value_html(value: str) -> str:
+    """Render metric text with preferred soft-break positions for snake_case values."""
+    return escape(value).replace("_", "_<wbr>")
 
 
 def _build_metrics_rows(result: ExperimentResult, benchmark_summary: dict[str, float]) -> str:
