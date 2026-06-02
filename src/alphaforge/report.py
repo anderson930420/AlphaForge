@@ -15,6 +15,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from .backtest import build_execution_semantics_metadata
 from .schemas import EquityCurveFrame, ExperimentResult
 from .storage import ArtifactReceipt
 from .visualization import (
@@ -25,7 +26,6 @@ from .visualization import (
     build_price_trade_figure,
     build_strategy_benchmark_figure,
 )
-from .backtest import build_execution_semantics_metadata
 
 
 @dataclass(frozen=True)
@@ -96,65 +96,7 @@ def render_experiment_report(
     price_trade_figure_html = _render_figure_html(to_html, price_trade_figure, include_plotlyjs=False)
     experiment_title = _build_experiment_title(report_input.result)
 
-    # The report module assembles content; figure creation stays in visualization.py.
-    return f"""<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{escape(experiment_title)}</title>
-  <style>
-    body {{
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      margin: 0;
-      background: #f7f7f7;
-      color: #1f1f1f;
-    }}
-    main {{
-      max-width: 1080px;
-      margin: 0 auto;
-      padding: 32px 20px 48px;
-    }}
-    h1, h2 {{
-      margin-bottom: 12px;
-    }}
-    .meta {{
-      color: #555;
-      margin-bottom: 24px;
-    }}
-    .section {{
-      background: #ffffff;
-      border: 1px solid #dddddd;
-      border-radius: 12px;
-      padding: 20px;
-      margin-bottom: 20px;
-    }}
-    .metrics-grid {{
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-      gap: 12px;
-    }}
-    .metric-card {{
-      border: 1px solid #e6e6e6;
-      border-radius: 10px;
-      padding: 14px;
-      background: #fafafa;
-    }}
-    .metric-label {{
-      font-size: 0.9rem;
-      color: #666666;
-      margin-bottom: 6px;
-    }}
-    .metric-value {{
-      font-size: 1.2rem;
-      font-weight: 600;
-    }}
-  </style>
-</head>
-<body>
-  <main>
-    <h1>{escape(experiment_title)}</h1>
-    <p class="meta">Strategy: {escape(report_input.result.strategy_spec.name)} | Symbol: {escape(report_input.result.data_spec.symbol)}</p>
+    sections = f"""
     <section class="section">
       <h2>Execution Assumptions</h2>
       <div class="metrics-grid">
@@ -168,9 +110,7 @@ def render_experiment_report(
     <section class="section">
       <h2>Trade Return Semantics</h2>
       <p class="meta">Trade metrics are return-based. Win rate counts trades with trade_net_return &gt; 0.</p>
-      <div class="metrics-grid">
-        {trade_return_rows}
-      </div>
+      {trade_return_rows}
     </section>
     <section class="section">
       <h2>Metrics Summary</h2>
@@ -194,15 +134,20 @@ def render_experiment_report(
       <h2>Price with Trade Markers</h2>
       {price_trade_figure_html}
     </section>
-  </main>
-</body>
-</html>
-"""
+    """
+    return _render_html_document(
+        title=experiment_title,
+        header_html=f"""
+        <h1>{escape(experiment_title)}</h1>
+        <p class="meta">Strategy: {escape(report_input.result.strategy_spec.name)} | Symbol: {escape(report_input.result.data_spec.symbol)}</p>
+        """,
+        body_html=sections,
+        max_width=1080,
+    )
 
 
 def save_experiment_report(report_content: str, output_path: Path) -> Path:
     """Persist a rendered experiment report to disk."""
-    # File export belongs here so storage.py can stay focused on raw experiment artifacts.
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(report_content, encoding="utf-8")
     return output_path
@@ -233,62 +178,7 @@ def render_search_comparison_report(
     )
     chart_sections = _build_search_chart_sections(top_equity_curves)
 
-    return f"""<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{escape(title)}</title>
-  <style>
-    body {{
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      margin: 0;
-      background: #f7f7f7;
-      color: #1f1f1f;
-    }}
-    main {{
-      max-width: 1200px;
-      margin: 0 auto;
-      padding: 32px 20px 48px;
-    }}
-    h1, h2 {{
-      margin-bottom: 12px;
-    }}
-    .meta {{
-      color: #555;
-      margin-bottom: 24px;
-    }}
-    .section {{
-      background: #ffffff;
-      border: 1px solid #dddddd;
-      border-radius: 12px;
-      padding: 20px;
-      margin-bottom: 20px;
-    }}
-    table {{
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 0.95rem;
-    }}
-    th, td {{
-      padding: 10px 12px;
-      border-bottom: 1px solid #e6e6e6;
-      text-align: left;
-      vertical-align: top;
-    }}
-    th {{
-      background: #fafafa;
-      font-weight: 600;
-    }}
-    code {{
-      font-size: 0.9em;
-    }}
-  </style>
-</head>
-<body>
-  <main>
-    <h1>{escape(title)}</h1>
-    <p class="meta">Link base: {escape(str(link_context.link_base_dir))}</p>
+    sections = f"""
     <section class="section">
       <h2>Execution Assumptions</h2>
       <div class="metrics-grid">
@@ -302,19 +192,136 @@ def render_search_comparison_report(
     <section class="section">
       <h2>Trade Return Semantics</h2>
       <p class="meta">Trade metrics are return-based. Win rate counts trades with trade_net_return &gt; 0.</p>
-      <div class="metrics-grid">
-        {trade_return_rows}
-      </div>
+      {trade_return_rows}
     </section>
     <section class="section">
       <h2>Ranked Comparison</h2>
       {comparison_table}
     </section>
     {chart_sections}
+    """
+    return _render_html_document(
+        title=title,
+        header_html=f"""
+        <h1>{escape(title)}</h1>
+        <p class="meta">Link base: {escape(str(link_context.link_base_dir))}</p>
+        """,
+        body_html=sections,
+        max_width=1200,
+    )
+
+
+def _render_html_document(*, title: str, header_html: str, body_html: str, max_width: int) -> str:
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{escape(title)}</title>
+  <style>
+{_base_styles(max_width=max_width)}
+  </style>
+</head>
+<body>
+  <main>
+    {header_html}
+    {body_html}
   </main>
 </body>
 </html>
 """
+
+
+def _base_styles(*, max_width: int) -> str:
+    return f"""    body {{
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      margin: 0;
+      background: #f7f7f7;
+      color: #1f1f1f;
+    }}
+    main {{
+      max-width: {max_width}px;
+      margin: 0 auto;
+      padding: 32px 20px 48px;
+    }}
+    h1, h2 {{
+      margin-bottom: 12px;
+    }}
+    .meta {{
+      color: #555;
+      margin-bottom: 24px;
+      line-height: 1.45;
+    }}
+    .section {{
+      background: #ffffff;
+      border: 1px solid #dddddd;
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 20px;
+    }}
+    .metrics-grid {{
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 12px;
+      align-items: stretch;
+    }}
+    .metric-card {{
+      border: 1px solid #e6e6e6;
+      border-radius: 10px;
+      padding: 14px;
+      background: #fafafa;
+      min-width: 0;
+      overflow-wrap: break-word;
+      word-break: normal;
+    }}
+    .metric-label {{
+      font-size: 0.9rem;
+      color: #666666;
+      margin-bottom: 6px;
+      line-height: 1.3;
+    }}
+    .metric-value {{
+      font-size: clamp(0.95rem, 1.4vw, 1.2rem);
+      font-weight: 600;
+      line-height: 1.25;
+      overflow-wrap: break-word;
+      word-break: normal;
+    }}
+    .schema-block {{
+      border: 1px solid #e6e6e6;
+      border-radius: 10px;
+      padding: 14px;
+      background: #fafafa;
+      margin-bottom: 12px;
+    }}
+    .schema-block code {{
+      display: block;
+      white-space: pre-wrap;
+      overflow-wrap: break-word;
+      word-break: normal;
+      line-height: 1.45;
+      font-size: 0.95rem;
+    }}
+    table {{
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.95rem;
+    }}
+    th, td {{
+      padding: 10px 12px;
+      border-bottom: 1px solid #e6e6e6;
+      text-align: left;
+      vertical-align: top;
+      overflow-wrap: break-word;
+      word-break: normal;
+    }}
+    th {{
+      background: #fafafa;
+      font-weight: 600;
+    }}
+    code {{
+      font-size: 0.9em;
+    }}"""
 
 
 def _build_experiment_title(result: ExperimentResult) -> str:
@@ -432,6 +439,19 @@ def _build_best_report_link(
     return f'<a href="{href}">{label}</a>'
 
 
+def _metric_card(label: str, value: object) -> str:
+    value_text = str(value)
+    return f"""<div class="metric-card">
+  <div class="metric-label">{escape(label)}</div>
+  <div class="metric-value" title="{escape(value_text)}">{_metric_value_html(value_text)}</div>
+</div>"""
+
+
+def _metric_value_html(value: str) -> str:
+    """Render metric text with preferred soft-break positions for snake_case values."""
+    return escape(value).replace("_", "_<wbr>")
+
+
 def _build_metrics_rows(result: ExperimentResult, benchmark_summary: dict[str, float]) -> str:
     metrics = [
         ("Total Return", _format_percent(result.metrics.total_return)),
@@ -445,21 +465,12 @@ def _build_metrics_rows(result: ExperimentResult, benchmark_summary: dict[str, f
         ("Turnover", f"{result.metrics.turnover:.2f}"),
         ("Trade Count", str(result.metrics.trade_count)),
     ]
-    cards = []
-    for label, value in metrics:
-        cards.append(
-            f"""<div class="metric-card">
-  <div class="metric-label">{escape(label)}</div>
-  <div class="metric-value">{escape(value)}</div>
-</div>"""
-        )
-    return "\n".join(cards)
+    return "\n".join(_metric_card(label, value) for label, value in metrics)
 
 
 def _build_execution_assumptions_rows(metadata: dict[str, object]) -> str:
     assumptions = build_execution_semantics_metadata()
     assumptions.update({key: metadata[key] for key in assumptions if key in metadata})
-    cards = []
     labels = [
         ("Execution Semantics", assumptions["execution_semantics"]),
         ("Position Rule", assumptions["position_rule"]),
@@ -468,21 +479,13 @@ def _build_execution_assumptions_rows(metadata: dict[str, object]) -> str:
         ("Supports Shorting", assumptions["supports_shorting"]),
         ("Supports Leverage", assumptions["supports_leverage"]),
     ]
-    for label, value in labels:
-        cards.append(
-            f"""<div class="metric-card">
-  <div class="metric-label">{escape(label)}</div>
-  <div class="metric-value">{escape(str(value))}</div>
-</div>"""
-        )
-    return "\n".join(cards)
+    return "\n".join(_metric_card(label, value) for label, value in labels)
 
 
 def _build_data_quality_rows(metadata: dict[str, object]) -> str:
     summary = metadata.get("data_quality_summary")
     if not isinstance(summary, dict):
         return ""
-    cards = []
     labels = [
         ("Datetime Policy", summary.get("datetime_policy", "")),
         ("Duplicate Policy", summary.get("duplicate_datetime_policy", "")),
@@ -492,17 +495,11 @@ def _build_data_quality_rows(metadata: dict[str, object]) -> str:
         ("Accepted Rows", summary.get("accepted_row_count", "")),
         ("Volume Missing Rows", summary.get("volume_missing_row_count", "")),
     ]
-    for label, value in labels:
-        cards.append(
-            f"""<div class="metric-card">
-  <div class="metric-label">{escape(label)}</div>
-  <div class="metric-value">{escape(str(value))}</div>
-</div>"""
-        )
+    cards = "".join(_metric_card(label, value) for label, value in labels)
     return f"""<section class="section">
       <h2>Market Data Quality</h2>
       <div class="metrics-grid">
-        {"".join(cards)}
+        {cards}
       </div>
     </section>"""
 
@@ -511,7 +508,6 @@ def _build_bootstrap_evidence_rows(metadata: dict[str, object]) -> str:
     summary = _extract_diagnostic_summary(metadata, "bootstrap_evidence")
     if not isinstance(summary, dict):
         return ""
-    cards = []
     labels = [
         ("Bootstrap Count", summary.get("n_bootstrap", "")),
         ("Seed", summary.get("seed", "")),
@@ -520,20 +516,14 @@ def _build_bootstrap_evidence_rows(metadata: dict[str, object]) -> str:
         ("CI Crosses Zero", summary.get("ci_crosses_zero", "")),
         ("Verdict", summary.get("verdict", "")),
     ]
-    for label, value in labels:
-        cards.append(
-            f"""<div class="metric-card">
-  <div class="metric-label">{escape(label)}</div>
-  <div class="metric-value">{escape(str(value))}</div>
-</div>"""
-        )
-    return """<section class="section">
+    cards = "".join(_metric_card(label, value) for label, value in labels)
+    return f"""<section class="section">
       <h2>Bootstrap Evidence</h2>
       <p class="meta">Minimal bootstrap diagnostics are reported here. They are not PBO, DSR, SPA, or any broader multiple-testing correction.</p>
       <div class="metrics-grid">
-        %s
+        {cards}
       </div>
-    </section>""" % "".join(cards)
+    </section>"""
 
 
 def _build_cost_sensitivity_rows(metadata: dict[str, object]) -> str:
@@ -546,23 +536,24 @@ def _build_cost_sensitivity_rows(metadata: dict[str, object]) -> str:
         if not isinstance(scenario, dict):
             scenario = {}
         return f"""<div class="metric-card">
-  <div class="metric-label">{escape(name.replace('_', ' ').title())}</div>
+  <div class="metric-label">{escape(name.replace("_", " ").title())}</div>
   <div class="metric-value">Annualized Return: {escape(str(scenario.get("annualized_return", "")))}</div>
   <div class="metric-value">Sharpe: {escape(str(scenario.get("sharpe", "")))}</div>
   <div class="metric-value">Max Drawdown: {escape(str(scenario.get("max_drawdown", "")))}</div>
 </div>"""
 
-    return """<section class="section">
+    cards = _scenario_card("low_cost") + _scenario_card("base_cost") + _scenario_card("high_cost")
+    verdict = _metric_card("Verdict", summary.get("verdict", ""))
+    return f"""<section class="section">
       <h2>Cost Sensitivity</h2>
       <p class="meta">Minimal fee/slippage sensitivity only. This is not a full TCA, broker simulation, or execution impact model.</p>
       <div class="metrics-grid">
-        %s
+        {cards}
       </div>
-      <div class="metric-card" style="margin-top:12px;">
-        <div class="metric-label">Verdict</div>
-        <div class="metric-value">%s</div>
+      <div style="margin-top:12px;">
+        {verdict}
       </div>
-    </section>""" % (_scenario_card("low_cost") + _scenario_card("base_cost") + _scenario_card("high_cost"), escape(str(summary.get("verdict", ""))))
+    </section>"""
 
 
 def _extract_diagnostic_summary(metadata: dict[str, object], key: str) -> dict[str, object] | None:
@@ -581,7 +572,6 @@ def _build_signal_metadata_rows(metadata: dict[str, object]) -> str:
     signal_keys = ("signal_file", "signal_name", "source", "symbol", "signal_row_count")
     if not any(key in metadata for key in signal_keys):
         return ""
-    cards = []
     labels = [
         ("Signal File", metadata.get("signal_file", "")),
         ("Signal Name", metadata.get("signal_name", "")),
@@ -589,38 +579,44 @@ def _build_signal_metadata_rows(metadata: dict[str, object]) -> str:
         ("Symbol", metadata.get("symbol", "")),
         ("Signal Row Count", metadata.get("signal_row_count", "")),
     ]
-    for label, value in labels:
-        cards.append(
-            f"""<div class="metric-card">
-  <div class="metric-label">{escape(label)}</div>
-  <div class="metric-value">{escape(str(value))}</div>
-</div>"""
-        )
+    cards = "".join(_metric_card(label, value) for label, value in labels)
     return f"""<section class="section">
       <h2>Signal Metadata</h2>
       <div class="metrics-grid">
-        {"".join(cards)}
+        {cards}
       </div>
     </section>"""
 
 
 def _build_trade_return_rows() -> str:
-    cards = []
+    schema_fields = [
+        "entry_datetime",
+        "exit_datetime",
+        "entry_price",
+        "exit_price",
+        "holding_period",
+        "trade_gross_return",
+        "trade_net_return",
+        "cost_return_contribution",
+        "entry_target_position",
+        "exit_target_position",
+    ]
+    schema_text = escape("\n".join(schema_fields))
+    schema_block = f"""<div class="schema-block">
+  <div class="metric-label">Trade Log Schema</div>
+  <code>{schema_text}</code>
+</div>"""
     labels = [
-        ("Trade Log Schema", "entry_datetime / exit_datetime / entry_price / exit_price / holding_period / trade_gross_return / trade_net_return / cost_return_contribution / entry_target_position / exit_target_position"),
         ("Gross Return", "trade_gross_return"),
         ("Net Return", "trade_net_return"),
         ("Cost Contribution", "cost_return_contribution"),
         ("Win Rate Rule", "count(trade_net_return > 0) / trade_count"),
     ]
-    for label, value in labels:
-        cards.append(
-            f"""<div class="metric-card">
-  <div class="metric-label">{escape(label)}</div>
-  <div class="metric-value">{escape(str(value))}</div>
-</div>"""
-        )
-    return "\n".join(cards)
+    cards = "\n".join(_metric_card(label, value) for label, value in labels)
+    return f"""{schema_block}
+      <div class="metrics-grid">
+        {cards}
+      </div>"""
 
 
 def _format_percent(value: float) -> str:
