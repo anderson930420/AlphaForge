@@ -1,53 +1,129 @@
 # AlphaForge
 
-[English](README.md) | 繁體中文
+[English](README.md) | [繁體中文](README.zh-TW.md)
 
-AlphaForge 是一個以機器學習與量化研究流程為核心的可重現研究框架，用於處理資產定價訊號、監督式學習實驗、自訂交易訊號驗證，以及可供審查的研究 artifacts。
+AlphaForge 是一套可重現的量化研究框架，用來把機器學習預測、因子訊號與回測實驗轉換成可檢查的研究證據 artifacts。
 
-這個專案想回答的核心問題是：
-
-> 一個候選交易訊號或機器學習預測結果，是否能被轉換成可追蹤、可驗證、可審查的研究成果，而不是只停留在單一 backtest 圖表或不可重現的 notebook？
-
-AlphaForge 不是實盤交易系統，也不是券商下單工具，更不是獲利保證。
-它是一個 deterministic research toolchain，重點在於資料處理、標籤建構、模型實驗、訊號生成、研究驗證與成果展示。
+它不是實盤交易系統，也不是獲利保證。這個專案的重點是：一個交易想法或 ML prediction，能不能透過明確的資料契約、walk-forward validation、diagnostics、視覺化報表與可審查 artifacts，被轉換成嚴謹的研究流程。
 
 ---
 
-## 作品集定位
+## 真實資料研究展示
 
-| 面向   | AlphaForge 展示的能力                                                              |
-| ---- | ----------------------------------------------------------------------------- |
-| 量化研究 | 因子診斷、forward-return labels、walk-forward validation、回測 artifacts               |
-| 機器學習 | sklearn baseline、PyTorch MLP baseline、prediction diagnostics、model comparison |
-| 資料工程 | feature / return schema 分離、deterministic fixtures、artifact contracts          |
-| 軟體工程 | `src/` package layout、CLI workflows、tests、可重現 smoke commands                  |
-| 研究紀律 | 不把私有原始資料放入 git、明確限制與邊界、可重現報表                                                  |
-| 成果展示 | Streamlit showcase、HTML report、JSON / CSV evidence artifacts                  |
+AlphaForge 目前有兩條真實資料展示路線：
+
+| 路線 | 目的 | 展示內容 |
+| --- | --- | --- |
+| **Route A — CRSP ML E2E Report** | 橫斷面 ML 研究流程 | Dataset QC、walk-forward validation、Rank IC diagnostics、gross-of-cost portfolio path、limitations、artifact provenance |
+| **Route B — TWSE Single-Experiment Report** | 單一標的 backtest/report engine | 真實 OHLCV 匯入、lagged execution semantics、fee/slippage assumptions、benchmark comparison、可讀 HTML report |
+
+這個專案的重點不是宣稱 baseline strategy 能賺錢，而是展示 AlphaForge 能建立一套完整、可重現、可檢查的研究流程，包含負結果。
 
 ---
 
-## 這個專案解決什麼問題？
+### Route A — CRSP ML E2E：明確呈現負結果
 
-許多量化交易或機器學習 side project 只停留在：
+CRSP ML E2E report 將真實 CRSP monthly panel 跑過完整監督式學習研究流程：
 
-* 一張 equity curve
-* 一個策略績效表
-* 一份 notebook
-* 一段難以重現的 backtest code
+```text
+CRSP monthly panel
+  → dataset QC
+  → 10-year train / 1-year test walk-forward splits
+  → sklearn ridge baseline
+  → prediction IC / Rank IC diagnostics
+  → gross-of-cost long-short prediction portfolio
+  → HTML / JSON / parquet evidence artifacts
+```
+
+![CRSP ML E2E Visual Summary](docs/assets/readme/crsp-ml-e2e-visual-summary.png)
+
+解讀：
+
+這個 ridge baseline 在 17 個 out-of-sample windows 中沒有任何一個 Rank IC 為正。即使是最不差的 Rank IC window 也仍然低於 0，因此這張圖應該被理解成負面的 ranking-stability diagnostic，而不是可獲利訊號。
+
+這是刻意保留的結果。AlphaForge 沒有把結果藏在一條 equity curve 後面，而是直接揭露模型的 failure mode：
+
+- 模型沒有穩定的橫斷面排序能力；
+- portfolio path 是 gross-of-cost，尚未納入 transaction costs；
+- report 保留 limitations 與 artifact provenance，而不是把結果包裝成 alpha。
+
+一個重要診斷是：portfolio return 與 ranking quality 不能混為一談。2020 是最不差的 Rank IC window，卻是很差的 portfolio year；2009 的 ranking quality 不好，但 portfolio return 很高。這正是為什麼 AlphaForge 同時呈現 Rank IC、portfolio path、window diagnostics 與 limitations，而不是只看單一 equity curve。
+
+#### Route A 資料規模與 walk-forward 設計
+
+![CRSP ML E2E Dataset and Walk-Forward Overview](docs/assets/readme/crsp-ml-e2e-dataset-walkforward.png)
+
+目前真實 CRSP run 的規模：
+
+```text
+Rows:         1,382,055
+Assets:       14,281
+Months:       335
+Test windows: 17
+Dataset:      1996-01-31 to 2023-11-30
+Predictions:  2006-01-31 to 2022-12-31
+```
+
+prediction period 從 2006 開始，是因為第一個模型使用 1996–2005 作為 10 年訓練區間：
+
+```text
+train_1996-2005_test_2006
+train_1997-2006_test_2007
+...
+train_2012-2021_test_2022
+```
+
+也就是說，1996–2005 的資料並沒有消失，而是被用作第一個 out-of-sample test window 之前的 training data。
+
+---
+
+### Route B — TWSE 單一實驗報表
+
+Route B 使用真實 TWSE OHLCV 資料展示 AlphaForge 的單一實驗 backtest/report engine。
+
+![TWSE Single-Experiment Metrics Summary](docs/assets/readme/twse-single-experiment-metrics-summary.png)
+
+![TWSE Single-Experiment Strategy vs Buy-and-Hold](docs/assets/readme/twse-single-experiment-strategy-vs-buyhold.png)
+
+這條路線不是 alpha discovery 宣稱，而是 report engine 與 execution semantics 展示：
+
+- 匯入真實 OHLCV data；
+- 使用 lagged close-to-close execution semantics；
+- 顯式記錄 fee/slippage assumptions；
+- 顯示 benchmark comparison，而不是只看策略本身報酬；
+- 輸出可讀的 HTML cards、tables、equity/drawdown views 與 trade diagnostics。
+
+目前 TWSE report 可以呈現策略 total return 為正，但相對 buy-and-hold 的 excess return 仍然為負。這正是 AlphaForge 的價值：它不是只問 equity curve 有沒有上升，而是檢查主動擇時是否真的增加價值。
+
+---
+
+## AlphaForge 展示的能力
+
+| 面向 | 證據 |
+| --- | --- |
+| 量化研究 | Forward-return labels、factor diagnostics、IC / Rank IC、walk-forward validation |
+| 機器學習 | sklearn baselines、PyTorch MLP baseline、prediction diagnostics、model comparison |
+| 資料工程 | Feature / label separation、CRSP / OAP / TWSE workflows、artifact contracts |
+| 研究紀律 | 明確 limitations、gross-of-cost labels、不將私有原始資料放入 git |
+| 成果展示 | HTML reports、visual diagnostics、JSON / parquet / CSV evidence artifacts |
+| 軟體工程 | `src/` package layout、CLI workflows、tests、可重現 smoke commands |
+
+---
+
+## 核心原則
+
+許多量化 side project 只停在一張 backtest chart。
 
 AlphaForge 關注的是更前面的研究流程：
 
-1. 載入 feature data 與外部 signal。
-2. 在明確 schema 下建立 forward-return labels。
-3. 建立 supervised ML dataset。
-4. 執行 baseline ML models 與 prediction diagnostics。
-5. 將模型預測轉換成 long / short / neutral signal contract。
-6. 執行 research validation。
-7. 匯出可被檢查、封裝、展示的 artifacts。
+- 建立明確的 feature 與 label contracts；
+- 執行 deterministic model / signal workflows；
+- 用 diagnostics 評估 prediction，而不是只看單一 PnL line；
+- 誠實揭露負結果與 limitations；
+- 匯出可檢查、可重現、可在面試中討論的 artifacts。
 
-這個專案的目的不是宣稱某個策略一定有效，而是證明：
-
-> 我能把量化研究流程做成可重現、可檢查、可延伸的工程系統。
+這個專案的目的不是宣稱某個策略一定有效。
+它的目的，是證明研究流程本身具備可重現性、可檢查性與可延伸性。
 
 ---
 
